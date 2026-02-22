@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  persons     Person[]
+  memberships Membership[]
+  paymentDues PaymentDue[]
+  payments    Payment[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String
+  role           UserRole
+  organizationId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdMemberships Membership[]  @relation("CreatedByUser")
+  collectedPayments  Payment[]     @relation("CollectedByUser")
+}
+
+enum UserRole {
+  super_user
+  admin
+  user
+}
+
+model Person {
+  id                       String         @id @default(cuid())
+  organizationId           String
+  title                    PersonTitle?
+  nameWithInitials         String
+  fullName                 String
+  gender                   String?
+  nicNumber                String?
+  identityType             IdentityType?
+  idNumber                 String?
+  dateOfBirth              DateTime?
+  age                      Int?
+  bloodGroup               BloodGroup?
+  maritalStatus            MaritalStatus?
+  address                  String?
+  mobileNumber             String?
+  whatsAppNumber           String?
+  email                    String?
+  occupation               String?
+  placeOfWork              String?
+  educationalQualification String?
+  schoolName               String?
+  relationToHOH            RelationToHOH?
+  isMadarasaStudent        Boolean        @default(false)
+  isDisabled               Boolean        @default(false)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membershipsAsHod     Membership[]          @relation("HOD")
+  membershipsAsSpouse  Membership[]          @relation("Spouse")
+  membershipDependents MembershipDependent[]
+}
+
+enum PersonTitle {
+  Mr
+  Master
+  Miss
+  Mrs
+  Ms
+  Dr
+}
+
+enum IdentityType {
+  NIC
+  Passport
+  DrivingLicense
+}
+
+enum BloodGroup {
+  A_pos
+  A_neg
+  B_pos
+  B_neg
+  AB_pos
+  AB_neg
+  O_pos
+  O_neg
+}
+
+enum RelationToHOH {
+  spouse
+  child
+  other
+}
+
+enum MaritalStatus {
+  single
+  married
+  widower
+  widow
+}
+
+model Membership {
+  id                          String   @id @default(cuid())
+  membershipNo                 String   // system-generated, unique per org
+  organizationId               String
+  dateOfRegistration           DateTime
+  membershipType               MembershipType
+  membershipStatus             String
+  hodPersonId                  String
+  spousePersonId               String?
+  land                         Boolean  @default(false)
+  houseOwnership               Boolean  @default(false)
+  commercialProperties         Boolean  @default(false)
+  toiletFacility               Boolean  @default(false)
+  vehicleOwnership             Boolean  @default(false)
+  waterAccessibility           Boolean  @default(false)
+  electricity                  Boolean  @default(false)
+  paymentPeriod                PaymentPeriod
+  membershipFee                Decimal  @db.Decimal(12, 2)
+  additionalVoluntaryContributions Decimal @db.Decimal(12, 2) @default(0)
+  membershipFeeDiscount        Decimal  @db.Decimal(12, 2) @default(0)
+  totalContribution            Decimal  @db.Decimal(12, 2)
+  disability                   Boolean  @default(false)
+  createdByUserId              String?
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  hod          Person       @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
+  spouse       Person?      @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+  dependents   MembershipDependent[]
+  dues         PaymentDue[]
+  payments     Payment[]
+}
+
+model MembershipDependent {
+  id           String @id @default(cuid())
+  membershipId String
+  personId     String
+  order        Int    @default(0)
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  person     Person     @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, personId])
+}
+
+enum MembershipType {
+  Resident
+  NonResident
+  Widow
+  Widower
+}
+
+enum PaymentPeriod {
+  Monthly
+  Quarterly
+  Annually
+}
+
+enum DueStatus {
+  pending
+  partial
+  paid
+  overdue
+}
+
+model PaymentDue {
+  id             String    @id @default(cuid())
+  membershipId   String
+  organizationId String
+  dueDate        DateTime
+  period         String    // "YYYY-MM" e.g. "2026-02"
+  amountDue      Decimal   @db.Decimal(12, 2)
+  amountPaid     Decimal   @db.Decimal(12, 2) @default(0)
+  status         DueStatus @default(pending)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  @@unique([membershipId, period])
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  paymentDueId      String
+  membershipId      String
+  organizationId    String
+  amount            Decimal  @db.Decimal(12, 2)
+  paymentDate       DateTime @default(now())
+  collectedByUserId String
+  note              String?
+  createdAt         DateTime @default(now())
+
+  paymentDue   PaymentDue   @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  collectedBy  User         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
+}
