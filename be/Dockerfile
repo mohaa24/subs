@@ -35,5 +35,5 @@ USER expressjs
 
 EXPOSE 4000
 
-# Run migrations then start (use prisma migrate deploy if you have migrations)
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+# Regenerate client in-container to guarantee engine matches runtime target, then sync schema.
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --skip-generate && node dist/index.js"]
