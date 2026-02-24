@@ -64,8 +64,7 @@ exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     const orgId = parsed.data.organizationId ?? (isSuper ? undefined : req.auth.organizationId);
     if (!orgId)
         return res.status(400).json({ error: "organizationId required" });
-    if (!isSuper && parsed.data.role === "super_user")
-        return res.status(403).json({ error: "Cannot create super user" });
+    // Schema restricts role to admin|user; super_user cannot be created via this endpoint
     const existing = await prisma_js_1.prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
     if (existing)
         return res.status(409).json({ error: "Email already in use" });

@@ -1,6 +1,6 @@
 import { Router, Request } from "express";
 import { z } from "zod";
-import { MaritalStatus, ResidentType, LivingStatus, PersonTitle, IdentityType, BloodGroup } from "@prisma/client";
+import { MaritalStatus, ResidentType, LivingStatus, PersonTitle, IdentityType, BloodGroup, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
 
@@ -63,7 +63,7 @@ personsRouter.get("/", async (req, res) => {
   const q = (req.query.q as string)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
-  const where: { organizationId?: string; OR?: Array<{ fullName?: { contains: string; mode: "insensitive" }; nicNumber?: { contains: string; mode: "insensitive" }; nameWithInitials?: { contains: string; mode: "insensitive" } }> } = {};
+  const where: Prisma.PersonWhereInput = {};
   if (orgId) where.organizationId = orgId;
   if (q) {
     where.OR = [

@@ -19,25 +19,31 @@ const residentTypes = [
     "NonResidentPerson",
 ];
 const livingStatuses = ["Active", "Deceased", "PermanentlyRelocated"];
+const titles = ["Mr", "Master", "Miss", "Mrs", "Ms", "Dr"];
+const identityTypes = ["NIC", "Passport", "DrivingLicense"];
+const bloodGroups = ["A_pos", "A_neg", "B_pos", "B_neg", "AB_pos", "AB_neg", "O_pos", "O_neg"];
+const highestQualTypes = ["O/L", "A/L", "Degree", "Masters", "Phd", "Diploma", "None", "In School"];
 const createSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
+    title: zod_1.z.enum(titles),
     nameWithInitials: zod_1.z.string().min(1),
     fullName: zod_1.z.string().min(1),
     preferredName: zod_1.z.string().optional(),
-    residentType: zod_1.z.enum(residentTypes).optional(),
-    gender: zod_1.z.string().optional(),
-    nicNumber: zod_1.z.string().optional(),
-    dateOfBirth: zod_1.z.string().optional(),
-    age: zod_1.z.number().int().min(0).optional(),
-    maritalStatus: zod_1.z.enum(maritalStatuses).optional(),
-    address: zod_1.z.string().optional(),
+    residentType: zod_1.z.enum(residentTypes),
+    gender: zod_1.z.string().min(1),
+    identityType: zod_1.z.enum(identityTypes).optional(),
+    nicNumber: zod_1.z.string().optional().nullable(),
+    idNumber: zod_1.z.string().optional().nullable(),
+    dateOfBirth: zod_1.z.string().min(1),
+    bloodGroup: zod_1.z.enum(bloodGroups).optional(),
+    maritalStatus: zod_1.z.enum(maritalStatuses),
+    address: zod_1.z.string().min(1),
     mobileNumber: zod_1.z.string().optional(),
     whatsAppNumber: zod_1.z.string().optional(),
     email: zod_1.z.string().email().optional().or(zod_1.z.literal("")),
     occupation: zod_1.z.string().optional(),
     placeOfWork: zod_1.z.string().optional(),
-    educationalQualification: zod_1.z.string().optional(),
-    highestQualificationType: zod_1.z.string().optional(),
+    highestQualificationType: zod_1.z.enum(highestQualTypes).optional(),
     livingStatus: zod_1.z.enum(livingStatuses).optional(),
     isMadarasaStudent: zod_1.z.boolean().optional(),
 });

@@ -1,7 +1,6 @@
 import { config } from "dotenv";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
-config({ path: resolve(dirname(fileURLToPath(import.meta.url)), "../.env") });
+import { resolve } from "path";
+config({ path: resolve(process.cwd(), ".env") });
 
 import express from "express";
 import cors from "cors";
