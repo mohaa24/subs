@@ -34,6 +34,30 @@ Seed creates super user: **super@example.com** / **admin123**
 
 Set `NEXT_PUBLIC_API_URL=http://localhost:4000` in `fe/.env.local` if the API is elsewhere.
 
+## Docker (Digital Ocean)
+
+Uses **Neon** for PostgreSQL. Create a project at [neon.tech](https://neon.tech) and copy the connection string.
+
+1. On your droplet, install Docker and Docker Compose.
+2. Copy env and set your values:
+   ```bash
+   cp .env.example .env
+   # Edit .env:
+   #   DATABASE_URL=<your-neon-connection-string>
+   #   NEXT_PUBLIC_API_URL=http://YOUR_DROPLET_IP:4000
+   #   FE_ORIGIN=http://YOUR_DROPLET_IP:3000
+   #   JWT_SECRET=<strong-secret>
+   ```
+3. Build and run:
+   ```bash
+   docker compose up -d --build
+   ```
+4. Seed the database (optional):
+   ```bash
+   docker compose exec be npx prisma db seed
+   ```
+5. App: http://YOUR_DROPLET_IP:3000, API: http://YOUR_DROPLET_IP:4000
+
 ## Roles
 
 - **super_user**: Manage organizations; create users for any org; access all data.

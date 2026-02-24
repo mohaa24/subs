@@ -36,15 +36,31 @@ export interface User {
   organization?: { id: string; name: string; slug: string } | null;
 }
 
+export type ResidentType =
+  | "ResidentSinceBirth"
+  | "ResidentByMarriage"
+  | "BusinessResidency"
+  | "EmploymentResidency"
+  | "EducationalResidency"
+  | "FamilyMemberOfResident"
+  | "NonResidentPerson";
+
+export type LivingStatus = "Active" | "Deceased" | "PermanentlyRelocated";
+
 export interface Person {
   id: string;
   organizationId: string;
+  title?: "Mr" | "Master" | "Miss" | "Mrs" | "Ms" | "Dr" | null;
   nameWithInitials: string;
   fullName: string;
+  preferredName?: string | null;
+  residentType?: ResidentType | null;
   gender?: string | null;
+  identityType?: "NIC" | "Passport" | "DrivingLicense" | null;
   nicNumber?: string | null;
+  idNumber?: string | null;
   dateOfBirth?: string | null;
-  age?: number | null;
+  bloodGroup?: "A_pos" | "A_neg" | "B_pos" | "B_neg" | "AB_pos" | "AB_neg" | "O_pos" | "O_neg" | null;
   maritalStatus?: "single" | "married" | "widower" | "widow" | null;
   address?: string | null;
   mobileNumber?: string | null;
@@ -52,7 +68,8 @@ export interface Person {
   email?: string | null;
   occupation?: string | null;
   placeOfWork?: string | null;
-  educationalQualification?: string | null;
+  highestQualificationType?: string | null;
+  livingStatus?: LivingStatus | null;
   isMadarasaStudent: boolean;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  RESIDENT_TYPES,
+  LIVING_STATUSES,
+  OCCUPATIONS,
+  TITLES,
+  GENDER_OPTIONS,
+  IDENTITY_TYPES,
+  BLOOD_GROUPS,
+  HIGHEST_QUALIFICATION_TYPES,
+} from "@/lib/constants";
+
+// Input sanitizers - only allow valid characters
+const onlyPhone = (v: string) => v.replace(/[^\d+\s\-]/g, "");
+const onlyNIC = (v: string) => v.replace(/[^\dVAva]/g, "").toUpperCase();
+const onlyAlphanumeric = (v: string) => v.replace(/[^\w\s\-]/g, "");
+const onlyLettersAndSpaces = (v: string) => v.replace(/[^\p{L}\s.'\-]/gu, "");
 
 const MARITAL_OPTIONS = [
   { value: "single", label: "Single" },
@@ -21,12 +37,17 @@ const MARITAL_OPTIONS = [
 ];
 
 export interface PersonFormData {
+  title: string;
   nameWithInitials: string;
   fullName: string;
+  preferredName: string;
+  residentType: string;
   gender: string;
+  identityType: string;
   nicNumber: string;
+  idNumber: string;
   dateOfBirth: string;
-  age: string;
+  bloodGroup: string;
   maritalStatus: string;
   address: string;
   mobileNumber: string;
@@ -34,17 +55,23 @@ export interface PersonFormData {
   email: string;
   occupation: string;
   placeOfWork: string;
-  educationalQualification: string;
+  highestQualificationType: string;
+  livingStatus: string;
   isMadarasaStudent: boolean;
 }
 
 const defaultPerson: PersonFormData = {
+  title: "",
   nameWithInitials: "",
   fullName: "",
+  preferredName: "",
+  residentType: "",
   gender: "",
+  identityType: "",
   nicNumber: "",
+  idNumber: "",
   dateOfBirth: "",
-  age: "",
+  bloodGroup: "",
   maritalStatus: "",
   address: "",
   mobileNumber: "",
@@ -52,80 +79,216 @@ const defaultPerson: PersonFormData = {
   email: "",
   occupation: "",
   placeOfWork: "",
-  educationalQualification: "",
+  highestQualificationType: "",
+  livingStatus: "Active",
   isMadarasaStudent: false,
 };
+
+const REQUIRED_FIELDS: (keyof PersonFormData)[] = [
+  "title",
+  "nameWithInitials",
+  "fullName",
+  "gender",
+  "dateOfBirth",
+  "maritalStatus",
+  "residentType",
+  "address",
+];
 
 export function PersonForm({
   initial,
   onSubmit,
   onCancel,
   submitLabel = "Save",
+  disabled = false,
 }: {
   initial?: Partial<PersonFormData>;
   onSubmit: (data: PersonFormData) => void;
   onCancel?: () => void;
   submitLabel?: string;
+  disabled?: boolean;
 }) {
   const [form, setForm] = useState<PersonFormData>({ ...defaultPerson, ...initial });
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const getAgeFromDob = (dob: string) => {
+    if (!dob) return null;
+    const birth = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age;
+  };
+  const age = getAgeFromDob(form.dateOfBirth);
+  const isUnder16 = age !== null && age < 16;
+
+  useEffect(() => {
+    if (age !== null && age < 16) {
+      setForm((f) => ({
+        ...f,
+        identityType: "",
+        nicNumber: "",
+        idNumber: "",
+        occupation: "",
+        placeOfWork: "",
+      }));
+    }
+  }, [form.dateOfBirth]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setValidationError(null);
+    const missing = REQUIRED_FIELDS.filter((f) => !form[f]?.toString().trim());
+    if (missing.length > 0) {
+      const labels: Record<string, string> = {
+        title: "Title",
+        nameWithInitials: "Name with Initials",
+        fullName: "Full Name",
+        gender: "Gender",
+        dateOfBirth: "Date of Birth",
+        maritalStatus: "Marital Status",
+        residentType: "Resident Type",
+        address: "Main Address",
+      };
+      setValidationError(`Required: ${missing.map((f) => labels[f] ?? f).join(", ")}`);
+      return;
+    }
+    // Format validations for optional fields when provided
+    const digitCount = (s: string) => (s.match(/\d/g) || []).length;
+    if (form.mobileNumber.trim() && digitCount(form.mobileNumber) < 9) {
+      setValidationError("Mobile number must contain at least 9 digits");
+      return;
+    }
+    if (form.whatsAppNumber.trim() && digitCount(form.whatsAppNumber) < 9) {
+      setValidationError("WhatsApp number must contain at least 9 digits");
+      return;
+    }
+    if (form.dateOfBirth && new Date(form.dateOfBirth) > new Date()) {
+      setValidationError("Date of Birth cannot be in the future");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (form.email.trim() && !emailRegex.test(form.email.trim())) {
+      setValidationError("Please enter a valid email address");
+      return;
+    }
     onSubmit(form);
   }
 
+  const isNIC = form.identityType === "NIC";
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const Section = ({
+    title,
+    children,
+    variant = "default",
+  }: {
+    title: string;
+    children: React.ReactNode;
+    variant?: "default" | "alt";
+  }) => (
+    <div
+      className={`rounded-lg px-4 py-4 sm:px-5 sm:py-5 ${
+        variant === "alt" ? "bg-muted/50" : "bg-muted/25"
+      }`}
+    >
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+        {title}
+      </h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+    </div>
+  );
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {validationError && (
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          {validationError}
+        </p>
+      )}
+
+      <Section title="Personal Information" variant="default">
         <div className="space-y-2">
-          <Label>Name with initials</Label>
+          <Label>Title <span className="text-destructive">*</span></Label>
+          <Select
+            value={form.title || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, title: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {TITLES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Name with Initials <span className="text-destructive">*</span></Label>
           <Input
             value={form.nameWithInitials}
-            onChange={(e) => setForm((f) => ({ ...f, nameWithInitials: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, nameWithInitials: onlyLettersAndSpaces(e.target.value) }))
+            }
             required
+            placeholder="e.g. M.A. Rahman"
           />
         </div>
         <div className="space-y-2">
-          <Label>Full name</Label>
+          <Label>Full Name <span className="text-destructive">*</span></Label>
           <Input
             value={form.fullName}
-            onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, fullName: onlyLettersAndSpaces(e.target.value) }))
+            }
             required
+            placeholder="e.g. Mohamed Abdul Rahman"
           />
         </div>
         <div className="space-y-2">
-          <Label>Gender</Label>
+          <Label>Preferred name</Label>
           <Input
-            value={form.gender}
-            onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
+            value={form.preferredName}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, preferredName: onlyLettersAndSpaces(e.target.value) }))
+            }
+            placeholder="e.g. Rahman"
           />
         </div>
         <div className="space-y-2">
-          <Label>NIC number</Label>
-          <Input
-            value={form.nicNumber}
-            onChange={(e) => setForm((f) => ({ ...f, nicNumber: e.target.value }))}
-          />
+          <Label>Gender <span className="text-destructive">*</span></Label>
+          <Select
+            value={form.gender || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, gender: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {GENDER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
-          <Label>Date of birth</Label>
+          <Label>Date of Birth <span className="text-destructive">*</span></Label>
           <Input
             type="date"
             value={form.dateOfBirth}
             onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))}
+            max={today}
           />
         </div>
         <div className="space-y-2">
-          <Label>Age</Label>
-          <Input
-            type="number"
-            min={0}
-            value={form.age}
-            onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Marital status</Label>
+          <Label>Marital Status <span className="text-destructive">*</span></Label>
           <Select
             value={form.maritalStatus || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, maritalStatus: v }))}
@@ -142,57 +305,205 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
+        <div className="space-y-2">
+          <Label>Blood group</Label>
+          <Select
+            value={form.bloodGroup || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, bloodGroup: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {BLOOD_GROUPS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </Section>
+
+      <Section title="Residency & Address" variant="alt">
         <div className="space-y-2 md:col-span-2">
-          <Label>Address</Label>
+          <Label>Resident Type <span className="text-destructive">*</span></Label>
+          <Select
+            value={form.residentType || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, residentType: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {RESIDENT_TYPES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label>Main Address <span className="text-destructive">*</span></Label>
           <Input
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+            required
+            placeholder="Street, city, postal code"
           />
         </div>
+      </Section>
+
+      <Section title="Identity" variant="default">
+        <div className="space-y-2">
+          <Label>ID type {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+          <Select
+            value={form.identityType || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, identityType: v }))}
+          >
+            <SelectTrigger disabled={isUnder16} className={isUnder16 ? "opacity-60" : ""}>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {IDENTITY_TYPES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {isNIC ? (
+          <div className="space-y-2">
+            <Label>NIC number</Label>
+            <Input
+              value={form.nicNumber}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, nicNumber: onlyNIC(e.target.value) }))
+              }
+              inputMode="numeric"
+              placeholder="e.g. 199012345678 or 123456789V"
+              disabled={isUnder16}
+              className={isUnder16 ? "opacity-60" : ""}
+            />
+          </div>
+        ) : form.identityType ? (
+          <div className="space-y-2">
+            <Label>ID number</Label>
+            <Input
+              value={form.idNumber}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, idNumber: onlyAlphanumeric(e.target.value) }))
+              }
+              placeholder="Passport or license number"
+              disabled={isUnder16}
+              className={isUnder16 ? "opacity-60" : ""}
+            />
+          </div>
+        ) : null}
+      </Section>
+
+      <Section title="Contact" variant="alt">
         <div className="space-y-2">
           <Label>Mobile number</Label>
           <Input
             value={form.mobileNumber}
-            onChange={(e) => setForm((f) => ({ ...f, mobileNumber: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, mobileNumber: onlyPhone(e.target.value) }))
+            }
+            inputMode="tel"
+            placeholder="e.g. 0771234567"
           />
         </div>
         <div className="space-y-2">
           <Label>WhatsApp number</Label>
           <Input
             value={form.whatsAppNumber}
-            onChange={(e) => setForm((f) => ({ ...f, whatsAppNumber: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, whatsAppNumber: onlyPhone(e.target.value) }))
+            }
+            inputMode="tel"
+            placeholder="e.g. 0771234567"
           />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 md:col-span-2">
           <Label>Email</Label>
           <Input
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            placeholder="e.g. name@example.com"
           />
         </div>
+      </Section>
+
+      <Section title="Employment & Education" variant="default">
         <div className="space-y-2">
-          <Label>Occupation</Label>
-          <Input
-            value={form.occupation}
-            onChange={(e) => setForm((f) => ({ ...f, occupation: e.target.value }))}
-          />
+          <Label>Occupation {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+          <Select
+            value={form.occupation || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, occupation: v }))}
+          >
+            <SelectTrigger disabled={isUnder16} className={isUnder16 ? "opacity-60" : ""}>
+              <SelectValue placeholder="Select occupation" />
+            </SelectTrigger>
+            <SelectContent>
+              {OCCUPATIONS.map((o) => (
+                <SelectItem key={o} value={o}>
+                  {o}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
-          <Label>Place of work</Label>
+          <Label>Place of work {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Input
             value={form.placeOfWork}
             onChange={(e) => setForm((f) => ({ ...f, placeOfWork: e.target.value }))}
+            placeholder="Company or institution name"
+            disabled={isUnder16}
+            className={isUnder16 ? "opacity-60" : ""}
           />
         </div>
         <div className="space-y-2">
-          <Label>Educational qualification</Label>
-          <Input
-            value={form.educationalQualification}
-            onChange={(e) => setForm((f) => ({ ...f, educationalQualification: e.target.value }))}
-          />
+          <Label>Highest qualification type</Label>
+          <Select
+            value={form.highestQualificationType || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, highestQualificationType: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {HIGHEST_QUALIFICATION_TYPES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="space-y-2">
+          <Label>Living status</Label>
+          <Select
+            value={form.livingStatus || "Active"}
+            onValueChange={(v) => setForm((f) => ({ ...f, livingStatus: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {LIVING_STATUSES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center space-x-2 md:col-span-2">
           <Checkbox
             id="madarasa"
             checked={form.isMadarasaStudent}
@@ -200,9 +511,10 @@ export function PersonForm({
           />
           <Label htmlFor="madarasa">Madarasa student</Label>
         </div>
-      </div>
-      <div className="flex gap-2">
-        <Button type="submit">{submitLabel}</Button>
+      </Section>
+
+      <div className="flex gap-2 pt-2">
+        <Button type="submit" disabled={disabled}>{submitLabel}</Button>
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel

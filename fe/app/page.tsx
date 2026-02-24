@@ -206,14 +206,20 @@ export default function HomePage() {
       label: "Person Flow",
       actions: [
         {
-          title: "Person Search",
-          description: "Find existing people and view their records",
+          title: "People",
+          description: "Search, view, edit and add people",
+          icon: Users,
+          href: "/persons",
+        },
+        {
+          title: "Person Search (Memberships)",
+          description: "Find memberships by person",
           icon: Search,
           href: "/members",
         },
         {
-          title: "Add New Person",
-          description: "Create a new person profile",
+          title: "Add New Membership",
+          description: "Create a new membership with persons",
           icon: UserPlus,
           href: "/members/new",
         },

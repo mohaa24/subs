@@ -1,0 +1,26 @@
+services:
+  be:
+    build:
+      context: ./be
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      PORT: 4000
+      FE_ORIGIN: ${FE_ORIGIN:-http://localhost:3000}
+
+  fe:
+    build:
+      context: ./fe
+      dockerfile: Dockerfile
+      args:
+        # Set to your droplet URL or IP - e.g. http://YOUR_DROPLET_IP:4000
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - be

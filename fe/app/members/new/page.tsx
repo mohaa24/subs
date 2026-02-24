@@ -131,12 +131,17 @@ export default function NewMembershipPage() {
   async function handleCreatePerson(data: PersonFormData) {
     const payload = {
       organizationId: orgId,
+      title: data.title || undefined,
       nameWithInitials: data.nameWithInitials,
       fullName: data.fullName,
+      preferredName: data.preferredName || undefined,
+      residentType: data.residentType || undefined,
       gender: data.gender || undefined,
-      nicNumber: data.nicNumber || undefined,
+      identityType: data.identityType || undefined,
+      nicNumber: data.identityType === "NIC" ? data.nicNumber || undefined : null,
+      idNumber: data.identityType && data.identityType !== "NIC" ? data.idNumber || undefined : null,
       dateOfBirth: data.dateOfBirth || undefined,
-      age: data.age ? parseInt(data.age, 10) : undefined,
+      bloodGroup: data.bloodGroup || undefined,
       maritalStatus: data.maritalStatus || undefined,
       address: data.address || undefined,
       mobileNumber: data.mobileNumber || undefined,
@@ -144,7 +149,8 @@ export default function NewMembershipPage() {
       email: data.email || undefined,
       occupation: data.occupation || undefined,
       placeOfWork: data.placeOfWork || undefined,
-      educationalQualification: data.educationalQualification || undefined,
+      highestQualificationType: data.highestQualificationType || undefined,
+      livingStatus: data.livingStatus || undefined,
       isMadarasaStudent: data.isMadarasaStudent,
     };
     const created = await api<Person>("/persons", {
@@ -159,12 +165,17 @@ export default function NewMembershipPage() {
 
   function personToFormData(p: Person): Partial<PersonFormData> {
     return {
+      title: p.title ?? "",
       nameWithInitials: p.nameWithInitials ?? "",
       fullName: p.fullName ?? "",
+      preferredName: p.preferredName ?? "",
+      residentType: p.residentType ?? "",
       gender: p.gender ?? "",
+      identityType: p.identityType ?? "",
       nicNumber: p.nicNumber ?? "",
+      idNumber: p.idNumber ?? "",
       dateOfBirth: p.dateOfBirth ? p.dateOfBirth.slice(0, 10) : "",
-      age: p.age != null ? String(p.age) : "",
+      bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
       mobileNumber: p.mobileNumber ?? "",
@@ -172,7 +183,8 @@ export default function NewMembershipPage() {
       email: p.email ?? "",
       occupation: p.occupation ?? "",
       placeOfWork: p.placeOfWork ?? "",
-      educationalQualification: p.educationalQualification ?? "",
+      highestQualificationType: p.highestQualificationType ?? "",
+      livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
     };
   }
@@ -189,12 +201,17 @@ export default function NewMembershipPage() {
   async function handleEditPerson(data: PersonFormData) {
     if (!editPerson) return;
     const payload: Record<string, unknown> = {
+      title: data.title || undefined,
       nameWithInitials: data.nameWithInitials,
       fullName: data.fullName,
+      preferredName: data.preferredName || undefined,
+      residentType: data.residentType || undefined,
       gender: data.gender || undefined,
-      nicNumber: data.nicNumber || undefined,
+      identityType: data.identityType || undefined,
+      nicNumber: data.identityType === "NIC" ? data.nicNumber || undefined : null,
+      idNumber: data.identityType && data.identityType !== "NIC" ? data.idNumber || undefined : null,
       dateOfBirth: data.dateOfBirth || undefined,
-      age: data.age ? parseInt(data.age, 10) : undefined,
+      bloodGroup: data.bloodGroup || undefined,
       maritalStatus: data.maritalStatus || undefined,
       address: data.address || undefined,
       mobileNumber: data.mobileNumber || undefined,
@@ -202,7 +219,8 @@ export default function NewMembershipPage() {
       email: data.email || undefined,
       occupation: data.occupation || undefined,
       placeOfWork: data.placeOfWork || undefined,
-      educationalQualification: data.educationalQualification || undefined,
+      highestQualificationType: data.highestQualificationType || undefined,
+      livingStatus: data.livingStatus || undefined,
       isMadarasaStudent: data.isMadarasaStudent,
     };
     const updated = await api<Person>(`/persons/${editPerson.id}`, {

@@ -1,6 +1,6 @@
 import { Router, Request } from "express";
 import { z } from "zod";
-import { MaritalStatus } from "@prisma/client";
+import { MaritalStatus, ResidentType, LivingStatus, PersonTitle, IdentityType, BloodGroup } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
 
@@ -10,23 +10,43 @@ personsRouter.use(requireAuth);
 personsRouter.use(withOrgScope);
 
 const maritalStatuses: MaritalStatus[] = ["single", "married", "widower", "widow"];
+const residentTypes: ResidentType[] = [
+  "ResidentSinceBirth",
+  "ResidentByMarriage",
+  "BusinessResidency",
+  "EmploymentResidency",
+  "EducationalResidency",
+  "FamilyMemberOfResident",
+  "NonResidentPerson",
+];
+const livingStatuses: LivingStatus[] = ["Active", "Deceased", "PermanentlyRelocated"];
+const titles: PersonTitle[] = ["Mr", "Master", "Miss", "Mrs", "Ms", "Dr"];
+const identityTypes: IdentityType[] = ["NIC", "Passport", "DrivingLicense"];
+const bloodGroups: BloodGroup[] = ["A_pos", "A_neg", "B_pos", "B_neg", "AB_pos", "AB_neg", "O_pos", "O_neg"];
+const highestQualTypes = ["O/L", "A/L", "Degree", "Masters", "Phd", "Diploma", "None", "In School"] as const;
 
 const createSchema = z.object({
   organizationId: z.string().optional(),
+  title: z.enum(titles as unknown as [string, ...string[]]),
   nameWithInitials: z.string().min(1),
   fullName: z.string().min(1),
-  gender: z.string().optional(),
-  nicNumber: z.string().optional(),
-  dateOfBirth: z.string().optional(),
-  age: z.number().int().min(0).optional(),
-  maritalStatus: z.enum(maritalStatuses as unknown as [string, ...string[]]).optional(),
-  address: z.string().optional(),
+  preferredName: z.string().optional(),
+  residentType: z.enum(residentTypes as unknown as [string, ...string[]]),
+  gender: z.string().min(1),
+  identityType: z.enum(identityTypes as unknown as [string, ...string[]]).optional(),
+  nicNumber: z.string().optional().nullable(),
+  idNumber: z.string().optional().nullable(),
+  dateOfBirth: z.string().min(1),
+  bloodGroup: z.enum(bloodGroups as unknown as [string, ...string[]]).optional(),
+  maritalStatus: z.enum(maritalStatuses as unknown as [string, ...string[]]),
+  address: z.string().min(1),
   mobileNumber: z.string().optional(),
   whatsAppNumber: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   occupation: z.string().optional(),
   placeOfWork: z.string().optional(),
-  educationalQualification: z.string().optional(),
+  highestQualificationType: z.enum(highestQualTypes).optional(),
+  livingStatus: z.enum(livingStatuses as unknown as [string, ...string[]]).optional(),
   isMadarasaStudent: z.boolean().optional(),
 });
 
@@ -48,8 +68,11 @@ personsRouter.get("/", async (req, res) => {
   if (q) {
     where.OR = [
       { fullName: { contains: q, mode: "insensitive" } },
+      { preferredName: { contains: q, mode: "insensitive" } },
       { nicNumber: { contains: q, mode: "insensitive" } },
       { nameWithInitials: { contains: q, mode: "insensitive" } },
+      { email: { contains: q, mode: "insensitive" } },
+      { mobileNumber: { contains: q, mode: "insensitive" } },
     ];
   }
   const [items, total] = await Promise.all([

@@ -42,18 +42,35 @@ enum UserRole {
   user
 }
 
+enum ResidentType {
+  ResidentSinceBirth
+  ResidentByMarriage
+  BusinessResidency
+  EmploymentResidency
+  EducationalResidency
+  FamilyMemberOfResident
+  NonResidentPerson
+}
+
+enum LivingStatus {
+  Active
+  Deceased
+  PermanentlyRelocated
+}
+
 model Person {
   id                       String         @id @default(cuid())
   organizationId           String
   title                    PersonTitle?
   nameWithInitials         String
   fullName                 String
+  preferredName            String?
+  residentType             ResidentType?
   gender                   String?
   nicNumber                String?
   identityType             IdentityType?
   idNumber                 String?
   dateOfBirth              DateTime?
-  age                      Int?
   bloodGroup               BloodGroup?
   maritalStatus            MaritalStatus?
   address                  String?
@@ -62,13 +79,14 @@ model Person {
   email                    String?
   occupation               String?
   placeOfWork              String?
-  educationalQualification String?
+  highestQualificationType String?
   schoolName               String?
   relationToHOH            RelationToHOH?
-  isMadarasaStudent        Boolean        @default(false)
-  isDisabled               Boolean        @default(false)
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @updatedAt
+  livingStatus             LivingStatus?   @default(Active)
+  isMadarasaStudent        Boolean         @default(false)
+  isDisabled               Boolean         @default(false)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   membershipsAsHod     Membership[]          @relation("HOD")
