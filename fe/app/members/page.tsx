@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,7 +13,7 @@ import { Search, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 
-export default function MembersPage() {
+function MembersContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -161,5 +162,13 @@ export default function MembersPage() {
         </Card>
       </main>
     </div>
+  );
+}
+
+export default function MembersPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background p-8 text-muted-foreground">Loading…</div>}>
+      <MembersContent />
+    </Suspense>
   );
 }

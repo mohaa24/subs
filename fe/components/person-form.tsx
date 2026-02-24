@@ -27,7 +27,7 @@ import {
 const onlyPhone = (v: string) => v.replace(/[^\d+\s\-]/g, "");
 const onlyNIC = (v: string) => v.replace(/[^\dVAva]/g, "").toUpperCase();
 const onlyAlphanumeric = (v: string) => v.replace(/[^\w\s\-]/g, "");
-const onlyLettersAndSpaces = (v: string) => v.replace(/[^\p{L}\s.'\-]/gu, "");
+const onlyLettersAndSpaces = (v: string) => v.replace(/[^\w\s.'\-]/g, "").replace(/\s+/g, " ").trim();
 
 const MARITAL_OPTIONS = [
   { value: "single", label: "Single" },
