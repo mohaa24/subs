@@ -12,6 +12,8 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  defaultMembershipFee Decimal @db.Decimal(12, 2) @default(0)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -62,6 +64,7 @@ enum LivingStatus {
 model Person {
   id                       String         @id @default(cuid())
   organizationId           String
+  membershipId             String?
   title                    PersonTitle?
   nameWithInitials         String
   fullName                 String
@@ -81,6 +84,8 @@ model Person {
   occupation               String?
   placeOfWork              String?
   highestQualificationType String?
+  highestQualificationTitle String?
+  permanentDisability      String?
   schoolName               String?
   relationToHOH            RelationToHOH?
   livingStatus             LivingStatus?   @default(Active)
@@ -90,6 +95,7 @@ model Person {
   updatedAt                DateTime        @updatedAt
 
   organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership           Membership?           @relation("MembershipPersons", fields: [membershipId], references: [id], onDelete: SetNull)
   membershipsAsHod     Membership[]          @relation("HOD")
   membershipsAsSpouse  Membership[]          @relation("Spouse")
   membershipDependents MembershipDependent[]
@@ -122,6 +128,31 @@ enum BloodGroup {
 }
 
 enum RelationToHOH {
+  Husband
+  Wife
+  Son
+  Daughter
+  AdoptedSon
+  AdoptedDaughter
+  Father
+  Mother
+  StepFather
+  StepMother
+  Brother
+  Sister
+  Grandfather
+  Grandmother
+  Grandson
+  Granddaughter
+  SonInLaw
+  DaughterInLaw
+  Uncle
+  Aunt
+  Nephew
+  Niece
+  Cousin
+  FatherInLaw
+  MotherInLaw
   spouse
   child
   other
@@ -163,16 +194,23 @@ model Membership {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   hod          Person       @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
   spouse       Person?      @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
+  persons      Person[]     @relation("MembershipPersons")
   createdBy    User?        @relation("CreatedByUser", fields: [createdByUserId], references: [id])
   dependents   MembershipDependent[]
   dues         PaymentDue[]
   payments     Payment[]
 }
 
+enum DependentGroup {
+  children
+  other
+}
+
 model MembershipDependent {
   id           String @id @default(cuid())
   membershipId String
   personId     String
+  group        DependentGroup @default(other)
   order        Int    @default(0)
 
   membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)

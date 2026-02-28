@@ -22,14 +22,14 @@ async function main() {
   // ── Organizations ──────────────────────────────────────────────────────────
   const alnoor = await prisma.organization.upsert({
     where: { slug: "al-noor" },
-    create: { name: "Al-Noor Mosque", slug: "al-noor" },
-    update: {},
+    create: { name: "Al-Noor Mosque", slug: "al-noor", defaultMembershipFee: new Decimal(500), isActive: true },
+    update: { defaultMembershipFee: new Decimal(500), isActive: true },
   });
 
   const altaqwa = await prisma.organization.upsert({
     where: { slug: "al-taqwa" },
-    create: { name: "Al-Taqwa Mosque", slug: "al-taqwa" },
-    update: {},
+    create: { name: "Al-Taqwa Mosque", slug: "al-taqwa", defaultMembershipFee: new Decimal(750), isActive: true },
+    update: { defaultMembershipFee: new Decimal(750), isActive: true },
   });
 
   console.log("✓ Organizations: Al-Noor Mosque, Al-Taqwa Mosque");

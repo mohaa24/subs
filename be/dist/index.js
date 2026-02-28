@@ -17,8 +17,11 @@ const payments_js_1 = require("./routes/payments.js");
 const dashboard_js_1 = require("./routes/dashboard.js");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4000;
+const allowedOrigins = process.env.FE_ORIGIN
+    ? process.env.FE_ORIGIN.split(",").map((o) => o.trim())
+    : ["http://localhost:3000", "http://localhost:3001"];
 app.use((0, cors_1.default)({
-    origin: process.env.FE_ORIGIN || ["http://localhost:3000", "http://localhost:3001"],
+    origin: allowedOrigins,
     credentials: true
 }));
 app.use(express_1.default.json());

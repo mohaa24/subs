@@ -127,6 +127,8 @@ function PersonsPageContent() {
       occupation: p.occupation ?? "",
       placeOfWork: p.placeOfWork ?? "",
       highestQualificationType: p.highestQualificationType ?? "",
+      highestQualificationTitle: p.highestQualificationTitle ?? "",
+      permanentDisability: p.permanentDisability ?? "",
       livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
     };
@@ -161,6 +163,8 @@ function PersonsPageContent() {
         occupation: data.occupation || undefined,
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
+        highestQualificationTitle: data.highestQualificationTitle || undefined,
+        permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
       };
@@ -217,6 +221,8 @@ function PersonsPageContent() {
         occupation: data.occupation || undefined,
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
+        highestQualificationTitle: data.highestQualificationTitle || undefined,
+        permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
       };

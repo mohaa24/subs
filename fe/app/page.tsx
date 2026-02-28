@@ -286,10 +286,10 @@ export default function HomePage() {
         },
         {
           title: "Organizations",
-          description: "Create and manage organizations",
+          description: "View organizations and manage membership fee defaults",
           icon: Building2,
           href: "/organizations",
-          roles: ["super_user"],
+          roles: ["admin", "super_user"],
         },
       ],
     },

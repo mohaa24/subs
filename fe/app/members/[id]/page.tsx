@@ -351,19 +351,38 @@ export default function MembershipDetailPage() {
                       <span className="font-medium">Spouse:</span>{" "}
                       {membership.spouse.fullName} (
                       {membership.spouse.nameWithInitials})
+                      {membership.spouse.relationToHOH && (
+                        <span className="text-muted-foreground"> - {membership.spouse.relationToHOH}</span>
+                      )}
                     </p>
                   )}
                   {membership.dependents &&
                     membership.dependents.length > 0 && (
                       <div>
                         <span className="font-medium">Dependents:</span>
-                        <ul className="list-disc list-inside mt-1 space-y-0.5">
-                          {membership.dependents.map((d) => (
-                            <li key={d.person.id}>
-                              {d.person.fullName} ({d.person.nameWithInitials})
-                            </li>
-                          ))}
-                        </ul>
+                        <div className="mt-1 space-y-2">
+                          {(["children", "other"] as const).map((group) => {
+                            const items = membership.dependents?.filter((d) => (d.group ?? "other") === group) ?? [];
+                            if (items.length === 0) return null;
+                            return (
+                              <div key={group}>
+                                <p className="text-xs uppercase text-muted-foreground">
+                                  {group === "children" ? "Children" : "Other dependents"}
+                                </p>
+                                <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+                                  {items.map((d) => (
+                                    <li key={d.person.id}>
+                                      {d.person.fullName} ({d.person.nameWithInitials})
+                                      {d.person.relationToHOH && (
+                                        <span className="text-muted-foreground"> - {d.person.relationToHOH}</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                 </CardContent>

@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Membership, type Person } from "@/lib/api";
+import { api, type DependentGroup, type Membership, type Person, type RelationToHOH } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,9 +26,25 @@ import {
 import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS, SPOUSE_RELATION_OPTIONS } from "@/lib/constants";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+type DependentEntry = {
+  id: string;
+  fullName: string;
+  nameWithInitials: string;
+  group: DependentGroup;
+  relationToHOH: RelationToHOH;
+};
+
+function defaultSpouseRelation(person: { gender?: string | null }): "Husband" | "Wife" {
+  return person.gender === "Male" ? "Husband" : "Wife";
+}
+
+function defaultDependentRelation(group: DependentGroup): RelationToHOH {
+  return group === "children" ? "Son" : "Cousin";
+}
 
 export default function EditMembershipPage() {
   const { user, loading: authLoading } = useAuth();
@@ -49,11 +65,12 @@ export default function EditMembershipPage() {
 
   // Spouse
   const [spousePerson, setSpousePerson] = useState<{ id: string; fullName: string; nameWithInitials: string; nicNumber?: string | null } | null>(null);
+  const [spouseRelationToHOH, setSpouseRelationToHOH] = useState<"Husband" | "Wife">("Wife");
   const [spouseSearch, setSpouseSearch] = useState("");
   const [spouseResults, setSpouseResults] = useState<Person[]>([]);
 
   // Dependents
-  const [dependentPersons, setDependentPersons] = useState<{ id: string; fullName: string; nameWithInitials: string }[]>([]);
+  const [dependentPersons, setDependentPersons] = useState<DependentEntry[]>([]);
   const [depSearch, setDepSearch] = useState("");
   const [depResults, setDepResults] = useState<Person[]>([]);
 
@@ -88,9 +105,24 @@ export default function EditMembershipPage() {
         setMembershipType(m.membershipType ?? "Resident");
         setMembershipStatus(m.membershipStatus ?? "Active");
         if (m.hod) setHodPerson({ id: m.hod.id, fullName: m.hod.fullName, nameWithInitials: m.hod.nameWithInitials, nicNumber: m.hod.nicNumber });
-        if (m.spouse) setSpousePerson({ id: m.spouse.id, fullName: m.spouse.fullName, nameWithInitials: m.spouse.nameWithInitials });
+        if (m.spouse) {
+          setSpousePerson({ id: m.spouse.id, fullName: m.spouse.fullName, nameWithInitials: m.spouse.nameWithInitials });
+          setSpouseRelationToHOH(
+            m.spouse.relationToHOH === "Husband" || m.spouse.relationToHOH === "Wife"
+              ? m.spouse.relationToHOH
+              : defaultSpouseRelation(m.spouse)
+          );
+        }
         const deps = m.dependents ?? [];
-        setDependentPersons(deps.map((d) => ({ id: d.person.id, fullName: d.person.fullName, nameWithInitials: d.person.nameWithInitials })));
+        setDependentPersons(
+          deps.map((d) => ({
+            id: d.person.id,
+            fullName: d.person.fullName,
+            nameWithInitials: d.person.nameWithInitials,
+            group: d.group ?? "other",
+            relationToHOH: d.person.relationToHOH ?? defaultDependentRelation(d.group ?? "other"),
+          }))
+        );
         setLand(m.land ?? false);
         setHouseOwnership(m.houseOwnership ?? false);
         setCommercialProperties(m.commercialProperties ?? false);
@@ -166,6 +198,8 @@ export default function EditMembershipPage() {
       occupation: data.occupation || undefined,
       placeOfWork: data.placeOfWork || undefined,
       highestQualificationType: data.highestQualificationType || undefined,
+      highestQualificationTitle: data.highestQualificationTitle || undefined,
+      permanentDisability: data.permanentDisability || undefined,
       livingStatus: data.livingStatus || undefined,
       isMadarasaStudent: data.isMadarasaStudent,
     };
@@ -174,8 +208,22 @@ export default function EditMembershipPage() {
       body: JSON.stringify(payload),
     });
     if (addPersonOpen === "hod") setHodPerson(created);
-    if (addPersonOpen === "spouse") setSpousePerson(created);
-    if (addPersonOpen === "dependent") setDependentPersons((prev) => [...prev, { id: created.id, fullName: created.fullName, nameWithInitials: created.nameWithInitials }]);
+    if (addPersonOpen === "spouse") {
+      setSpousePerson(created);
+      setSpouseRelationToHOH(defaultSpouseRelation(created));
+    }
+    if (addPersonOpen === "dependent") {
+      setDependentPersons((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          fullName: created.fullName,
+          nameWithInitials: created.nameWithInitials,
+          group: "children",
+          relationToHOH: defaultDependentRelation("children"),
+        },
+      ]);
+    }
     setAddPersonOpen(null);
   }
 
@@ -200,6 +248,8 @@ export default function EditMembershipPage() {
       occupation: p.occupation ?? "",
       placeOfWork: p.placeOfWork ?? "",
       highestQualificationType: p.highestQualificationType ?? "",
+      highestQualificationTitle: p.highestQualificationTitle ?? "",
+      permanentDisability: p.permanentDisability ?? "",
       livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
     };
@@ -236,6 +286,8 @@ export default function EditMembershipPage() {
       occupation: data.occupation || undefined,
       placeOfWork: data.placeOfWork || undefined,
       highestQualificationType: data.highestQualificationType || undefined,
+      highestQualificationTitle: data.highestQualificationTitle || undefined,
+      permanentDisability: data.permanentDisability || undefined,
       livingStatus: data.livingStatus || undefined,
       isMadarasaStudent: data.isMadarasaStudent,
     };
@@ -244,9 +296,16 @@ export default function EditMembershipPage() {
       body: JSON.stringify(payload),
     });
     if (editPerson.role === "hod") setHodPerson(updated);
-    if (editPerson.role === "spouse") setSpousePerson(updated);
+    if (editPerson.role === "spouse") {
+      setSpousePerson(updated);
+      setSpouseRelationToHOH(defaultSpouseRelation(updated));
+    }
     if (editPerson.role === "dependent") {
-      setDependentPersons((prev) => prev.map((p) => (p.id === updated.id ? { id: updated.id, fullName: updated.fullName, nameWithInitials: updated.nameWithInitials } : p)));
+      setDependentPersons((prev) =>
+        prev.map((p) =>
+          p.id === updated.id ? { ...p, fullName: updated.fullName, nameWithInitials: updated.nameWithInitials } : p
+        )
+      );
     }
     setEditPerson(null);
   }
@@ -268,7 +327,12 @@ export default function EditMembershipPage() {
           membershipStatus,
           hodPersonId: hodPerson.id,
           spousePersonId: spousePerson?.id ?? null,
-          dependentPersonIds: dependentPersons.map((p) => p.id),
+          spouseRelationToHOH: spousePerson ? spouseRelationToHOH : null,
+          dependentPersons: dependentPersons.map((p) => ({
+            personId: p.id,
+            relationToHOH: p.relationToHOH,
+            group: p.group,
+          })),
           land,
           houseOwnership,
           commercialProperties,
@@ -405,7 +469,7 @@ export default function EditMembershipPage() {
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(spousePerson.id, "spouse")}>
                         Edit
                       </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setSpousePerson(null)}>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => { setSpousePerson(null); setSpouseRelationToHOH("Wife"); }}>
                         Clear
                       </Button>
                     </div>
@@ -425,7 +489,12 @@ export default function EditMembershipPage() {
                               <button
                                 type="button"
                                 className="w-full text-left px-3 py-2 hover:bg-muted text-sm"
-                                onClick={() => { setSpousePerson(p); setSpouseSearch(""); setSpouseResults([]); }}
+                                onClick={() => {
+                                  setSpousePerson(p);
+                                  setSpouseRelationToHOH(defaultSpouseRelation(p));
+                                  setSpouseSearch("");
+                                  setSpouseResults([]);
+                                }}
                               >
                                 {p.fullName} ({p.nameWithInitials}){p.nicNumber && ` – ${p.nicNumber}`}
                               </button>
@@ -437,6 +506,22 @@ export default function EditMembershipPage() {
                     <Button type="button" variant="outline" size="sm" onClick={() => setAddPersonOpen("spouse")}>
                       + Add new person
                     </Button>
+                  </div>
+                )}
+                {spousePerson && (
+                  <div className="space-y-2">
+                    <Label>Relation to head of household</Label>
+                    <Select
+                      value={spouseRelationToHOH}
+                      onValueChange={(v: "Husband" | "Wife") => setSpouseRelationToHOH(v)}
+                    >
+                      <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SPOUSE_RELATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
@@ -460,7 +545,49 @@ export default function EditMembershipPage() {
                           {p.fullName}{" "}
                           <span className="text-muted-foreground text-xs">({p.nameWithInitials})</span>
                         </span>
-                        <div className="flex gap-1">
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={p.group}
+                            onValueChange={(value: DependentGroup) =>
+                              setDependentPersons((prev) =>
+                                prev.map((item) =>
+                                  item.id === p.id
+                                    ? {
+                                        ...item,
+                                        group: value,
+                                        relationToHOH:
+                                          value === item.group
+                                            ? item.relationToHOH
+                                            : defaultDependentRelation(value),
+                                      }
+                                    : item
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="children">Children</SelectItem>
+                              <SelectItem value="other">Other dependents</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={p.relationToHOH}
+                            onValueChange={(value: RelationToHOH) =>
+                              setDependentPersons((prev) =>
+                                prev.map((item) =>
+                                  item.id === p.id ? { ...item, relationToHOH: value } : item
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {(p.group === "children" ? CHILD_RELATION_OPTIONS : OTHER_DEPENDENT_RELATION_OPTIONS).map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(p.id, "dependent", i)}>
                             Edit
                           </Button>
@@ -491,9 +618,18 @@ export default function EditMembershipPage() {
                             <button
                               type="button"
                               className="w-full text-left px-3 py-2 hover:bg-muted text-sm"
-                              onClick={() => {
-                                if (!dependentPersons.find((d) => d.id === p.id)) {
-                                  setDependentPersons((prev) => [...prev, { id: p.id, fullName: p.fullName, nameWithInitials: p.nameWithInitials }]);
+                            onClick={() => {
+                              if (!dependentPersons.find((d) => d.id === p.id)) {
+                                  setDependentPersons((prev) => [
+                                    ...prev,
+                                    {
+                                      id: p.id,
+                                      fullName: p.fullName,
+                                      nameWithInitials: p.nameWithInitials,
+                                      group: "children",
+                                      relationToHOH: defaultDependentRelation("children"),
+                                    },
+                                  ]);
                                 }
                                 setDepSearch("");
                                 setDepResults([]);

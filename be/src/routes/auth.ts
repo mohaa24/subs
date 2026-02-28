@@ -22,6 +22,9 @@ authRouter.post("/login", async (req, res) => {
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
+  if (user.role !== "super_user" && (!user.organization || !user.organization.isActive)) {
+    return res.status(403).json({ error: "Organization is inactive" });
+  }
   const payload: AuthPayload = {
     userId: user.id,
     email: user.email,
@@ -37,7 +40,15 @@ authRouter.post("/login", async (req, res) => {
       email: user.email,
       role: user.role,
       organizationId: user.organizationId,
-      organization: user.organization ? { id: user.organization.id, name: user.organization.name, slug: user.organization.slug } : null,
+      organization: user.organization
+        ? {
+            id: user.organization.id,
+            name: user.organization.name,
+            slug: user.organization.slug,
+            defaultMembershipFee: Number(user.organization.defaultMembershipFee),
+            isActive: user.organization.isActive,
+          }
+        : null,
     },
   });
 });
@@ -53,6 +64,14 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     email: user.email,
     role: user.role,
     organizationId: user.organizationId,
-    organization: user.organization ? { id: user.organization.id, name: user.organization.name, slug: user.organization.slug } : null,
+    organization: user.organization
+      ? {
+          id: user.organization.id,
+          name: user.organization.name,
+          slug: user.organization.slug,
+          defaultMembershipFee: Number(user.organization.defaultMembershipFee),
+          isActive: user.organization.isActive,
+        }
+      : null,
   });
 });

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { MembershipType, PaymentPeriod } from "@prisma/client";
+import { MembershipType, PaymentPeriod, RelationToHOH, DependentGroup, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
@@ -11,15 +11,51 @@ membershipsRouter.use(requireAuth);
 membershipsRouter.use(withOrgScope);
 
 const paymentPeriods: PaymentPeriod[] = ["Monthly", "Quarterly", "Annually"];
+const spouseRelations: RelationToHOH[] = ["Husband", "Wife"];
+const relationToHohOptions: RelationToHOH[] = [
+  "Husband",
+  "Wife",
+  "Son",
+  "Daughter",
+  "AdoptedSon",
+  "AdoptedDaughter",
+  "Father",
+  "Mother",
+  "StepFather",
+  "StepMother",
+  "Brother",
+  "Sister",
+  "Grandfather",
+  "Grandmother",
+  "Grandson",
+  "Granddaughter",
+  "SonInLaw",
+  "DaughterInLaw",
+  "Uncle",
+  "Aunt",
+  "Nephew",
+  "Niece",
+  "Cousin",
+  "FatherInLaw",
+  "MotherInLaw",
+];
+const dependentGroups: DependentGroup[] = ["children", "other"];
 
-const createSchema = z.object({
+const dependentSchema = z.object({
+  personId: z.string(),
+  relationToHOH: z.enum(relationToHohOptions as unknown as [string, ...string[]]),
+  group: z.enum(dependentGroups as unknown as [string, ...string[]]),
+});
+
+const baseSchema = z.object({
   organizationId: z.string().optional(),
   dateOfRegistration: z.string(),
   membershipType: z.enum(["Resident", "NonResident", "Widow", "Widower"] as [MembershipType, ...MembershipType[]]),
   membershipStatus: z.string().min(1),
   hodPersonId: z.string(),
   spousePersonId: z.string().optional().nullable(),
-  dependentPersonIds: z.array(z.string()).optional(),
+  spouseRelationToHOH: z.enum(spouseRelations as unknown as [string, ...string[]]).optional().nullable(),
+  dependentPersons: z.array(dependentSchema).optional(),
   land: z.boolean().optional(),
   houseOwnership: z.boolean().optional(),
   commercialProperties: z.boolean().optional(),
@@ -35,7 +71,28 @@ const createSchema = z.object({
   disability: z.boolean().optional(),
 });
 
-const updateSchema = createSchema.partial();
+const createSchema = baseSchema.superRefine((data, ctx) => {
+  if (data.spousePersonId && !data.spouseRelationToHOH) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["spouseRelationToHOH"],
+      message: "spouseRelationToHOH is required when spousePersonId is set",
+    });
+  }
+});
+
+const updateSchema = baseSchema.partial().superRefine((data, ctx) => {
+    if (data.spousePersonId && !data.spouseRelationToHOH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["spouseRelationToHOH"],
+        message: "spouseRelationToHOH is required when spousePersonId is set",
+      });
+    }
+  });
+
+type DependentInput = z.infer<typeof dependentSchema>;
+type PersonAssignment = { personId: string; relationToHOH: RelationToHOH | null };
 
 function getOrgId(req: { organizationId?: string; auth?: { organizationId: string | null; role: string }; query?: { organizationId?: string }; body?: { organizationId?: string } }) {
   const orgId = req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
@@ -44,6 +101,92 @@ function getOrgId(req: { organizationId?: string; auth?: { organizationId: strin
 
 function toDecimal(n: number) {
   return new Decimal(n);
+}
+
+function defaultDependentRelation(group: DependentGroup): RelationToHOH {
+  return group === "children" ? "Son" : "Cousin";
+}
+
+function buildAssignments(
+  hodPersonId: string,
+  spousePersonId: string | null,
+  spouseRelationToHOH: RelationToHOH | null,
+  dependentPersons: DependentInput[]
+): PersonAssignment[] {
+  const assignments: PersonAssignment[] = [{ personId: hodPersonId, relationToHOH: null }];
+  if (spousePersonId && spouseRelationToHOH) {
+    assignments.push({ personId: spousePersonId, relationToHOH: spouseRelationToHOH });
+  }
+  assignments.push(
+    ...dependentPersons.map((dep) => ({ personId: dep.personId, relationToHOH: dep.relationToHOH as RelationToHOH }))
+  );
+  return assignments;
+}
+
+function validateNoRoleDuplicates(assignments: PersonAssignment[]) {
+  const ids = assignments.map((a) => a.personId);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("A person cannot be assigned to multiple roles in the same membership");
+  }
+}
+
+async function ensurePeopleAssignable(
+  orgId: string,
+  assignments: PersonAssignment[],
+  currentMembershipId: string | null
+) {
+  const personIds = assignments.map((a) => a.personId);
+  const people = await prisma.person.findMany({
+    where: { id: { in: personIds } },
+    select: { id: true, fullName: true, organizationId: true, membershipId: true },
+  });
+
+  if (people.length !== personIds.length) {
+    throw new Error("One or more selected people were not found");
+  }
+
+  for (const p of people) {
+    if (p.organizationId !== orgId) {
+      throw new Error("One or more selected people belong to a different organization");
+    }
+    if (p.membershipId && p.membershipId !== currentMembershipId) {
+      throw new Error(`${p.fullName} already belongs to another membership`);
+    }
+  }
+
+  const personIdsSet = new Set(personIds);
+  const memberships = await prisma.membership.findMany({
+    where: {
+      organizationId: orgId,
+      ...(currentMembershipId ? { NOT: { id: currentMembershipId } } : {}),
+      OR: [
+        { hodPersonId: { in: personIds } },
+        { spousePersonId: { in: personIds } },
+        { dependents: { some: { personId: { in: personIds } } } },
+      ],
+    },
+    select: {
+      id: true,
+      hodPersonId: true,
+      spousePersonId: true,
+      dependents: { select: { personId: true } },
+    },
+  });
+
+  if (memberships.length > 0) {
+    const conflicted = new Set<string>();
+    for (const m of memberships) {
+      if (personIdsSet.has(m.hodPersonId)) conflicted.add(m.hodPersonId);
+      if (m.spousePersonId && personIdsSet.has(m.spousePersonId)) conflicted.add(m.spousePersonId);
+      for (const dep of m.dependents) {
+        if (personIdsSet.has(dep.personId)) conflicted.add(dep.personId);
+      }
+    }
+    if (conflicted.size > 0) {
+      const conflictPerson = people.find((p) => conflicted.has(p.id));
+      throw new Error(`${conflictPerson?.fullName ?? "A selected person"} already belongs to another membership`);
+    }
+  }
 }
 
 async function nextMembershipNo(organizationId: string): Promise<string> {
@@ -56,13 +199,45 @@ async function nextMembershipNo(organizationId: string): Promise<string> {
   return `${slug}-${year}-${String(count + 1).padStart(5, "0")}`;
 }
 
+async function applyPersonLinks(
+  tx: Prisma.TransactionClient,
+  membershipId: string,
+  oldPersonIds: string[],
+  assignments: PersonAssignment[]
+) {
+  const newIds = assignments.map((a) => a.personId);
+  const removedIds = oldPersonIds.filter((id) => !newIds.includes(id));
+  if (removedIds.length > 0) {
+    await tx.person.updateMany({
+      where: { id: { in: removedIds } },
+      data: { membershipId: null, relationToHOH: null },
+    });
+  }
+
+  for (const assignment of assignments) {
+    await tx.person.update({
+      where: { id: assignment.personId },
+      data: {
+        membershipId,
+        relationToHOH: assignment.relationToHOH,
+      },
+    });
+  }
+}
+
 membershipsRouter.get("/", async (req, res) => {
   const orgId = getOrgId(req as any);
   if (!orgId && req.auth!.role !== "super_user") return res.status(400).json({ error: "Organization scope required" });
   const q = (req.query.q as string)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
-  const where: { organizationId?: string; OR?: Array<{ membershipNo?: { contains: string; mode: "insensitive" }; hod?: { fullName?: { contains: string; mode: "insensitive" }; nameWithInitials?: { contains: string; mode: "insensitive" } } }> } = {};
+  const where: {
+    organizationId?: string;
+    OR?: Array<{
+      membershipNo?: { contains: string; mode: "insensitive" };
+      hod?: { fullName?: { contains: string; mode: "insensitive" }; nameWithInitials?: { contains: string; mode: "insensitive" } };
+    }>;
+  } = {};
   if (orgId) where.organizationId = orgId;
   if (q) {
     where.OR = [
@@ -78,9 +253,13 @@ membershipsRouter.get("/", async (req, res) => {
       take: limit,
       orderBy: { dateOfRegistration: "desc" },
       include: {
-        hod: { select: { id: true, nameWithInitials: true, fullName: true, nicNumber: true } },
-        spouse: { select: { id: true, nameWithInitials: true, fullName: true } },
-        dependents: { include: { person: { select: { id: true, nameWithInitials: true, fullName: true } } } },
+        hod: { select: { id: true, nameWithInitials: true, fullName: true, nicNumber: true, relationToHOH: true } },
+        spouse: { select: { id: true, nameWithInitials: true, fullName: true, relationToHOH: true } },
+        dependents: {
+          include: {
+            person: { select: { id: true, nameWithInitials: true, fullName: true, relationToHOH: true } },
+          },
+        },
       },
     }),
     prisma.membership.count({ where }),
@@ -128,8 +307,20 @@ membershipsRouter.post("/", async (req, res) => {
   if (req.auth!.role !== "super_user" && orgId !== req.auth!.organizationId) {
     return res.status(403).json({ error: "Forbidden" });
   }
+
+  const dependentPersons = parsed.data.dependentPersons ?? [];
+  const spousePersonId = parsed.data.spousePersonId ?? null;
+  const spouseRelationToHOH = parsed.data.spouseRelationToHOH ?? null;
+  const assignments = buildAssignments(parsed.data.hodPersonId, spousePersonId, spouseRelationToHOH as RelationToHOH | null, dependentPersons);
+
+  try {
+    validateNoRoleDuplicates(assignments);
+    await ensurePeopleAssignable(orgId, assignments, null);
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
+  }
+
   const membershipNo = await nextMembershipNo(orgId);
-  const dependentPersonIds = parsed.data.dependentPersonIds ?? [];
   const payload = {
     organizationId: orgId,
     membershipNo,
@@ -137,7 +328,7 @@ membershipsRouter.post("/", async (req, res) => {
     membershipType: parsed.data.membershipType,
     membershipStatus: parsed.data.membershipStatus,
     hodPersonId: parsed.data.hodPersonId,
-    spousePersonId: parsed.data.spousePersonId || null,
+    spousePersonId,
     land: parsed.data.land ?? false,
     houseOwnership: parsed.data.houseOwnership ?? false,
     commercialProperties: parsed.data.commercialProperties ?? false,
@@ -153,57 +344,135 @@ membershipsRouter.post("/", async (req, res) => {
     disability: parsed.data.disability ?? false,
     createdByUserId: req.auth!.userId,
   };
-  const membership = await prisma.membership.create({
-    data: {
-      ...payload,
-      dependents: {
-        create: dependentPersonIds.map((personId, order) => ({ personId, order })),
+
+  const membership = await prisma.$transaction(async (tx) => {
+    const created = await tx.membership.create({
+      data: {
+        ...payload,
+        dependents: {
+          create: dependentPersons.map((dep, order) => ({
+            personId: dep.personId,
+            group: dep.group as DependentGroup,
+            order,
+          })),
+        },
       },
-    },
-    include: {
-      hod: true,
-      spouse: true,
-      dependents: { include: { person: true } },
-    },
+      include: {
+        hod: true,
+        spouse: true,
+        dependents: { include: { person: true } },
+      },
+    });
+    await applyPersonLinks(tx, created.id, [], assignments);
+    return created;
   });
+
   return res.status(201).json(membership);
 });
 
 membershipsRouter.patch("/:id", async (req, res) => {
   const existing = await prisma.membership.findUnique({
     where: { id: req.params.id },
-    include: { dependents: true },
+    include: {
+      spouse: { select: { id: true, relationToHOH: true } },
+      dependents: {
+        include: {
+          person: { select: { id: true, relationToHOH: true } },
+        },
+      },
+    },
   });
   if (!existing) return res.status(404).json({ error: "Membership not found" });
   if (req.auth!.organizationId && existing.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
     return res.status(403).json({ error: "Forbidden" });
   }
+
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
+
+  const nextHodPersonId = parsed.data.hodPersonId ?? existing.hodPersonId;
+  const nextSpousePersonId =
+    parsed.data.spousePersonId !== undefined ? parsed.data.spousePersonId ?? null : existing.spousePersonId;
+
+  let nextSpouseRelationToHOH: RelationToHOH | null = null;
+  if (nextSpousePersonId) {
+    if (parsed.data.spouseRelationToHOH) {
+      nextSpouseRelationToHOH = parsed.data.spouseRelationToHOH as RelationToHOH;
+    } else if (existing.spouse?.id === nextSpousePersonId && existing.spouse?.relationToHOH) {
+      nextSpouseRelationToHOH = existing.spouse.relationToHOH as RelationToHOH;
+    } else {
+      return res.status(400).json({ error: "spouseRelationToHOH is required when spousePersonId is set" });
+    }
+  }
+
+  const nextDependentPersons: DependentInput[] =
+    parsed.data.dependentPersons ??
+    existing.dependents.map((dep) => ({
+      personId: dep.personId,
+      group: dep.group,
+      relationToHOH: (dep.person.relationToHOH as RelationToHOH | null) ?? defaultDependentRelation(dep.group),
+    }));
+
+  const assignments = buildAssignments(
+    nextHodPersonId,
+    nextSpousePersonId,
+    nextSpouseRelationToHOH,
+    nextDependentPersons
+  );
+
+  try {
+    validateNoRoleDuplicates(assignments);
+    await ensurePeopleAssignable(existing.organizationId, assignments, existing.id);
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
+  }
+
+  const oldPersonIds = [
+    existing.hodPersonId,
+    ...(existing.spousePersonId ? [existing.spousePersonId] : []),
+    ...existing.dependents.map((d) => d.personId),
+  ];
+
   const data: any = { ...parsed.data };
   delete data.organizationId;
-  delete data.dependentPersonIds;
+  delete data.dependentPersons;
+  delete data.spouseRelationToHOH;
+
   if (data.dateOfRegistration) data.dateOfRegistration = new Date(data.dateOfRegistration);
   if (data.membershipFee !== undefined) data.membershipFee = toDecimal(data.membershipFee);
   if (data.additionalVoluntaryContributions !== undefined) data.additionalVoluntaryContributions = toDecimal(data.additionalVoluntaryContributions);
   if (data.membershipFeeDiscount !== undefined) data.membershipFeeDiscount = toDecimal(data.membershipFeeDiscount);
   if (data.totalContribution !== undefined) data.totalContribution = toDecimal(data.totalContribution);
-  if (parsed.data.dependentPersonIds !== undefined) {
-    await prisma.membershipDependent.deleteMany({ where: { membershipId: req.params.id } });
-    data.dependents = {
-      create: parsed.data.dependentPersonIds.map((personId, order) => ({ personId, order })),
-    };
-  }
-  const membership = await prisma.membership.update({
-    where: { id: req.params.id },
-    data,
-    include: {
-      hod: true,
-      spouse: true,
-      dependents: { include: { person: true } },
-    },
+
+  const membership = await prisma.$transaction(async (tx) => {
+    const updated = await tx.membership.update({
+      where: { id: req.params.id },
+      data: {
+        ...data,
+        spousePersonId: nextSpousePersonId,
+        dependents:
+          parsed.data.dependentPersons !== undefined
+            ? {
+                deleteMany: {},
+                create: nextDependentPersons.map((dep, order) => ({
+                  personId: dep.personId,
+                  group: dep.group as DependentGroup,
+                  order,
+                })),
+              }
+            : undefined,
+      },
+      include: {
+        hod: true,
+        spouse: true,
+        dependents: { include: { person: true } },
+      },
+    });
+    await applyPersonLinks(tx, updated.id, oldPersonIds, assignments);
+    return updated;
   });
+
   return res.json(membership);
 });

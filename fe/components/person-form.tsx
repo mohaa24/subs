@@ -21,13 +21,15 @@ import {
   IDENTITY_TYPES,
   BLOOD_GROUPS,
   HIGHEST_QUALIFICATION_TYPES,
+  WORK_LOCATIONS,
+  PERMANENT_DISABILITY_OPTIONS,
 } from "@/lib/constants";
 
 // Input sanitizers - only allow valid characters
 const onlyPhone = (v: string) => v.replace(/[^\d+\s\-]/g, "");
 const onlyNIC = (v: string) => v.replace(/[^\dVAva]/g, "").toUpperCase();
 const onlyAlphanumeric = (v: string) => v.replace(/[^\w\s\-]/g, "");
-const onlyLettersAndSpaces = (v: string) => v.replace(/[^\w\s.'\-]/g, "").replace(/\s+/g, " ").trim();
+const onlyLettersAndSpaces = (v: string) => v.replace(/[^\w\s.'\-]/g, "").replace(/\s{2,}/g, " ");
 
 const MARITAL_OPTIONS = [
   { value: "single", label: "Single" },
@@ -56,6 +58,8 @@ export interface PersonFormData {
   occupation: string;
   placeOfWork: string;
   highestQualificationType: string;
+  highestQualificationTitle: string;
+  permanentDisability: string;
   livingStatus: string;
   isMadarasaStudent: boolean;
 }
@@ -80,6 +84,8 @@ const defaultPerson: PersonFormData = {
   occupation: "",
   placeOfWork: "",
   highestQualificationType: "",
+  highestQualificationTitle: "",
+  permanentDisability: "",
   livingStatus: "Active",
   isMadarasaStudent: false,
 };
@@ -94,6 +100,29 @@ const REQUIRED_FIELDS: (keyof PersonFormData)[] = [
   "residentType",
   "address",
 ];
+
+function Section({
+  title,
+  children,
+  variant = "default",
+}: {
+  title: string;
+  children: React.ReactNode;
+  variant?: "default" | "alt";
+}) {
+  return (
+    <div
+      className={`rounded-lg px-4 py-4 sm:px-5 sm:py-5 ${
+        variant === "alt" ? "bg-muted/50" : "bg-muted/25"
+      }`}
+    >
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+        {title}
+      </h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
+    </div>
+  );
+}
 
 export function PersonForm({
   initial,
@@ -179,27 +208,6 @@ export function PersonForm({
   const isNIC = form.identityType === "NIC";
 
   const today = new Date().toISOString().slice(0, 10);
-
-  const Section = ({
-    title,
-    children,
-    variant = "default",
-  }: {
-    title: string;
-    children: React.ReactNode;
-    variant?: "default" | "alt";
-  }) => (
-    <div
-      className={`rounded-lg px-4 py-4 sm:px-5 sm:py-5 ${
-        variant === "alt" ? "bg-muted/50" : "bg-muted/25"
-      }`}
-    >
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
-        {title}
-      </h4>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
-    </div>
-  );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -458,14 +466,22 @@ export function PersonForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Place of work {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
-          <Input
-            value={form.placeOfWork}
-            onChange={(e) => setForm((f) => ({ ...f, placeOfWork: e.target.value }))}
-            placeholder="Company or institution name"
-            disabled={isUnder16}
-            className={isUnder16 ? "opacity-60" : ""}
-          />
+          <Label>Work location {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+          <Select
+            value={form.placeOfWork || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, placeOfWork: v }))}
+          >
+            <SelectTrigger disabled={isUnder16} className={isUnder16 ? "opacity-60" : ""}>
+              <SelectValue placeholder="Select location" />
+            </SelectTrigger>
+            <SelectContent>
+              {WORK_LOCATIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label>Highest qualification type</Label>
@@ -478,6 +494,34 @@ export function PersonForm({
             </SelectTrigger>
             <SelectContent>
               {HIGHEST_QUALIFICATION_TYPES.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Highest Qualification Title</Label>
+          <Input
+            value={form.highestQualificationTitle}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, highestQualificationTitle: e.target.value }))
+            }
+            placeholder="e.g. BSc in Computer Science"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Permanent Disability</Label>
+          <Select
+            value={form.permanentDisability || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, permanentDisability: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {PERMANENT_DISABILITY_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>

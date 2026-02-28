@@ -18,7 +18,7 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) {
@@ -28,6 +28,18 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
     const secret = process.env.JWT_SECRET || "dev-secret";
     const decoded = jwt.verify(token, secret) as AuthPayload;
     req.auth = decoded;
+    if (decoded.role !== UserRole.super_user) {
+      if (!decoded.organizationId) {
+        return res.status(403).json({ error: "Organization scope required" });
+      }
+      const org = await prisma.organization.findUnique({
+        where: { id: decoded.organizationId },
+        select: { isActive: true },
+      });
+      if (!org || !org.isActive) {
+        return res.status(403).json({ error: "Organization is inactive" });
+      }
+    }
     next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });

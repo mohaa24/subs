@@ -9,8 +9,9 @@ exports.requireSuperUser = requireSuperUser;
 exports.requireAdmin = requireAdmin;
 exports.withOrgScope = withOrgScope;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const prisma_js_1 = require("../lib/prisma.js");
 const client_1 = require("@prisma/client");
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!token) {
@@ -20,6 +21,18 @@ function requireAuth(req, res, next) {
         const secret = process.env.JWT_SECRET || "dev-secret";
         const decoded = jsonwebtoken_1.default.verify(token, secret);
         req.auth = decoded;
+        if (decoded.role !== client_1.UserRole.super_user) {
+            if (!decoded.organizationId) {
+                return res.status(403).json({ error: "Organization scope required" });
+            }
+            const org = await prisma_js_1.prisma.organization.findUnique({
+                where: { id: decoded.organizationId },
+                select: { isActive: true },
+            });
+            if (!org || !org.isActive) {
+                return res.status(403).json({ error: "Organization is inactive" });
+            }
+        }
         next();
     }
     catch {

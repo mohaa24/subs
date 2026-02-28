@@ -23,6 +23,16 @@ const titles = ["Mr", "Master", "Miss", "Mrs", "Ms", "Dr"];
 const identityTypes = ["NIC", "Passport", "DrivingLicense"];
 const bloodGroups = ["A_pos", "A_neg", "B_pos", "B_neg", "AB_pos", "AB_neg", "O_pos", "O_neg"];
 const highestQualTypes = ["O/L", "A/L", "Degree", "Masters", "Phd", "Diploma", "None", "In School"];
+const permanentDisabilityOptions = [
+    "No disability",
+    "Physical disability, problem walking or moving",
+    "Vision problem, difficulty seeing",
+    "Hearing problem, difficulty hearing",
+    "Mental health problem",
+    "Long-term illness",
+    "More than one disability",
+    "Other",
+];
 const createSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
     title: zod_1.z.enum(titles),
@@ -44,6 +54,8 @@ const createSchema = zod_1.z.object({
     occupation: zod_1.z.string().optional(),
     placeOfWork: zod_1.z.string().optional(),
     highestQualificationType: zod_1.z.enum(highestQualTypes).optional(),
+    highestQualificationTitle: zod_1.z.string().optional(),
+    permanentDisability: zod_1.z.enum(permanentDisabilityOptions).optional(),
     livingStatus: zod_1.z.enum(livingStatuses).optional(),
     isMadarasaStudent: zod_1.z.boolean().optional(),
 });

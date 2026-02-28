@@ -33,7 +33,13 @@ export interface User {
   email: string;
   role: UserRole;
   organizationId: string | null;
-  organization?: { id: string; name: string; slug: string } | null;
+  organization?: {
+    id: string;
+    name: string;
+    slug: string;
+    defaultMembershipFee?: number;
+    isActive?: boolean;
+  } | null;
 }
 
 export type ResidentType =
@@ -47,9 +53,42 @@ export type ResidentType =
 
 export type LivingStatus = "Active" | "Deceased" | "PermanentlyRelocated";
 
+export type RelationToHOH =
+  | "Husband"
+  | "Wife"
+  | "Son"
+  | "Daughter"
+  | "AdoptedSon"
+  | "AdoptedDaughter"
+  | "Father"
+  | "Mother"
+  | "StepFather"
+  | "StepMother"
+  | "Brother"
+  | "Sister"
+  | "Grandfather"
+  | "Grandmother"
+  | "Grandson"
+  | "Granddaughter"
+  | "SonInLaw"
+  | "DaughterInLaw"
+  | "Uncle"
+  | "Aunt"
+  | "Nephew"
+  | "Niece"
+  | "Cousin"
+  | "FatherInLaw"
+  | "MotherInLaw"
+  | "spouse"
+  | "child"
+  | "other";
+
+export type DependentGroup = "children" | "other";
+
 export interface Person {
   id: string;
   organizationId: string;
+  membershipId?: string | null;
   title?: "Mr" | "Master" | "Miss" | "Mrs" | "Ms" | "Dr" | null;
   nameWithInitials: string;
   fullName: string;
@@ -69,6 +108,9 @@ export interface Person {
   occupation?: string | null;
   placeOfWork?: string | null;
   highestQualificationType?: string | null;
+  highestQualificationTitle?: string | null;
+  permanentDisability?: string | null;
+  relationToHOH?: RelationToHOH | null;
   livingStatus?: LivingStatus | null;
   isMadarasaStudent: boolean;
 }
@@ -84,7 +126,10 @@ export interface Membership {
   spousePersonId?: string | null;
   hod?: Person & { id: string; nameWithInitials: string; fullName: string; nicNumber?: string | null };
   spouse?: (Person & { id: string; nameWithInitials: string; fullName: string }) | null;
-  dependents?: Array<{ person: Person & { id: string; nameWithInitials: string; fullName: string } }>;
+  dependents?: Array<{
+    group?: DependentGroup;
+    person: Person & { id: string; nameWithInitials: string; fullName: string; relationToHOH?: RelationToHOH | null };
+  }>;
   land: boolean;
   houseOwnership: boolean;
   commercialProperties: boolean;
@@ -106,6 +151,14 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  defaultMembershipFee?: number;
+  isActive?: boolean;
+  adminsCount?: number;
+  usersCount?: number;
+  personsCount?: number;
+  membershipsCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type DueStatus = "pending" | "partial" | "paid" | "overdue";
