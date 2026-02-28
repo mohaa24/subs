@@ -15,8 +15,12 @@ import { dashboardRouter } from "./routes/dashboard.js";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const allowedOrigins = process.env.FE_ORIGIN
+  ? process.env.FE_ORIGIN.split(",").map((o) => o.trim())
+  : ["http://localhost:3000", "http://localhost:3001"];
+
 app.use(cors({ 
-  origin: process.env.FE_ORIGIN || ["http://localhost:3000", "http://localhost:3001"], 
+  origin: allowedOrigins,
   credentials: true 
 }));
 app.use(express.json());
