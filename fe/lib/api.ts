@@ -124,6 +124,8 @@ export interface Membership {
   membershipStatus: string;
   hodPersonId: string;
   spousePersonId?: string | null;
+  isZakathEligible?: boolean | null;
+  areaCode?: number | null;
   hod?: Person & { id: string; nameWithInitials: string; fullName: string; nicNumber?: string | null };
   spouse?: (Person & { id: string; nameWithInitials: string; fullName: string }) | null;
   dependents?: Array<{

@@ -181,7 +181,7 @@ export default function OrganizationsPage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>{isSuperUser ? "All organizations" : "Organization details"}</CardTitle>
+            <CardTitle>{isSuperUser ? "All Organizations" : "Organization Details"}</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -276,7 +276,7 @@ export default function OrganizationsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add organization</DialogTitle>
+            <DialogTitle>Add Organization</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-2">

@@ -10,7 +10,7 @@ exports.membershipsRouter = (0, express_1.Router)();
 exports.membershipsRouter.use(auth_js_1.requireAuth);
 exports.membershipsRouter.use(auth_js_1.withOrgScope);
 const paymentPeriods = ["Monthly", "Quarterly", "Annually"];
-const spouseRelations = ["Husband", "Wife"];
+const spouseRelations = ["Wife"];
 const relationToHohOptions = [
     "Husband",
     "Wife",
@@ -53,6 +53,8 @@ const baseSchema = zod_1.z.object({
     spousePersonId: zod_1.z.string().optional().nullable(),
     spouseRelationToHOH: zod_1.z.enum(spouseRelations).optional().nullable(),
     dependentPersons: zod_1.z.array(dependentSchema).optional(),
+    isZakathEligible: zod_1.z.boolean().optional().nullable(),
+    areaCode: zod_1.z.number().int().min(1).max(6).optional().nullable(),
     land: zod_1.z.boolean().optional(),
     houseOwnership: zod_1.z.boolean().optional(),
     commercialProperties: zod_1.z.boolean().optional(),
@@ -67,24 +69,8 @@ const baseSchema = zod_1.z.object({
     totalContribution: zod_1.z.number().min(0),
     disability: zod_1.z.boolean().optional(),
 });
-const createSchema = baseSchema.superRefine((data, ctx) => {
-    if (data.spousePersonId && !data.spouseRelationToHOH) {
-        ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
-            path: ["spouseRelationToHOH"],
-            message: "spouseRelationToHOH is required when spousePersonId is set",
-        });
-    }
-});
-const updateSchema = baseSchema.partial().superRefine((data, ctx) => {
-    if (data.spousePersonId && !data.spouseRelationToHOH) {
-        ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
-            path: ["spouseRelationToHOH"],
-            message: "spouseRelationToHOH is required when spousePersonId is set",
-        });
-    }
-});
+const createSchema = baseSchema;
+const updateSchema = baseSchema.partial();
 function getOrgId(req) {
     const orgId = req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
     return orgId;
@@ -270,7 +256,7 @@ exports.membershipsRouter.post("/", async (req, res) => {
     }
     const dependentPersons = parsed.data.dependentPersons ?? [];
     const spousePersonId = parsed.data.spousePersonId ?? null;
-    const spouseRelationToHOH = parsed.data.spouseRelationToHOH ?? null;
+    const spouseRelationToHOH = spousePersonId ? "Wife" : null;
     const assignments = buildAssignments(parsed.data.hodPersonId, spousePersonId, spouseRelationToHOH, dependentPersons);
     try {
         validateNoRoleDuplicates(assignments);
@@ -288,6 +274,8 @@ exports.membershipsRouter.post("/", async (req, res) => {
         membershipStatus: parsed.data.membershipStatus,
         hodPersonId: parsed.data.hodPersonId,
         spousePersonId,
+        isZakathEligible: parsed.data.isZakathEligible ?? null,
+        areaCode: parsed.data.areaCode ?? null,
         land: parsed.data.land ?? false,
         houseOwnership: parsed.data.houseOwnership ?? false,
         commercialProperties: parsed.data.commercialProperties ?? false,
@@ -349,18 +337,7 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
     }
     const nextHodPersonId = parsed.data.hodPersonId ?? existing.hodPersonId;
     const nextSpousePersonId = parsed.data.spousePersonId !== undefined ? parsed.data.spousePersonId ?? null : existing.spousePersonId;
-    let nextSpouseRelationToHOH = null;
-    if (nextSpousePersonId) {
-        if (parsed.data.spouseRelationToHOH) {
-            nextSpouseRelationToHOH = parsed.data.spouseRelationToHOH;
-        }
-        else if (existing.spouse?.id === nextSpousePersonId && existing.spouse?.relationToHOH) {
-            nextSpouseRelationToHOH = existing.spouse.relationToHOH;
-        }
-        else {
-            return res.status(400).json({ error: "spouseRelationToHOH is required when spousePersonId is set" });
-        }
-    }
+    const nextSpouseRelationToHOH = nextSpousePersonId ? "Wife" : null;
     const nextDependentPersons = parsed.data.dependentPersons ??
         existing.dependents.map((dep) => ({
             personId: dep.personId,

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, type Person } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { Search, Plus, ChevronLeft, ChevronRight, Pencil, Eye } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
@@ -257,11 +258,11 @@ function PersonsPageContent() {
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
         <Breadcrumb
-          items={[{ label: "Dashboard", href: "/" }, { label: "People" }]}
+          items={[{ label: "Dashboard", href: "/" }, { label: "Manage People" }]}
         />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-          <h1 className="text-xl font-semibold text-foreground">People</h1>
+          <h1 className="text-xl font-semibold text-foreground">Manage People</h1>
           <div className="flex items-center gap-2">
             {isSuperUser && (
               <Select
@@ -272,7 +273,7 @@ function PersonsPageContent() {
                 }}
               >
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Select organization" />
+                  <SelectValue placeholder="Select Organization" />
                 </SelectTrigger>
                 <SelectContent>
                   {orgs.map((o) => (
@@ -290,7 +291,7 @@ function PersonsPageContent() {
               disabled={!effectiveOrgId}
             >
               <Plus className="h-4 w-4" />
-              Add person
+              Add Person
             </Button>
           </div>
         </div>
@@ -298,7 +299,7 @@ function PersonsPageContent() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
-              Search people
+              Search People
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -354,13 +355,21 @@ function PersonsPageContent() {
                           <td className="p-3">{p.email ?? "—"}</td>
                           <td className="p-3">{p.livingStatus ?? "Active"}</td>
                           <td className="p-3">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openEdit(p)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Link href={`/persons/${p.id}`}>
+                                <Button variant="ghost" size="sm" aria-label="View Person">
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openEdit(p)}
+                                aria-label="Edit Person"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -407,12 +416,12 @@ function PersonsPageContent() {
       <Dialog open={addOpen} onOpenChange={(o) => !o && setAddOpen(false)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add new person</DialogTitle>
+            <DialogTitle>Add New Person</DialogTitle>
           </DialogHeader>
           <PersonForm
             onSubmit={handleCreatePerson}
             onCancel={() => setAddOpen(false)}
-            submitLabel={saving ? "Adding…" : "Add person"}
+            submitLabel={saving ? "Adding…" : "Add Person"}
             disabled={saving}
           />
         </DialogContent>
@@ -425,7 +434,7 @@ function PersonsPageContent() {
       >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit person</DialogTitle>
+            <DialogTitle>Edit Person</DialogTitle>
           </DialogHeader>
           {editPerson?.initial && (
             <PersonForm

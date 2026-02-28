@@ -68,14 +68,14 @@ function MembersContent() {
           <Link href="/members/new">
             <Button size="sm" className="gap-1.5">
               <Plus className="h-4 w-4" />
-              New membership
+              New Membership
             </Button>
           </Link>
         </div>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Search memberships</CardTitle>
+            <CardTitle className="text-sm font-medium">Search Memberships</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleSearch} className="flex gap-2">

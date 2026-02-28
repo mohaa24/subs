@@ -11,7 +11,7 @@ membershipsRouter.use(requireAuth);
 membershipsRouter.use(withOrgScope);
 
 const paymentPeriods: PaymentPeriod[] = ["Monthly", "Quarterly", "Annually"];
-const spouseRelations: RelationToHOH[] = ["Husband", "Wife"];
+const spouseRelations: RelationToHOH[] = ["Wife"];
 const relationToHohOptions: RelationToHOH[] = [
   "Husband",
   "Wife",
@@ -56,6 +56,8 @@ const baseSchema = z.object({
   spousePersonId: z.string().optional().nullable(),
   spouseRelationToHOH: z.enum(spouseRelations as unknown as [string, ...string[]]).optional().nullable(),
   dependentPersons: z.array(dependentSchema).optional(),
+  isZakathEligible: z.boolean().optional().nullable(),
+  areaCode: z.number().int().min(1).max(6).optional().nullable(),
   land: z.boolean().optional(),
   houseOwnership: z.boolean().optional(),
   commercialProperties: z.boolean().optional(),
@@ -71,25 +73,9 @@ const baseSchema = z.object({
   disability: z.boolean().optional(),
 });
 
-const createSchema = baseSchema.superRefine((data, ctx) => {
-  if (data.spousePersonId && !data.spouseRelationToHOH) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["spouseRelationToHOH"],
-      message: "spouseRelationToHOH is required when spousePersonId is set",
-    });
-  }
-});
+const createSchema = baseSchema;
 
-const updateSchema = baseSchema.partial().superRefine((data, ctx) => {
-    if (data.spousePersonId && !data.spouseRelationToHOH) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["spouseRelationToHOH"],
-        message: "spouseRelationToHOH is required when spousePersonId is set",
-      });
-    }
-  });
+const updateSchema = baseSchema.partial();
 
 type DependentInput = z.infer<typeof dependentSchema>;
 type PersonAssignment = { personId: string; relationToHOH: RelationToHOH | null };
@@ -310,7 +296,7 @@ membershipsRouter.post("/", async (req, res) => {
 
   const dependentPersons = parsed.data.dependentPersons ?? [];
   const spousePersonId = parsed.data.spousePersonId ?? null;
-  const spouseRelationToHOH = parsed.data.spouseRelationToHOH ?? null;
+  const spouseRelationToHOH: RelationToHOH | null = spousePersonId ? "Wife" : null;
   const assignments = buildAssignments(parsed.data.hodPersonId, spousePersonId, spouseRelationToHOH as RelationToHOH | null, dependentPersons);
 
   try {
@@ -329,6 +315,8 @@ membershipsRouter.post("/", async (req, res) => {
     membershipStatus: parsed.data.membershipStatus,
     hodPersonId: parsed.data.hodPersonId,
     spousePersonId,
+    isZakathEligible: parsed.data.isZakathEligible ?? null,
+    areaCode: parsed.data.areaCode ?? null,
     land: parsed.data.land ?? false,
     houseOwnership: parsed.data.houseOwnership ?? false,
     commercialProperties: parsed.data.commercialProperties ?? false,
@@ -396,16 +384,7 @@ membershipsRouter.patch("/:id", async (req, res) => {
   const nextSpousePersonId =
     parsed.data.spousePersonId !== undefined ? parsed.data.spousePersonId ?? null : existing.spousePersonId;
 
-  let nextSpouseRelationToHOH: RelationToHOH | null = null;
-  if (nextSpousePersonId) {
-    if (parsed.data.spouseRelationToHOH) {
-      nextSpouseRelationToHOH = parsed.data.spouseRelationToHOH as RelationToHOH;
-    } else if (existing.spouse?.id === nextSpousePersonId && existing.spouse?.relationToHOH) {
-      nextSpouseRelationToHOH = existing.spouse.relationToHOH as RelationToHOH;
-    } else {
-      return res.status(400).json({ error: "spouseRelationToHOH is required when spousePersonId is set" });
-    }
-  }
+  const nextSpouseRelationToHOH: RelationToHOH | null = nextSpousePersonId ? "Wife" : null;
 
   const nextDependentPersons: DependentInput[] =
     parsed.data.dependentPersons ??

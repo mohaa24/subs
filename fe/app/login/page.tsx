@@ -45,7 +45,7 @@ export default function LoginPage() {
             <Users className="h-7 w-7 text-primary" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            Welcome back
+            Welcome Back
           </h1>
           <p className="text-muted-foreground text-sm mt-1.5">
             Sign in to your organization account

@@ -158,7 +158,7 @@ export default function PaymentsPage() {
         <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Payments" }]} />
 
         <div className="flex items-center justify-between mb-5">
-          <h1 className="text-xl font-semibold text-foreground">Payments &amp; dues</h1>
+          <h1 className="text-xl font-semibold text-foreground">Payments &amp; Dues</h1>
           {canManage && (
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={handleMarkOverdue}>
@@ -178,7 +178,7 @@ export default function PaymentsPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Dues overview</CardTitle>
+              <CardTitle className="text-sm font-medium">Dues Overview</CardTitle>
               <Select
                 value={statusFilter}
                 onValueChange={(v) => {
@@ -309,7 +309,7 @@ export default function PaymentsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Record payment – {payDue?.membership?.membershipNo} ({payDue?.period})
+              Record Payment – {payDue?.membership?.membershipNo} ({payDue?.period})
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRecordPayment} className="space-y-4">
@@ -340,7 +340,7 @@ export default function PaymentsPage() {
             {payError && <p className="text-sm text-destructive">{payError}</p>}
             <div className="flex gap-2">
               <Button type="submit" disabled={paySubmitting}>
-                {paySubmitting ? "Recording…" : "Record payment"}
+                {paySubmitting ? "Recording…" : "Record Payment"}
               </Button>
               <Button type="button" variant="outline" onClick={() => setPayDialogOpen(false)}>
                 Cancel

@@ -259,7 +259,7 @@ export function PersonForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>Preferred name</Label>
+          <Label>Preferred Name</Label>
           <Input
             value={form.preferredName}
             onChange={(e) =>
@@ -314,15 +314,18 @@ export function PersonForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Blood group</Label>
+          <Label>Blood Group</Label>
           <Select
-            value={form.bloodGroup || undefined}
-            onValueChange={(v) => setForm((f) => ({ ...f, bloodGroup: v }))}
+            value={form.bloodGroup || "not_set"}
+            onValueChange={(v) =>
+              setForm((f) => ({ ...f, bloodGroup: v === "not_set" ? "" : v }))
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="not_set">Not Set</SelectItem>
               {BLOOD_GROUPS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
@@ -365,7 +368,7 @@ export function PersonForm({
 
       <Section title="Identity" variant="default">
         <div className="space-y-2">
-          <Label>ID type {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+          <Label>ID Type {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
             value={form.identityType || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, identityType: v }))}
@@ -384,7 +387,7 @@ export function PersonForm({
         </div>
         {isNIC ? (
           <div className="space-y-2">
-            <Label>NIC number</Label>
+            <Label>NIC Number</Label>
             <Input
               value={form.nicNumber}
               onChange={(e) =>
@@ -398,7 +401,7 @@ export function PersonForm({
           </div>
         ) : form.identityType ? (
           <div className="space-y-2">
-            <Label>ID number</Label>
+            <Label>ID Number</Label>
             <Input
               value={form.idNumber}
               onChange={(e) =>
@@ -414,7 +417,7 @@ export function PersonForm({
 
       <Section title="Contact" variant="alt">
         <div className="space-y-2">
-          <Label>Mobile number</Label>
+          <Label>Mobile Number</Label>
           <Input
             value={form.mobileNumber}
             onChange={(e) =>
@@ -425,7 +428,7 @@ export function PersonForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>WhatsApp number</Label>
+          <Label>WhatsApp Number</Label>
           <Input
             value={form.whatsAppNumber}
             onChange={(e) =>
@@ -454,7 +457,7 @@ export function PersonForm({
             onValueChange={(v) => setForm((f) => ({ ...f, occupation: v }))}
           >
             <SelectTrigger disabled={isUnder16} className={isUnder16 ? "opacity-60" : ""}>
-              <SelectValue placeholder="Select occupation" />
+              <SelectValue placeholder="Select Occupation" />
             </SelectTrigger>
             <SelectContent>
               {OCCUPATIONS.map((o) => (
@@ -466,13 +469,13 @@ export function PersonForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Work location {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+          <Label>Work Location {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
             value={form.placeOfWork || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, placeOfWork: v }))}
           >
             <SelectTrigger disabled={isUnder16} className={isUnder16 ? "opacity-60" : ""}>
-              <SelectValue placeholder="Select location" />
+              <SelectValue placeholder="Select Location" />
             </SelectTrigger>
             <SelectContent>
               {WORK_LOCATIONS.map((o) => (
@@ -484,7 +487,7 @@ export function PersonForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Highest qualification type</Label>
+          <Label>Highest Qualification Type</Label>
           <Select
             value={form.highestQualificationType || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, highestQualificationType: v }))}
@@ -529,8 +532,11 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
+      </Section>
+
+      <Section title="Other Details" variant="alt">
         <div className="space-y-2">
-          <Label>Living status</Label>
+          <Label>Living Status</Label>
           <Select
             value={form.livingStatus || "Active"}
             onValueChange={(v) => setForm((f) => ({ ...f, livingStatus: v }))}
@@ -553,7 +559,7 @@ export function PersonForm({
             checked={form.isMadarasaStudent}
             onCheckedChange={(c) => setForm((f) => ({ ...f, isMadarasaStudent: !!c }))}
           />
-          <Label htmlFor="madarasa">Madarasa student</Label>
+          <Label htmlFor="madarasa">Local Madarasa Student</Label>
         </div>
       </Section>
 

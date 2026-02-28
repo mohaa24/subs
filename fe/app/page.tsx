@@ -15,7 +15,6 @@ import {
   Receipt,
   Banknote,
   ScanLine,
-  Search,
   Repeat,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -206,22 +205,16 @@ export default function HomePage() {
       label: "Person Flow",
       actions: [
         {
-          title: "People",
-          description: "Search, view, edit and add people",
+          title: "Manage People",
+          description: "Search, view, edit, and manage people",
           icon: Users,
           href: "/persons",
         },
         {
-          title: "Person Search (Memberships)",
-          description: "Find memberships by person",
-          icon: Search,
-          href: "/members",
-        },
-        {
-          title: "Add New Membership",
-          description: "Create a new membership with persons",
+          title: "Add New Person",
+          description: "Open Manage People and add a new person",
           icon: UserPlus,
-          href: "/members/new",
+          href: "/persons",
         },
       ],
     },
@@ -230,7 +223,7 @@ export default function HomePage() {
       label: "Membership Flow",
       actions: [
         {
-          title: "Membership Search",
+          title: "Manage Membership",
           description: "Search and review memberships",
           icon: Users,
           href: "/members",
@@ -412,7 +405,7 @@ export default function HomePage() {
       <Dialog open={scannerOpen} onOpenChange={(open) => { if (!open) { stopScanner(); setScannerOpen(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Scan membership QR code</DialogTitle>
+            <DialogTitle>Scan Membership QR Code</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-3">
             <div id={scannerContainerId} className="w-full rounded-lg overflow-hidden" />

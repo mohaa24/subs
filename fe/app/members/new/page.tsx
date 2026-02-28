@@ -26,7 +26,7 @@ import {
 import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
-import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS, SPOUSE_RELATION_OPTIONS } from "@/lib/constants";
+import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS } from "@/lib/constants";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
@@ -37,10 +37,6 @@ type DependentEntry = {
   group: DependentGroup;
   relationToHOH: RelationToHOH;
 };
-
-function defaultSpouseRelation(person: Person): "Husband" | "Wife" {
-  return person.gender === "Male" ? "Husband" : "Wife";
-}
 
 function defaultDependentRelation(group: DependentGroup): RelationToHOH {
   return group === "children" ? "Son" : "Cousin";
@@ -60,12 +56,12 @@ export default function NewMembershipPage() {
 
   // Spouse
   const [spousePerson, setSpousePerson] = useState<Person | null>(null);
-  const [spouseRelationToHOH, setSpouseRelationToHOH] = useState<"Husband" | "Wife">("Wife");
   const [spouseSearch, setSpouseSearch] = useState("");
   const [spouseResults, setSpouseResults] = useState<Person[]>([]);
 
   // Dependents
   const [dependentPersons, setDependentPersons] = useState<DependentEntry[]>([]);
+  const [newDependentGroup, setNewDependentGroup] = useState<DependentGroup>("children");
   const [depSearch, setDepSearch] = useState("");
   const [depResults, setDepResults] = useState<Person[]>([]);
 
@@ -90,6 +86,8 @@ export default function NewMembershipPage() {
   const [additionalContributions, setAdditionalContributions] = useState("0");
   const [membershipFeeDiscount, setMembershipFeeDiscount] = useState("0");
   const [disability, setDisability] = useState(false);
+  const [isZakathEligible, setIsZakathEligible] = useState<boolean | null>(null);
+  const [areaCode, setAreaCode] = useState("");
 
   const effectiveOrgId =
     user?.role === "super_user" ? selectedOrgId : (user?.organizationId ?? null);
@@ -188,10 +186,7 @@ export default function NewMembershipPage() {
       body: JSON.stringify(payload),
     });
     if (addPersonOpen === "hod") setHodPerson(created);
-    if (addPersonOpen === "spouse") {
-      setSpousePerson(created);
-      setSpouseRelationToHOH(defaultSpouseRelation(created));
-    }
+    if (addPersonOpen === "spouse") setSpousePerson(created);
     if (addPersonOpen === "dependent") {
       setDependentPersons((prev) => [
         ...prev,
@@ -199,8 +194,8 @@ export default function NewMembershipPage() {
           id: created.id,
           fullName: created.fullName,
           nameWithInitials: created.nameWithInitials,
-          group: "children",
-          relationToHOH: defaultDependentRelation("children"),
+          group: newDependentGroup,
+          relationToHOH: defaultDependentRelation(newDependentGroup),
         },
       ]);
     }
@@ -276,10 +271,7 @@ export default function NewMembershipPage() {
       body: JSON.stringify(payload),
     });
     if (editPerson.role === "hod") setHodPerson(updated);
-    if (editPerson.role === "spouse") {
-      setSpousePerson(updated);
-      setSpouseRelationToHOH(defaultSpouseRelation(updated));
-    }
+    if (editPerson.role === "spouse") setSpousePerson(updated);
     if (editPerson.role === "dependent") {
       setDependentPersons((prev) =>
         prev.map((p) =>
@@ -312,7 +304,7 @@ export default function NewMembershipPage() {
           membershipStatus: "Active",
           hodPersonId: hodPerson.id,
           spousePersonId: spousePerson?.id ?? null,
-          spouseRelationToHOH: spousePerson ? spouseRelationToHOH : null,
+          spouseRelationToHOH: spousePerson ? "Wife" : null,
           dependentPersons: dependentPersons.map((p) => ({
             personId: p.id,
             relationToHOH: p.relationToHOH,
@@ -331,6 +323,8 @@ export default function NewMembershipPage() {
           membershipFeeDiscount: disc,
           totalContribution: computedTotal,
           disability,
+          isZakathEligible,
+          areaCode: areaCode ? Number(areaCode) : null,
         }),
       });
       router.push("/members");
@@ -349,15 +343,15 @@ export default function NewMembershipPage() {
           items={[
             { label: "Dashboard", href: "/" },
             { label: "Members", href: "/members" },
-            { label: "New membership" },
+            { label: "New Membership" },
           ]}
         />
-        <h1 className="text-xl font-semibold text-foreground mb-6">New membership</h1>
+        <h1 className="text-xl font-semibold text-foreground mb-6">New Membership</h1>
 
         <form onSubmit={handleSubmit}>
           <Card>
             <CardHeader>
-              <CardTitle>Membership details</CardTitle>
+              <CardTitle>Membership Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
 
@@ -371,12 +365,13 @@ export default function NewMembershipPage() {
                       onValueChange={(v) => {
                         setSelectedOrgId(v);
                         setHodPerson(null); setHodSearch(""); setHodResults([]);
-                        setSpousePerson(null); setSpouseRelationToHOH("Wife"); setSpouseSearch(""); setSpouseResults([]);
+                        setSpousePerson(null); setSpouseSearch(""); setSpouseResults([]);
                         setDependentPersons([]); setDepSearch(""); setDepResults([]);
+                        setNewDependentGroup("children");
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select organization" />
+                        <SelectValue placeholder="Select Organization" />
                       </SelectTrigger>
                       <SelectContent>
                         {orgs.map((o) => (
@@ -392,7 +387,7 @@ export default function NewMembershipPage() {
               {/* Head of household */}
               <div className="space-y-2">
                 <Label className="font-semibold">
-                  Head of household <span className="text-destructive">*</span>
+                  Head of Household <span className="text-destructive">*</span>
                 </Label>
                 {hodPerson ? (
                   <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border">
@@ -434,7 +429,7 @@ export default function NewMembershipPage() {
                       )}
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={() => setAddPersonOpen("hod")}>
-                      + Add new person
+                      + Add New Person
                     </Button>
                   </div>
                 )}
@@ -458,7 +453,7 @@ export default function NewMembershipPage() {
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(spousePerson.id, "spouse")}>
                         Edit
                       </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => { setSpousePerson(null); setSpouseRelationToHOH("Wife"); }}>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setSpousePerson(null)}>
                         Clear
                       </Button>
                     </div>
@@ -480,7 +475,6 @@ export default function NewMembershipPage() {
                                 className="w-full text-left px-3 py-2 hover:bg-muted text-sm"
                                 onClick={() => {
                                   setSpousePerson(p);
-                                  setSpouseRelationToHOH(defaultSpouseRelation(p));
                                   setSpouseSearch("");
                                   setSpouseResults([]);
                                 }}
@@ -493,24 +487,14 @@ export default function NewMembershipPage() {
                       )}
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={() => setAddPersonOpen("spouse")}>
-                      + Add new person
+                      + Add New Person
                     </Button>
                   </div>
                 )}
                 {spousePerson && (
                   <div className="space-y-2">
-                    <Label>Relation to head of household</Label>
-                    <Select
-                      value={spouseRelationToHOH}
-                      onValueChange={(v: "Husband" | "Wife") => setSpouseRelationToHOH(v)}
-                    >
-                      <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {SPOUSE_RELATION_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Relation to Head of Household</Label>
+                    <Input value="Wife" className="w-44" disabled />
                   </div>
                 )}
               </div>
@@ -523,77 +507,74 @@ export default function NewMembershipPage() {
                   Dependents{" "}
                   <span className="text-muted-foreground text-xs font-normal">(optional)</span>
                 </Label>
-                {dependentPersons.length > 0 && (
-                  <ul className="space-y-1">
-                    {dependentPersons.map((p, i) => (
-                      <li
-                        key={p.id}
-                        className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border"
-                      >
-                        <span className="text-sm">
-                          {p.fullName}{" "}
-                          <span className="text-muted-foreground text-xs">({p.nameWithInitials})</span>
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={p.group}
-                            onValueChange={(value: DependentGroup) =>
-                              setDependentPersons((prev) =>
-                                prev.map((item) =>
-                                  item.id === p.id
-                                    ? {
-                                        ...item,
-                                        group: value,
-                                        relationToHOH:
-                                          value === item.group
-                                            ? item.relationToHOH
-                                            : defaultDependentRelation(value),
-                                      }
-                                    : item
-                                )
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="children">Children</SelectItem>
-                              <SelectItem value="other">Other dependents</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select
-                            value={p.relationToHOH}
-                            onValueChange={(value: RelationToHOH) =>
-                              setDependentPersons((prev) =>
-                                prev.map((item) =>
-                                  item.id === p.id ? { ...item, relationToHOH: value } : item
-                                )
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {(p.group === "children" ? CHILD_RELATION_OPTIONS : OTHER_DEPENDENT_RELATION_OPTIONS).map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(p.id, "dependent", i)}>
-                            Edit
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDependentPersons((prev) => prev.filter((_, j) => j !== i))}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {(["children", "other"] as DependentGroup[]).map((group) => {
+                  const items = dependentPersons.filter((p) => p.group === group);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={group} className="space-y-1">
+                      <p className="text-xs uppercase text-muted-foreground">
+                        {group === "children" ? "Children" : "Other Dependents"}
+                      </p>
+                      <ul className="space-y-1">
+                        {items.map((p) => {
+                          const listIndex = dependentPersons.findIndex((x) => x.id === p.id);
+                          return (
+                            <li
+                              key={p.id}
+                              className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border"
+                            >
+                              <span className="text-sm">
+                                {p.fullName}{" "}
+                                <span className="text-muted-foreground text-xs">({p.nameWithInitials})</span>
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <Select
+                                  value={p.relationToHOH}
+                                  onValueChange={(value: RelationToHOH) =>
+                                    setDependentPersons((prev) =>
+                                      prev.map((item) =>
+                                        item.id === p.id ? { ...item, relationToHOH: value } : item
+                                      )
+                                    )
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {(p.group === "children" ? CHILD_RELATION_OPTIONS : OTHER_DEPENDENT_RELATION_OPTIONS).map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(p.id, "dependent", listIndex)}>
+                                  Edit
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDependentPersons((prev) => prev.filter((x) => x.id !== p.id))}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
                 <div className="space-y-2">
+                  <div className="space-y-1">
+                    <Label>Add to Group</Label>
+                    <Select value={newDependentGroup} onValueChange={(v: DependentGroup) => setNewDependentGroup(v)}>
+                      <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="children">Children</SelectItem>
+                        <SelectItem value="other">Other Dependents</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="relative">
                     <Input
                       placeholder="Search by name or NIC…"
@@ -607,16 +588,16 @@ export default function NewMembershipPage() {
                             <button
                               type="button"
                               className="w-full text-left px-3 py-2 hover:bg-muted text-sm"
-                            onClick={() => {
-                              if (!dependentPersons.find((d) => d.id === p.id)) {
+                              onClick={() => {
+                                if (!dependentPersons.find((d) => d.id === p.id)) {
                                   setDependentPersons((prev) => [
                                     ...prev,
                                     {
                                       id: p.id,
                                       fullName: p.fullName,
                                       nameWithInitials: p.nameWithInitials,
-                                      group: "children",
-                                      relationToHOH: defaultDependentRelation("children"),
+                                      group: newDependentGroup,
+                                      relationToHOH: defaultDependentRelation(newDependentGroup),
                                     },
                                   ]);
                                 }
@@ -632,7 +613,7 @@ export default function NewMembershipPage() {
                     )}
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={() => setAddPersonOpen("dependent")}>
-                    + Add new person
+                    + Add New Person
                   </Button>
                 </div>
               </div>
@@ -642,7 +623,7 @@ export default function NewMembershipPage() {
               {/* Registration & type */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Date of registration</Label>
+                  <Label>Date of Registration</Label>
                   <Input
                     type="date"
                     value={dateOfRegistration}
@@ -651,7 +632,7 @@ export default function NewMembershipPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Membership type</Label>
+                  <Label>Membership Type</Label>
                   <Select value={membershipType} onValueChange={setMembershipType}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -662,7 +643,7 @@ export default function NewMembershipPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Payment period</Label>
+                  <Label>Payment Period</Label>
                   <Select
                     value={paymentPeriod}
                     onValueChange={(v: "Monthly" | "Quarterly" | "Annually") => setPaymentPeriod(v)}
@@ -681,16 +662,16 @@ export default function NewMembershipPage() {
 
               {/* Household facilities */}
               <div className="space-y-2">
-                <Label className="font-semibold">Household facilities</Label>
+                <Label className="font-semibold">Household Facilities</Label>
                 <div className="rounded-md border overflow-hidden divide-y text-sm">
                   {(
                     [
                       ["Land", land, setLand],
-                      ["House ownership", houseOwnership, setHouseOwnership],
-                      ["Commercial properties", commercialProperties, setCommercialProperties],
-                      ["Toilet facility", toiletFacility, setToiletFacility],
-                      ["Vehicle ownership", vehicleOwnership, setVehicleOwnership],
-                      ["Water accessibility", waterAccessibility, setWaterAccessibility],
+                      ["House Ownership", houseOwnership, setHouseOwnership],
+                      ["Commercial Properties", commercialProperties, setCommercialProperties],
+                      ["Toilet Facility", toiletFacility, setToiletFacility],
+                      ["Vehicle Ownership", vehicleOwnership, setVehicleOwnership],
+                      ["Water Accessibility", waterAccessibility, setWaterAccessibility],
                       ["Electricity", electricity, setElectricity],
                     ] as [string, boolean, (v: boolean) => void][]
                   ).map(([label, val, set]) => (
@@ -712,7 +693,7 @@ export default function NewMembershipPage() {
                 <Label className="font-semibold">Contributions</Label>
                 <div className="rounded-md border overflow-hidden divide-y text-sm">
                   <div className="flex items-center justify-between px-4 py-3">
-                    <span className="text-muted-foreground">Membership fee</span>
+                    <span className="text-muted-foreground">Membership Fee</span>
                     <Input
                       type="number"
                       min={0}
@@ -723,7 +704,7 @@ export default function NewMembershipPage() {
                     />
                   </div>
                   <div className="flex items-center justify-between px-4 py-3">
-                    <span className="text-muted-foreground">Additional voluntary contributions</span>
+                    <span className="text-muted-foreground">Additional Voluntary Contributions</span>
                     <Input
                       type="number"
                       min={0}
@@ -755,7 +736,7 @@ export default function NewMembershipPage() {
 
               {/* Disability */}
               <div className="space-y-2">
-                <Label>Disability in household</Label>
+                <Label>Disability in Household</Label>
                 <Select
                   value={disability ? "yes" : "no"}
                   onValueChange={(v) => setDisability(v === "yes")}
@@ -770,11 +751,52 @@ export default function NewMembershipPage() {
                 </Select>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Zakath Eligible</Label>
+                  <Select
+                    value={isZakathEligible === null ? "unset" : isZakathEligible ? "yes" : "no"}
+                    onValueChange={(v) =>
+                      setIsZakathEligible(v === "unset" ? null : v === "yes")
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unset">Not Set</SelectItem>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Area Code</Label>
+                  <Select
+                    value={areaCode || "unset"}
+                    onValueChange={(v) => setAreaCode(v === "unset" ? "" : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unset">Not Set</SelectItem>
+                      <SelectItem value="1">1</SelectItem>
+                      <SelectItem value="2">2</SelectItem>
+                      <SelectItem value="3">3</SelectItem>
+                      <SelectItem value="4">4</SelectItem>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="6">6</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <div className="flex gap-2 pt-2">
                 <Button type="submit" disabled={saving}>
-                  {saving ? "Saving…" : "Create membership"}
+                  {saving ? "Saving…" : "Create Membership"}
                 </Button>
                 <Link href="/members">
                   <Button type="button" variant="outline">Cancel</Button>
@@ -791,15 +813,15 @@ export default function NewMembershipPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {addPersonOpen === "hod" && "Add head of household"}
-              {addPersonOpen === "spouse" && "Add spouse"}
-              {addPersonOpen === "dependent" && "Add dependent"}
+              {addPersonOpen === "hod" && "Add Head of Household"}
+              {addPersonOpen === "spouse" && "Add Spouse"}
+              {addPersonOpen === "dependent" && "Add Dependent"}
             </DialogTitle>
           </DialogHeader>
           <PersonForm
             onSubmit={handleCreatePerson}
             onCancel={() => setAddPersonOpen(null)}
-            submitLabel="Add person"
+            submitLabel="Add Person"
           />
         </DialogContent>
       </Dialog>
@@ -808,14 +830,14 @@ export default function NewMembershipPage() {
       <Dialog open={!!editPerson} onOpenChange={(open) => !open && setEditPerson(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit person</DialogTitle>
+            <DialogTitle>Edit Person</DialogTitle>
           </DialogHeader>
           {editPerson?.initial && (
             <PersonForm
               initial={editPerson.initial}
               onSubmit={handleEditPerson}
               onCancel={() => setEditPerson(null)}
-              submitLabel="Save changes"
+              submitLabel="Save Changes"
             />
           )}
         </DialogContent>

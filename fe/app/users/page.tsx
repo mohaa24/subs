@@ -133,7 +133,7 @@ export default function UsersPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add user</DialogTitle>
+            <DialogTitle>Add User</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateUser} className="space-y-4">
             <div className="space-y-2">
@@ -169,7 +169,7 @@ export default function UsersPage() {
               <div className="space-y-2">
                 <Label>Organization</Label>
                 <Select value={organizationId} onValueChange={setOrganizationId}>
-                  <SelectTrigger><SelectValue placeholder="Select organization" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select Organization" /></SelectTrigger>
                   <SelectContent>
                     {orgs.map((o) => (
                       <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>

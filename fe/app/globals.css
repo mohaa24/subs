@@ -35,3 +35,46 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+
+  html, body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 11px;
+  }
+
+  header, nav, footer,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  * {
+    box-shadow: none !important;
+    transition: none !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+
+  .rounded-xl, .rounded-lg {
+    border-radius: 6px !important;
+  }
+}
