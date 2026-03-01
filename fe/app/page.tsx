@@ -16,6 +16,12 @@ import {
   Banknote,
   ScanLine,
   Repeat,
+  Star,
+  MessageSquare,
+  Package,
+  FileText,
+  Settings,
+  BarChart3,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +35,8 @@ import {
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api, DashboardStats } from "@/lib/api";
+import { api, DashboardStats, UserBookmark } from "@/lib/api";
+import { useTranslation } from "@/lib/i18n";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -49,6 +56,7 @@ function formatPeriod(period: string) {
 }
 
 type FlowAction = {
+  actionKey: string;
   title: string;
   description: string;
   icon: LucideIcon;
@@ -65,9 +73,11 @@ type FlowTab = {
 
 export default function HomePage() {
   const { user, loading } = useAuth();
+  const { t } = useTranslation();
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
   const scannerRef = useRef<any>(null);
@@ -149,6 +159,39 @@ export default function HomePage() {
     if (user) fetchStats();
   }, [user, fetchStats]);
 
+  const fetchBookmarks = useCallback(async () => {
+    try {
+      const data = await api<UserBookmark[]>("/bookmarks");
+      setBookmarks(data);
+    } catch {
+      /* bookmarks are non-critical */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchBookmarks();
+  }, [user, fetchBookmarks]);
+
+  const toggleBookmark = useCallback(
+    async (actionKey: string) => {
+      const isBookmarked = bookmarks.some((b) => b.actionKey === actionKey);
+      try {
+        if (isBookmarked) {
+          await api(`/bookmarks/${encodeURIComponent(actionKey)}`, { method: "DELETE" });
+        } else {
+          await api("/bookmarks", {
+            method: "POST",
+            body: JSON.stringify({ actionKey }),
+          });
+        }
+        await fetchBookmarks();
+      } catch {
+        /* ignore */
+      }
+    },
+    [bookmarks, fetchBookmarks]
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -163,35 +206,35 @@ export default function HomePage() {
 
   const STAT_CARDS = [
     {
-      label: "Total Members",
+      label: t("dashboard.totalMembers"),
       value: stats?.totalMembers ?? "—",
       icon: Users,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
     },
     {
-      label: "Children (< 8)",
+      label: t("dashboard.children"),
       value: stats?.children ?? "—",
       icon: Baby,
       color: "text-amber-500",
       bg: "bg-amber-500/10",
     },
     {
-      label: "Teenagers (8–18)",
+      label: t("dashboard.teenagers"),
       value: stats?.teenagers ?? "—",
       icon: GraduationCap,
       color: "text-purple-500",
       bg: "bg-purple-500/10",
     },
     {
-      label: "Due This Month",
+      label: t("dashboard.dueThisMonth"),
       value: stats ? formatRs(stats.totalDueThisMonth) : "—",
       icon: Receipt,
       color: "text-rose-500",
       bg: "bg-rose-500/10",
     },
     {
-      label: "Collected This Month",
+      label: t("dashboard.collectedThisMonth"),
       value: stats ? formatRs(stats.collectedThisMonth) : "—",
       icon: Banknote,
       color: "text-emerald-500",
@@ -202,17 +245,19 @@ export default function HomePage() {
   const FLOW_TABS: FlowTab[] = [
     {
       value: "person",
-      label: "Person Flow",
+      label: t("flows.personFlow"),
       actions: [
         {
-          title: "Manage People",
-          description: "Search, view, edit, and manage people",
+          actionKey: "person-manage-people",
+          title: t("persons.title"),
+          description: t("persons.addPerson"),
           icon: Users,
           href: "/persons",
         },
         {
-          title: "Add New Person",
-          description: "Open Manage People and add a new person",
+          actionKey: "person-add-new-person",
+          title: t("persons.addPerson"),
+          description: t("persons.addPerson"),
           icon: UserPlus,
           href: "/persons",
         },
@@ -220,23 +265,26 @@ export default function HomePage() {
     },
     {
       value: "membership",
-      label: "Membership Flow",
+      label: t("flows.membershipFlow"),
       actions: [
         {
-          title: "Manage Membership",
-          description: "Search and review memberships",
+          actionKey: "membership-manage-membership",
+          title: t("memberships.title"),
+          description: t("memberships.title"),
           icon: Users,
           href: "/members",
         },
         {
-          title: "Add New Member",
-          description: "Create a new membership record",
+          actionKey: "membership-add-new-member",
+          title: t("memberships.addMembership"),
+          description: t("memberships.addMembership"),
           icon: UserPlus,
           href: "/members/new",
         },
         {
-          title: "Scan",
-          description: "Scan a membership QR code to open details",
+          actionKey: "membership-scan",
+          title: t("memberships.scan"),
+          description: t("memberships.scan"),
           icon: ScanLine,
           action: () => setScannerOpen(true),
         },
@@ -244,23 +292,26 @@ export default function HomePage() {
     },
     {
       value: "payment",
-      label: "Payment Flow",
+      label: t("flows.paymentFlow"),
       actions: [
         {
-          title: "Make a Payment",
-          description: "Record and review member payments",
+          actionKey: "payment-make-a-payment",
+          title: t("payments.makePayment"),
+          description: t("payments.makePayment"),
           icon: CreditCard,
           href: "/payments",
         },
         {
-          title: "Periodic Contributions",
-          description: "Track recurring contributions and status",
+          actionKey: "payment-periodic-contributions",
+          title: t("payments.paymentHistory"),
+          description: t("payments.paymentHistory"),
           icon: Repeat,
           href: "/payments",
         },
         {
-          title: "Scan",
-          description: "Scan membership QR code before collecting payment",
+          actionKey: "payment-scan",
+          title: t("memberships.scan"),
+          description: t("memberships.scan"),
           icon: ScanLine,
           action: () => setScannerOpen(true),
         },
@@ -268,21 +319,77 @@ export default function HomePage() {
     },
     {
       value: "admin",
-      label: "Admin Flow",
+      label: t("flows.adminFlow"),
       actions: [
         {
-          title: "User Management",
-          description: "Manage users for your organization",
+          actionKey: "admin-user-management",
+          title: t("users.title"),
+          description: t("users.title"),
           icon: UserCog,
           href: "/users",
           roles: ["admin", "super_user"],
         },
         {
-          title: "Organizations",
-          description: "View organizations and manage membership fee defaults",
+          actionKey: "admin-organizations",
+          title: t("organizations.title"),
+          description: t("organizations.title"),
           icon: Building2,
           href: "/organizations",
           roles: ["admin", "super_user"],
+        },
+        {
+          actionKey: "admin-form-config",
+          title: t("settings.formConfig"),
+          description: t("settings.formConfig"),
+          icon: Settings,
+          href: "/settings/form-config",
+          roles: ["admin", "super_user"],
+        },
+      ],
+    },
+    {
+      value: "announcements",
+      label: t("flows.announcements"),
+      actions: [
+        {
+          actionKey: "announcements-manage",
+          title: t("announcements.title"),
+          description: t("announcements.sendAnnouncement"),
+          icon: MessageSquare,
+          href: "/announcements",
+        },
+      ],
+    },
+    {
+      value: "distributions",
+      label: t("flows.distributions"),
+      actions: [
+        {
+          actionKey: "distributions-manage",
+          title: t("distributions.title"),
+          description: t("distributions.createDistribution"),
+          icon: Package,
+          href: "/distributions",
+        },
+      ],
+    },
+    {
+      value: "reports",
+      label: t("flows.reports"),
+      actions: [
+        {
+          actionKey: "reports-builder",
+          title: t("reports.title"),
+          description: t("reports.exportCSV"),
+          icon: FileText,
+          href: "/reports",
+        },
+        {
+          actionKey: "reports-charts",
+          title: t("charts.title"),
+          description: t("charts.title"),
+          icon: BarChart3,
+          href: "/charts",
         },
       ],
     },
@@ -294,9 +401,9 @@ export default function HomePage() {
       <Header />
       <main className="relative z-10 p-6 max-w-5xl mx-auto">
         <div className="mb-6">
-          <h2 className="text-xl font-semibold text-foreground">Dashboard</h2>
+          <h2 className="text-xl font-semibold text-foreground">{t("dashboard.title")}</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {stats ? formatPeriod(stats.period) : "Overview"}
+            {stats ? formatPeriod(stats.period) : t("dashboard.overview")}
           </p>
         </div>
 
@@ -323,9 +430,81 @@ export default function HomePage() {
           ))}
         </div>
 
+        {/* ── Quick Actions (bookmarks) ─────────────────────── */}
+        {bookmarks.length > 0 && (
+          <>
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-muted-foreground">{t("dashboard.quickActions")}</h3>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-8">
+              {bookmarks
+                .sort((a, b) => a.displayOrder - b.displayOrder)
+                .map((bm) => {
+                  let found: { tab: FlowTab; action: FlowAction } | null = null;
+                  for (const tab of FLOW_TABS) {
+                    const action = tab.actions.find(
+                      (a) => a.actionKey === bm.actionKey && (!a.roles || a.roles.includes(user.role))
+                    );
+                    if (action) {
+                      found = { tab, action };
+                      break;
+                    }
+                  }
+                  if (!found) return null;
+                  const { action } = found;
+                  const { title, description, icon: Icon, href, action: act, actionKey } = action;
+                  const card = (
+                    <Card className="hover:border-primary/30 hover:bg-accent/30 transition-all group cursor-pointer h-full relative">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleBookmark(actionKey);
+                        }}
+                        className="absolute top-2 right-2 z-10 p-2 rounded-lg hover:bg-accent/60 transition-colors"
+                        aria-label="Remove bookmark"
+                      >
+                        <Star className="h-5 w-5 text-primary fill-primary" />
+                      </button>
+                      <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2 pr-12">
+                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                          <Icon className="h-4 w-4 text-primary" />
+                        </div>
+                        <CardTitle className="text-sm font-medium text-foreground">
+                          {title}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-muted-foreground">{description}</p>
+                      </CardContent>
+                    </Card>
+                  );
+                  if (href) {
+                    return (
+                      <Link key={bm.actionKey} href={href} onClick={(e) => e.stopPropagation()}>
+                        {card}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <button
+                      key={bm.actionKey}
+                      type="button"
+                      className="text-left"
+                      onClick={act}
+                    >
+                      {card}
+                    </button>
+                  );
+                })}
+            </div>
+          </>
+        )}
+
         {/* ── Flow tabs ─────────────────────────────────────── */}
         <div className="mb-4">
-          <h3 className="text-sm font-medium text-muted-foreground">Flows</h3>
+          <h3 className="text-sm font-medium text-muted-foreground">{t("dashboard.flows")}</h3>
         </div>
         <Tabs defaultValue="person" className="w-full">
           <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
@@ -357,16 +536,33 @@ export default function HomePage() {
                   </Card>
                 ) : (
                   <div className="grid gap-3 md:grid-cols-2">
-                    {actions.map(({ title, description, icon: Icon, href, action }) => {
+                    {actions.map(({ actionKey, title, description, icon: Icon, href, action }) => {
+                      const isBookmarked = bookmarks.some((b) => b.actionKey === actionKey);
                       const card = (
-                        <Card className="hover:border-primary/30 hover:bg-accent/30 transition-all group cursor-pointer h-full">
-                          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <Card className="hover:border-primary/30 hover:bg-accent/30 transition-all group cursor-pointer h-full relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleBookmark(actionKey);
+                            }}
+                            className="absolute top-2 right-2 z-10 p-2 rounded-lg hover:bg-accent/60 transition-colors"
+                            aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
+                          >
+                            {isBookmarked ? (
+                              <Star className="h-5 w-5 text-primary fill-primary" />
+                            ) : (
+                              <Star className="h-5 w-5 text-muted-foreground/40" />
+                            )}
+                          </button>
+                          <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2 pr-12">
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                              <Icon className="h-4 w-4 text-primary" />
+                            </div>
                             <CardTitle className="text-sm font-medium text-foreground">
                               {title}
                             </CardTitle>
-                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                              <Icon className="h-4 w-4 text-primary" />
-                            </div>
                           </CardHeader>
                           <CardContent>
                             <p className="text-sm text-muted-foreground">{description}</p>

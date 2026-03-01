@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -34,6 +35,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function PaymentsPage() {
+  const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -87,10 +89,10 @@ export default function PaymentsPage() {
         "/payments/generate-dues",
         { method: "POST" }
       );
-      setGenResult(`${r.period}: ${r.created} created, ${r.skipped} skipped`);
+      setGenResult(`${r.period}: ${r.created} ${t("payments.created")}, ${r.skipped} ${t("payments.skipped")}`);
       loadDues();
     } catch (err) {
-      setGenResult(err instanceof Error ? err.message : "Failed");
+      setGenResult(err instanceof Error ? err.message : t("common.saveFailed"));
     } finally {
       setGenerating(false);
     }
@@ -101,10 +103,10 @@ export default function PaymentsPage() {
       const r = await api<{ updated: number }>("/payments/mark-overdue", {
         method: "POST",
       });
-      setGenResult(`${r.updated} dues marked overdue`);
+      setGenResult(`${r.updated} ${t("payments.duesMarkedOverdue")}`);
       loadDues();
     } catch {
-      setGenResult("Failed to mark overdue");
+      setGenResult(t("payments.failedToMarkOverdue"));
     }
   }
 
@@ -123,7 +125,7 @@ export default function PaymentsPage() {
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
-      setPayError("Enter a valid amount.");
+      setPayError(t("payments.enterValidAmount"));
       return;
     }
     setPaySubmitting(true);
@@ -139,7 +141,7 @@ export default function PaymentsPage() {
       setPayDialogOpen(false);
       loadDues();
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : "Failed to record payment");
+      setPayError(err instanceof Error ? err.message : t("payments.failedToRecord"));
     } finally {
       setPaySubmitting(false);
     }
@@ -147,7 +149,7 @@ export default function PaymentsPage() {
 
   const totalPages = Math.ceil(total / limit) || 1;
 
-  if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
+  if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
   const canManage = user.role === "admin" || user.role === "super_user";
 
@@ -155,17 +157,17 @@ export default function PaymentsPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
-        <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Payments" }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("reports.payments") }]} />
 
-        <div className="flex items-center justify-between mb-5">
-          <h1 className="text-xl font-semibold text-foreground">Payments &amp; Dues</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <h1 className="text-xl font-semibold text-foreground">{t("payments.title")}</h1>
           {canManage && (
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={handleMarkOverdue}>
-                Mark overdue
+                {t("payments.markOverdue")}
               </Button>
               <Button size="sm" onClick={handleGenerateDues} disabled={generating}>
-                {generating ? "Generating…" : "Generate monthly dues"}
+                {generating ? t("payments.generating") : t("payments.generateDues")}
               </Button>
             </div>
           )}
@@ -178,7 +180,7 @@ export default function PaymentsPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Dues Overview</CardTitle>
+              <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
               <Select
                 value={statusFilter}
                 onValueChange={(v) => {
@@ -190,34 +192,34 @@ export default function PaymentsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
+                  <SelectItem value="all">{t("payments.allStatuses")}</SelectItem>
+                  <SelectItem value="pending">{t("payments.pending")}</SelectItem>
+                  <SelectItem value="partial">{t("payments.partial")}</SelectItem>
+                  <SelectItem value="paid">{t("payments.paid")}</SelectItem>
+                  <SelectItem value="overdue">{t("payments.overdue")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
             ) : dues.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No dues found. Use "Generate monthly dues" to create dues for the current month.
+                {t("payments.noDuesFound")}
               </p>
             ) : (
               <>
-                <div className="rounded-md border overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[700px]">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left p-2.5 font-medium">Member</th>
-                        <th className="text-left p-2.5 font-medium">Period</th>
-                        <th className="text-right p-2.5 font-medium">Due</th>
-                        <th className="text-right p-2.5 font-medium">Paid</th>
-                        <th className="text-right p-2.5 font-medium">Remaining</th>
-                        <th className="text-center p-2.5 font-medium">Status</th>
+                        <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
+                        <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.remaining")}</th>
+                        <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
                         <th className="p-2.5"></th>
                       </tr>
                     </thead>
@@ -253,7 +255,7 @@ export default function PaymentsPage() {
                               <span
                                 className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
                               >
-                                {d.status}
+                                {t(`payments.${d.status}`)}
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
@@ -263,7 +265,7 @@ export default function PaymentsPage() {
                                   variant="outline"
                                   onClick={() => openPayDialog(d)}
                                 >
-                                  Pay
+                                  {t("payments.makePayment")}
                                 </Button>
                               )}
                             </td>
@@ -275,7 +277,7 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">
-                  <span>{total} dues</span>
+                  <span>{total} {t("payments.dues")}</span>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -286,7 +288,7 @@ export default function PaymentsPage() {
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span>
-                      Page {page} of {totalPages}
+                      {t("distributions.page")} {page} {t("distributions.of")} {totalPages}
                     </span>
                     <Button
                       variant="outline"
@@ -309,17 +311,17 @@ export default function PaymentsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Record Payment – {payDue?.membership?.membershipNo} ({payDue?.period})
+              {t("payments.recordPayment")} – {payDue?.membership?.membershipNo} ({payDue?.period})
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleRecordPayment} className="space-y-4">
             <div className="text-sm text-muted-foreground">
-              Due: {payDue ? Number(payDue.amountDue).toFixed(2) : ""} | Paid so far:{" "}
-              {payDue ? Number(payDue.amountPaid).toFixed(2) : ""} | Remaining:{" "}
+              {t("payments.amountDue")}: {payDue ? Number(payDue.amountDue).toFixed(2) : ""} | {t("payments.paidSoFar")}:{" "}
+              {payDue ? Number(payDue.amountPaid).toFixed(2) : ""} | {t("payments.remaining")}:{" "}
               {payDue ? (Number(payDue.amountDue) - Number(payDue.amountPaid)).toFixed(2) : ""}
             </div>
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label>{t("payments.amount")}</Label>
               <Input
                 type="number"
                 min={0}
@@ -330,20 +332,20 @@ export default function PaymentsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Note (optional)</Label>
+              <Label>{t("payments.noteOptional")}</Label>
               <Input
                 value={payNote}
                 onChange={(e) => setPayNote(e.target.value)}
-                placeholder="e.g. Cash, bank transfer…"
+                placeholder={t("payments.notePlaceholder")}
               />
             </div>
             {payError && <p className="text-sm text-destructive">{payError}</p>}
             <div className="flex gap-2">
               <Button type="submit" disabled={paySubmitting}>
-                {paySubmitting ? "Recording…" : "Record Payment"}
+                {paySubmitting ? t("payments.recording") : t("payments.recordPayment")}
               </Button>
               <Button type="button" variant="outline" onClick={() => setPayDialogOpen(false)}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </form>

@@ -23,6 +23,9 @@ export async function api<T>(
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((err as { error?: string }).error || res.statusText);
   }
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
   return res.json();
 }
 
@@ -32,7 +35,10 @@ export interface User {
   id: string;
   email: string;
   role: UserRole;
+  locale?: string;
+  phoneNumber?: string | null;
   organizationId: string | null;
+  permissions?: string[];
   organization?: {
     id: string;
     name: string;
@@ -155,6 +161,16 @@ export interface Organization {
   slug: string;
   defaultMembershipFee?: number;
   isActive?: boolean;
+  logoUrl?: string | null;
+  contactPersonName?: string | null;
+  contactPersonPhone?: string | null;
+  whatsAppSenderNumber?: string | null;
+  address?: string | null;
+  joinDate?: string | null;
+  proRataMonthly?: boolean;
+  proRataQuarterly?: boolean;
+  proRataYearly?: boolean;
+  lateFeePercentage?: number;
   adminsCount?: number;
   usersCount?: number;
   personsCount?: number;
@@ -212,4 +228,110 @@ export interface MembershipBalance {
   outstanding: number;
   overdueCount: number;
   dues: PaymentDue[];
+}
+
+export type PermissionType =
+  | "MANAGE_PERSONS"
+  | "VIEW_PERSONS"
+  | "MANAGE_MEMBERSHIPS"
+  | "VIEW_MEMBERSHIPS"
+  | "COLLECT_PAYMENTS"
+  | "VIEW_PAYMENTS"
+  | "MANAGE_ANNOUNCEMENTS"
+  | "MANAGE_DISTRIBUTIONS"
+  | "VIEW_REPORTS";
+
+export const ALL_PERMISSIONS: PermissionType[] = [
+  "MANAGE_PERSONS", "VIEW_PERSONS",
+  "MANAGE_MEMBERSHIPS", "VIEW_MEMBERSHIPS",
+  "COLLECT_PAYMENTS", "VIEW_PAYMENTS",
+  "MANAGE_ANNOUNCEMENTS", "MANAGE_DISTRIBUTIONS", "VIEW_REPORTS",
+];
+
+export interface UserBookmark {
+  id: string;
+  actionKey: string;
+  displayOrder: number;
+  createdAt: string;
+}
+
+export interface AnnouncementGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  organizationId: string;
+  createdAt: string;
+}
+
+export interface Announcement {
+  id: string;
+  groupId?: string | null;
+  organizationId: string;
+  message: string;
+  sentAt?: string | null;
+  status: "draft" | "sent" | "failed";
+  group?: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface FormFieldConfig {
+  id: string;
+  organizationId: string;
+  formType: "Person" | "Membership";
+  fieldName: string;
+  visibility: "Required" | "Optional" | "Hidden";
+  displayOrder: number;
+}
+
+export interface OrganizationBilling {
+  id: string;
+  organizationId: string;
+  year: number;
+  isPaid: boolean;
+  paidAt?: string | null;
+  markedBy?: { id: string; email: string } | null;
+}
+
+export interface Distribution {
+  id: string;
+  name: string;
+  description?: string | null;
+  organizationId: string;
+  frequency: "Daily" | "Monthly" | "Yearly";
+  filterCriteria?: Record<string, unknown> | null;
+  isActive: boolean;
+  createdAt: string;
+  totalEligible?: number;
+  totalDistributed?: number;
+  currentCycleDate?: string;
+}
+
+export interface DistributionScanResult {
+  success: boolean;
+  alreadyDistributed?: boolean;
+  person: { name: string };
+}
+
+export interface DistributionReport {
+  distributionId: string;
+  name: string;
+  totalEligible: number;
+  totalDistributed: number;
+  totalPending: number;
+  completionPercentage: number;
+}
+
+export interface MessageQueueItem {
+  id: string;
+  organizationId: string;
+  recipientPhone: string;
+  eventType: string;
+  messageBody: string;
+  status: "pending" | "sent" | "failed";
+  createdAt: string;
+  sentAt?: string | null;
+}
+
+export function apiUrl(path: string): string {
+  return `${API_URL}${path}`;
 }

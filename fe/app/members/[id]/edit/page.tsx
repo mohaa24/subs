@@ -395,12 +395,12 @@ export default function EditMembershipPage() {
                   Head of Household <span className="text-destructive">*</span>
                 </Label>
                 {hodPerson ? (
-                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border">
-                    <span className="text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border">
+                    <span className="text-sm truncate">
                       {hodPerson.fullName}{" "}
                       <span className="text-muted-foreground text-xs">({hodPerson.nameWithInitials})</span>
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-shrink-0">
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(hodPerson.id, "hod")}>
                         Edit
                       </Button>
@@ -449,12 +449,12 @@ export default function EditMembershipPage() {
                   <span className="text-muted-foreground text-xs font-normal">(optional)</span>
                 </Label>
                 {spousePerson ? (
-                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border">
-                    <span className="text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border">
+                    <span className="text-sm truncate">
                       {spousePerson.fullName}{" "}
                       <span className="text-muted-foreground text-xs">({spousePerson.nameWithInitials})</span>
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-shrink-0">
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(spousePerson.id, "spouse")}>
                         Edit
                       </Button>
@@ -526,13 +526,13 @@ export default function EditMembershipPage() {
                           return (
                             <li
                               key={p.id}
-                              className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border"
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border"
                             >
-                              <span className="text-sm">
+                              <span className="text-sm truncate">
                                 {p.fullName}{" "}
                                 <span className="text-muted-foreground text-xs">({p.nameWithInitials})</span>
                               </span>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-shrink-0">
                                 <Select
                                   value={p.relationToHOH}
                                   onValueChange={(value: RelationToHOH) =>
@@ -543,7 +543,7 @@ export default function EditMembershipPage() {
                                     )
                                   }
                                 >
-                                  <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                  <SelectTrigger className="h-8 w-36 sm:w-44"><SelectValue /></SelectTrigger>
                                   <SelectContent>
                                     {(p.group === "children" ? CHILD_RELATION_OPTIONS : OTHER_DEPENDENT_RELATION_OPTIONS).map((opt) => (
                                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
@@ -815,7 +815,7 @@ export default function EditMembershipPage() {
 
       {/* Add person dialog */}
       <Dialog open={!!addPersonOpen} onOpenChange={(open) => !open && setAddPersonOpen(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {addPersonOpen === "hod" && "Add Head of Household"}
@@ -833,7 +833,7 @@ export default function EditMembershipPage() {
 
       {/* Edit person dialog */}
       <Dialog open={!!editPerson} onOpenChange={(open) => !open && setEditPerson(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Person</DialogTitle>
           </DialogHeader>

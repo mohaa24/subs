@@ -13,6 +13,16 @@ const createSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9_-]+$/),
   defaultMembershipFee: z.number().min(0).optional(),
   isActive: z.boolean().optional(),
+  logoUrl: z.string().optional(),
+  contactPersonName: z.string().optional(),
+  contactPersonPhone: z.string().optional(),
+  whatsAppSenderNumber: z.string().optional(),
+  address: z.string().optional(),
+  joinDate: z.string().optional(),
+  proRataMonthly: z.boolean().optional(),
+  proRataQuarterly: z.boolean().optional(),
+  proRataYearly: z.boolean().optional(),
+  lateFeePercentage: z.number().min(0).max(100).optional(),
 });
 
 const superUpdateSchema = z.object({
@@ -20,31 +30,47 @@ const superUpdateSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9_-]+$/).optional(),
   defaultMembershipFee: z.number().min(0).optional(),
   isActive: z.boolean().optional(),
+  logoUrl: z.string().optional().nullable(),
+  contactPersonName: z.string().optional().nullable(),
+  contactPersonPhone: z.string().optional().nullable(),
+  whatsAppSenderNumber: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  joinDate: z.string().optional().nullable(),
+  proRataMonthly: z.boolean().optional(),
+  proRataQuarterly: z.boolean().optional(),
+  proRataYearly: z.boolean().optional(),
+  lateFeePercentage: z.number().min(0).max(100).optional(),
 });
 
 const adminUpdateSchema = z.object({
-  defaultMembershipFee: z.number().min(0),
+  defaultMembershipFee: z.number().min(0).optional(),
+  contactPersonName: z.string().optional().nullable(),
+  contactPersonPhone: z.string().optional().nullable(),
+  whatsAppSenderNumber: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  proRataMonthly: z.boolean().optional(),
+  proRataQuarterly: z.boolean().optional(),
+  proRataYearly: z.boolean().optional(),
+  lateFeePercentage: z.number().min(0).max(100).optional(),
 });
 
-function toOrgPayload(
-  org: {
-    id: string;
-    name: string;
-    slug: string;
-    defaultMembershipFee: { toString(): string } | number;
-    isActive: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-    _count?: { persons?: number; memberships?: number };
-  },
-  counts?: { adminsCount?: number; usersCount?: number }
-) {
+function toOrgPayload(org: any, counts?: { adminsCount?: number; usersCount?: number }) {
   return {
     id: org.id,
     name: org.name,
     slug: org.slug,
     defaultMembershipFee: Number(org.defaultMembershipFee),
     isActive: org.isActive,
+    logoUrl: org.logoUrl ?? null,
+    contactPersonName: org.contactPersonName ?? null,
+    contactPersonPhone: org.contactPersonPhone ?? null,
+    whatsAppSenderNumber: org.whatsAppSenderNumber ?? null,
+    address: org.address ?? null,
+    joinDate: org.joinDate ?? null,
+    proRataMonthly: org.proRataMonthly ?? false,
+    proRataQuarterly: org.proRataQuarterly ?? false,
+    proRataYearly: org.proRataYearly ?? false,
+    lateFeePercentage: Number(org.lateFeePercentage ?? 5),
     createdAt: org.createdAt,
     updatedAt: org.updatedAt,
     adminsCount: counts?.adminsCount ?? 0,
@@ -164,6 +190,16 @@ organizationsRouter.post("/", async (req, res) => {
       slug: parsed.data.slug,
       defaultMembershipFee: parsed.data.defaultMembershipFee ?? 0,
       isActive: parsed.data.isActive ?? true,
+      logoUrl: parsed.data.logoUrl ?? null,
+      contactPersonName: parsed.data.contactPersonName ?? null,
+      contactPersonPhone: parsed.data.contactPersonPhone ?? null,
+      whatsAppSenderNumber: parsed.data.whatsAppSenderNumber ?? null,
+      address: parsed.data.address ?? null,
+      joinDate: parsed.data.joinDate ? new Date(parsed.data.joinDate) : null,
+      proRataMonthly: parsed.data.proRataMonthly ?? false,
+      proRataQuarterly: parsed.data.proRataQuarterly ?? false,
+      proRataYearly: parsed.data.proRataYearly ?? false,
+      lateFeePercentage: parsed.data.lateFeePercentage ?? 5,
     },
   });
   return res.status(201).json(toOrgPayload(org));
@@ -185,9 +221,13 @@ organizationsRouter.patch("/:id", async (req, res) => {
       });
       if (existing) return res.status(409).json({ error: "Slug already in use" });
     }
+    const data: any = { ...parsed.data };
+    if (data.joinDate !== undefined) {
+      data.joinDate = data.joinDate ? new Date(data.joinDate) : null;
+    }
     const org = await prisma.organization.update({
       where: { id: req.params.id },
-      data: parsed.data,
+      data,
     });
     return res.json(toOrgPayload(org));
   }
@@ -196,9 +236,19 @@ organizationsRouter.patch("/:id", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
+  const data: any = {};
+  if (parsed.data.defaultMembershipFee !== undefined) data.defaultMembershipFee = parsed.data.defaultMembershipFee;
+  if (parsed.data.contactPersonName !== undefined) data.contactPersonName = parsed.data.contactPersonName;
+  if (parsed.data.contactPersonPhone !== undefined) data.contactPersonPhone = parsed.data.contactPersonPhone;
+  if (parsed.data.whatsAppSenderNumber !== undefined) data.whatsAppSenderNumber = parsed.data.whatsAppSenderNumber;
+  if (parsed.data.address !== undefined) data.address = parsed.data.address;
+  if (parsed.data.proRataMonthly !== undefined) data.proRataMonthly = parsed.data.proRataMonthly;
+  if (parsed.data.proRataQuarterly !== undefined) data.proRataQuarterly = parsed.data.proRataQuarterly;
+  if (parsed.data.proRataYearly !== undefined) data.proRataYearly = parsed.data.proRataYearly;
+  if (parsed.data.lateFeePercentage !== undefined) data.lateFeePercentage = parsed.data.lateFeePercentage;
   const org = await prisma.organization.update({
     where: { id: req.params.id },
-    data: { defaultMembershipFee: parsed.data.defaultMembershipFee },
+    data,
   });
   return res.json(toOrgPayload(org));
 });

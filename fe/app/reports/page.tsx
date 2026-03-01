@@ -1,0 +1,568 @@
+"use client";
+
+import { useTranslation } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth-context";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { api, apiUrl } from "@/lib/api";
+import { Header } from "@/components/header";
+import { AbstractBg } from "@/components/abstract-bg";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FileText, Download, Search, Filter } from "lucide-react";
+import { Breadcrumb } from "@/components/breadcrumb";
+
+type EntityType = "persons" | "memberships" | "payments" | "distributions";
+
+const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+
+const PAYMENT_STATUSES = [
+  { value: "pending", label: "Pending" },
+  { value: "paid", label: "Paid" },
+  { value: "overdue", label: "Overdue" },
+];
+
+interface PersonResult {
+  id: string;
+  fullName: string;
+  nameWithInitials: string;
+  dateOfBirth: string | null;
+  isDisabled: boolean;
+  isMadarasaStudent: boolean;
+  membershipId: string | null;
+}
+
+interface MembershipResult {
+  id: string;
+  membershipNo: string;
+  membershipType: string;
+  membershipStatus: string;
+  hod?: { fullName: string; nameWithInitials: string };
+}
+
+interface PaymentResult {
+  id: string;
+  membershipId: string;
+  amount: number;
+  paymentDate: string;
+  note: string | null;
+  membership?: { membershipNo: string };
+  paymentDue?: { period: string; amountDue: number };
+}
+
+interface DistributionRecordResult {
+  id: string;
+  personId: string;
+  personName: string;
+  distributedAt: string;
+  distributionDate: string;
+}
+
+type ReportResult =
+  | PersonResult[]
+  | MembershipResult[]
+  | PaymentResult[]
+  | DistributionRecordResult[];
+
+export default function ReportsPage() {
+  const { t } = useTranslation();
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
+
+  const [entity, setEntity] = useState<EntityType>("persons");
+
+  // Entity-specific filter state (kept in sync for controlled inputs)
+  const [membershipType, setMembershipType] = useState("__all__");
+  const [minAge, setMinAge] = useState("");
+  const [maxAge, setMaxAge] = useState("");
+  const [isDisabled, setIsDisabled] = useState(false);
+  const [isDisabledFilter, setIsDisabledFilter] = useState(false);
+  const [isMadarasaStudent, setIsMadarasaStudent] = useState(false);
+  const [isMadarasaFilter, setIsMadarasaFilter] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState("__all__");
+  const [distributionId, setDistributionId] = useState("");
+
+  const [results, setResults] = useState<ReportResult>([]);
+  const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [user, authLoading, router]);
+
+  function buildFilters(): Record<string, unknown> {
+    const f: Record<string, unknown> = {};
+    const mt = membershipType !== "__all__" ? membershipType : "";
+    const ps = paymentStatus !== "__all__" ? paymentStatus : "";
+    if (entity === "persons") {
+      if (mt) f.membershipType = mt;
+      const min = parseInt(minAge, 10);
+      if (!isNaN(min)) f.minAge = min;
+      const max = parseInt(maxAge, 10);
+      if (!isNaN(max)) f.maxAge = max;
+      if (isDisabledFilter) f.isDisabled = isDisabled;
+      if (isMadarasaFilter) f.isMadarasaStudent = isMadarasaStudent;
+    } else if (entity === "memberships") {
+      if (mt) f.membershipType = mt;
+    } else if (entity === "payments") {
+      if (ps) f.paymentStatus = ps;
+    } else if (entity === "distributions") {
+      if (distributionId.trim()) f.distributionId = distributionId.trim();
+    }
+    return f;
+  }
+
+  async function handleQuery() {
+    if (entity === "distributions" && !distributionId.trim()) {
+      setError(t("reports.distributionIdRequired"));
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const f = buildFilters();
+      const data = await api<ReportResult>("/reports/query", {
+        method: "POST",
+        body: JSON.stringify({ entity, filters: f }),
+      });
+      setResults(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run query");
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleExport() {
+    if (entity === "distributions" && !distributionId.trim()) {
+      setError(t("reports.distributionIdRequiredExport"));
+      return;
+    }
+    setError(null);
+    setExporting(true);
+    try {
+      const f = buildFilters();
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const url =
+        apiUrl("/reports/export") +
+        `?entity=${entity}&filters=${encodeURIComponent(JSON.stringify(f))}`;
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error((err as { error?: string }).error || "Export failed");
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${entity}-export.csv`;
+      a.click();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export CSV");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background relative">
+      <AbstractBg />
+      <Header />
+      <main className="relative z-10 p-6 max-w-6xl mx-auto">
+        <Breadcrumb
+          items={[{ label: t("dashboard.title"), href: "/" }, { label: t("reports.title") }]}
+        />
+
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            {t("reports.title")}
+          </h1>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+            {error}
+          </div>
+        )}
+
+        <Card className="border-primary/20 mb-6">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Filter className="h-4 w-4 text-primary" />
+              {t("reports.buildReport")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="text-sm font-medium block mb-2">
+                  {t("reports.entity")}
+                </label>
+                <Select
+                  value={entity}
+                  onValueChange={(v) => setEntity(v as EntityType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="persons">{t("reports.persons")}</SelectItem>
+                    <SelectItem value="memberships">{t("reports.memberships")}</SelectItem>
+                    <SelectItem value="payments">{t("reports.payments")}</SelectItem>
+                    <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {entity === "persons" && (
+                <>
+                  <div>
+                    <label className="text-sm font-medium block mb-2">
+                      {t("reports.membershipType")}
+                    </label>
+                    <Select
+                      value={membershipType}
+                      onValueChange={setMembershipType}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("reports.any")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                        {MEMBERSHIP_TYPES.map((mtype) => (
+                          <SelectItem key={mtype} value={mtype}>
+                            {mtype}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium block mb-2">
+                      {t("reports.minAge")}
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder={t("reports.any")}
+                      value={minAge}
+                      onChange={(e) => setMinAge(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium block mb-2">
+                      {t("reports.maxAge")}
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder={t("reports.any")}
+                      value={maxAge}
+                      onChange={(e) => setMaxAge(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 sm:col-span-2">
+                    <Checkbox
+                      id="filter-disabled"
+                      checked={isDisabledFilter}
+                      onCheckedChange={(c) =>
+                        setIsDisabledFilter(c === true)
+                      }
+                    />
+                    <label
+                      htmlFor="filter-disabled"
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      {t("reports.filterByDisabled")}
+                    </label>
+                    {isDisabledFilter && (
+                      <Select
+                        value={isDisabled ? "true" : "false"}
+                        onValueChange={(v) => setIsDisabled(v === "true")}
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t("common.yes")}</SelectItem>
+                          <SelectItem value="false">{t("common.no")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 sm:col-span-2">
+                    <Checkbox
+                      id="filter-madarasa"
+                      checked={isMadarasaFilter}
+                      onCheckedChange={(c) =>
+                        setIsMadarasaFilter(c === true)
+                      }
+                    />
+                    <label
+                      htmlFor="filter-madarasa"
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      {t("reports.filterByMadarasa")}
+                    </label>
+                    {isMadarasaFilter && (
+                      <Select
+                        value={isMadarasaStudent ? "true" : "false"}
+                        onValueChange={(v) => setIsMadarasaStudent(v === "true")}
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">{t("common.yes")}</SelectItem>
+                          <SelectItem value="false">{t("common.no")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {entity === "memberships" && (
+                <div>
+                  <label className="text-sm font-medium block mb-2">
+                    {t("reports.membershipType")}
+                  </label>
+                  <Select
+                    value={membershipType}
+                    onValueChange={setMembershipType}
+                  >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("reports.any")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                    {MEMBERSHIP_TYPES.map((mtype) => (
+                      <SelectItem key={mtype} value={mtype}>
+                        {mtype}
+                      </SelectItem>
+                    ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {entity === "payments" && (
+                <div>
+                  <label className="text-sm font-medium block mb-2">
+                    {t("reports.paymentStatus")}
+                  </label>
+                  <Select
+                    value={paymentStatus}
+                    onValueChange={setPaymentStatus}
+                  >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("reports.any")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                    {PAYMENT_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {t(`payments.${s.value}`)}
+                      </SelectItem>
+                    ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {entity === "distributions" && (
+                <div>
+                    <label className="text-sm font-medium block mb-2">
+                    {t("reports.distributionId")} <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    placeholder={t("reports.enterDistributionId")}
+                    value={distributionId}
+                    onChange={(e) => setDistributionId(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleQuery}
+                disabled={loading}
+                className="gap-2"
+              >
+                <Search className="h-4 w-4" />
+                {loading ? t("reports.querying") : t("reports.query")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                disabled={exporting}
+                className="gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {exporting ? t("reports.exporting") : t("reports.exportCSV")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {results.length > 0 && (
+          <Card className="border-primary/20">
+            <CardHeader>
+              <CardTitle className="text-base">
+                {t("reports.results")} ({results.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-x-auto">
+                {entity === "persons" && (
+                  <table className="w-full text-sm min-w-[500px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Name</th>
+                        <th className="text-left p-3 font-medium">Initials</th>
+                        <th className="text-left p-3 font-medium">DOB</th>
+                        <th className="text-center p-3 font-medium">Disabled</th>
+                        <th className="text-center p-3 font-medium">Madarasa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(results as PersonResult[]).map((r) => (
+                        <tr key={r.id} className="border-t">
+                          <td className="p-3">{r.fullName}</td>
+                          <td className="p-3 text-muted-foreground">
+                            {r.nameWithInitials}
+                          </td>
+                          <td className="p-3">
+                            {r.dateOfBirth
+                              ? new Date(r.dateOfBirth).toLocaleDateString()
+                              : "—"}
+                          </td>
+                          <td className="p-3 text-center">
+                            {r.isDisabled ? "Yes" : "No"}
+                          </td>
+                          <td className="p-3 text-center">
+                            {r.isMadarasaStudent ? "Yes" : "No"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "memberships" && (
+                  <table className="w-full text-sm min-w-[500px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">No.</th>
+                        <th className="text-left p-3 font-medium">Type</th>
+                        <th className="text-left p-3 font-medium">Status</th>
+                        <th className="text-left p-3 font-medium">Head</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(results as MembershipResult[]).map((r) => (
+                        <tr key={r.id} className="border-t">
+                          <td className="p-3 font-medium">{r.membershipNo}</td>
+                          <td className="p-3">{r.membershipType}</td>
+                          <td className="p-3">{r.membershipStatus}</td>
+                          <td className="p-3">
+                            {r.hod?.fullName ?? r.hod?.nameWithInitials ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "payments" && (
+                  <table className="w-full text-sm min-w-[500px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Membership</th>
+                        <th className="text-left p-3 font-medium">Period</th>
+                        <th className="text-right p-3 font-medium">Amount</th>
+                        <th className="text-left p-3 font-medium">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(results as PaymentResult[]).map((r) => (
+                        <tr key={r.id} className="border-t">
+                          <td className="p-3">
+                            {r.membership?.membershipNo ?? r.membershipId}
+                          </td>
+                          <td className="p-3">
+                            {r.paymentDue?.period ?? "—"}
+                          </td>
+                          <td className="p-3 text-right tabular-nums">
+                            {Number(r.amount).toFixed(2)}
+                          </td>
+                          <td className="p-3">
+                            {new Date(r.paymentDate).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "distributions" && (
+                  <table className="w-full text-sm min-w-[500px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Person</th>
+                        <th className="text-left p-3 font-medium">
+                          Distribution Date
+                        </th>
+                        <th className="text-left p-3 font-medium">
+                          Distributed At
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(results as DistributionRecordResult[]).map((r) => (
+                        <tr key={r.id} className="border-t">
+                          <td className="p-3">{r.personName}</td>
+                          <td className="p-3">{r.distributionDate}</td>
+                          <td className="p-3 text-muted-foreground">
+                            {new Date(r.distributedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {!loading && results.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            {t("reports.runQueryHint")}
+          </p>
+        )}
+      </main>
+    </div>
+  );
+}

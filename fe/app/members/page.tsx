@@ -9,7 +9,7 @@ import { api, type Membership } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 
@@ -94,8 +94,8 @@ function MembersContent() {
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : (
               <>
-                <div className="rounded-md border overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[640px]">
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-3 font-medium">Membership No</th>
@@ -119,11 +119,18 @@ function MembersContent() {
                               : ""}
                           </td>
                           <td className="p-3">
-                            <Link href={`/members/${m.id}`}>
-                              <Button variant="ghost" size="sm">
-                                View
-                              </Button>
-                            </Link>
+                            <div className="flex items-center gap-1">
+                              <Link href={`/members/${m.id}`}>
+                                <Button variant="ghost" size="sm" aria-label="View Membership">
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                              <Link href={`/members/${m.id}/edit`}>
+                                <Button variant="ghost" size="sm" aria-label="Edit Membership">
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       ))}

@@ -360,7 +360,7 @@ export default function MembershipDetailPage() {
         <div className="mt-2 mb-8 rounded-xl border bg-card overflow-hidden print:mt-0 print:mb-4">
           <div className="h-2 bg-gradient-to-r from-primary via-primary/70 to-primary/40" />
           <div className="p-6">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div className="flex items-center gap-4">
                 <PersonAvatar name={membership.hod?.fullName || "?"} size="lg" />
                 <div>
@@ -438,7 +438,7 @@ export default function MembershipDetailPage() {
             <div className="space-y-6">
 
               {/* ── Household Stat Widgets ────────────────────── */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Card>
                   <CardContent className="pt-4 pb-4 px-4">
                     <div className="flex items-center gap-3">
@@ -848,8 +848,8 @@ export default function MembershipDetailPage() {
                 </CardHeader>
                 <CardContent>
                   {balance && balance.dues.length > 0 ? (
-                    <div className="rounded-lg border overflow-hidden">
-                      <table className="w-full text-sm">
+                    <div className="rounded-lg border overflow-x-auto">
+                      <table className="w-full text-sm min-w-[480px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
                             <th className="text-left p-3 font-medium text-muted-foreground">
@@ -946,8 +946,8 @@ export default function MembershipDetailPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-lg border overflow-hidden">
-                      <table className="w-full text-sm">
+                    <div className="rounded-lg border overflow-x-auto">
+                      <table className="w-full text-sm min-w-[540px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
                             <th className="text-left p-3 font-medium text-muted-foreground">

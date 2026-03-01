@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { useTranslation } from "@/lib/i18n";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, Eye, EyeOff, ArrowRight } from "lucide-react";
@@ -11,6 +13,7 @@ import { AbstractBg } from "@/components/abstract-bg";
 export default function LoginPage() {
   const router = useRouter();
   const { user, loading: authLoading, login } = useAuth();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -60,7 +63,7 @@ export default function LoginPage() {
                 htmlFor="email"
                 className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
               >
-                Email
+                {t("auth.email")}
               </Label>
               <Input
                 id="email"
@@ -79,7 +82,7 @@ export default function LoginPage() {
                 htmlFor="password"
                 className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
               >
-                Password
+                {t("auth.password")}
               </Label>
               <div className="relative">
                 <Input
@@ -104,6 +107,15 @@ export default function LoginPage() {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                {t("auth.forgotPassword")}
+              </Link>
             </div>
 
             {error && (
@@ -139,11 +151,11 @@ export default function LoginPage() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                     />
                   </svg>
-                  Signing in…
+                  {t("auth.signIn")}…
                 </span>
               ) : (
                 <>
-                  Sign in
+                  {t("auth.signIn")}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}

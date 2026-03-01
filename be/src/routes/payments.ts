@@ -4,6 +4,7 @@ import { DueStatus } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope, requireAdmin } from "../middleware/auth.js";
+import { queuePaymentReceived } from "../lib/message-queue.js";
 
 export const paymentsRouter = Router();
 
@@ -196,6 +197,19 @@ paymentsRouter.post("/", async (req, res) => {
       data: { amountPaid: newPaid, status: newStatus },
     }),
   ]);
+
+  const membership = await prisma.membership.findUnique({
+    where: { id: due.membershipId },
+    select: { membershipNo: true, hod: { select: { whatsAppNumber: true } } },
+  });
+  if (membership?.hod?.whatsAppNumber) {
+    queuePaymentReceived(
+      due.organizationId,
+      membership.hod.whatsAppNumber,
+      membership.membershipNo,
+      paymentAmount.toString()
+    ).catch(() => {});
+  }
 
   return res.status(201).json(payment);
 });
