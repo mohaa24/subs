@@ -226,8 +226,32 @@ export interface MembershipBalance {
   totalDue: number;
   totalPaid: number;
   outstanding: number;
+  creditBalance: number;
+  netOutstanding: number;
   overdueCount: number;
   dues: PaymentDue[];
+}
+
+export type MembershipCreditEntryType =
+  | "credit_overpayment"
+  | "debit_auto_apply"
+  | "credit_adjustment"
+  | "debit_adjustment";
+
+export interface MembershipCreditEntry {
+  id: string;
+  membershipId: string;
+  organizationId: string;
+  paymentId?: string | null;
+  paymentDueId?: string | null;
+  amountDelta: number;
+  entryType: MembershipCreditEntryType;
+  note?: string | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  paymentDue?: { id: string; period: string } | null;
+  payment?: { id: string; amount: number; paymentDate: string } | null;
+  createdBy?: { id: string; email: string } | null;
 }
 
 export type PermissionType =

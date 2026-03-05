@@ -17,11 +17,13 @@ function getCurrentDistributionDate(frequency) {
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, "0");
     const d = String(now.getDate()).padStart(2, "0");
+    if (frequency === client_1.DistributionFrequency.Once)
+        return "once";
     if (frequency === client_1.DistributionFrequency.Daily)
         return `${y}-${m}-${d}`;
     if (frequency === client_1.DistributionFrequency.Monthly)
         return `${y}-${m}`;
-    return String(y); // Yearly
+    return String(y);
 }
 function buildEligibleWhere(organizationId, filterCriteria) {
     const where = { organizationId };
@@ -53,7 +55,7 @@ function buildEligibleWhere(organizationId, filterCriteria) {
 const createSchema = zod_1.z.object({
     name: zod_1.z.string().min(1),
     description: zod_1.z.string().optional(),
-    frequency: zod_1.z.enum(["Daily", "Monthly", "Yearly"]),
+    frequency: zod_1.z.enum(["Once", "Daily", "Monthly", "Yearly"]),
     filterCriteria: zod_1.z.record(zod_1.z.any()).optional(),
     isActive: zod_1.z.boolean().optional(),
 });
@@ -117,6 +119,28 @@ exports.distributionsRouter.post("/", async (req, res) => {
         },
     });
     return res.status(201).json(dist);
+});
+exports.distributionsRouter.delete("/:id", async (req, res) => {
+    const dist = await prisma_js_1.prisma.distribution.findUnique({ where: { id: req.params.id } });
+    if (!dist)
+        return res.status(404).json({ error: "Distribution not found" });
+    if (req.auth.organizationId && dist.organizationId !== req.auth.organizationId && req.auth.role !== "super_user")
+        return res.status(403).json({ error: "Forbidden" });
+    await prisma_js_1.prisma.distributionRecord.deleteMany({ where: { distributionId: dist.id } });
+    await prisma_js_1.prisma.distribution.delete({ where: { id: dist.id } });
+    return res.status(204).send();
+});
+exports.distributionsRouter.post("/:id/complete", async (req, res) => {
+    const dist = await prisma_js_1.prisma.distribution.findUnique({ where: { id: req.params.id } });
+    if (!dist)
+        return res.status(404).json({ error: "Distribution not found" });
+    if (req.auth.organizationId && dist.organizationId !== req.auth.organizationId && req.auth.role !== "super_user")
+        return res.status(403).json({ error: "Forbidden" });
+    const updated = await prisma_js_1.prisma.distribution.update({
+        where: { id: dist.id },
+        data: { isActive: false },
+    });
+    return res.json(updated);
 });
 exports.distributionsRouter.patch("/:id", async (req, res) => {
     const parsed = updateSchema.safeParse(req.body);

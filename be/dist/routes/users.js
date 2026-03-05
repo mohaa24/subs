@@ -46,14 +46,40 @@ const createSchema = zod_1.z.object({
     password: zod_1.z.string().min(6),
     role: zod_1.z.enum(["admin", "user"]),
     organizationId: zod_1.z.string().optional(),
+    phoneNumber: zod_1.z.string().optional(),
+});
+const updateMeSchema = zod_1.z.object({
+    locale: zod_1.z.enum(["en", "ta", "si"]).optional(),
+    phoneNumber: zod_1.z.string().optional().nullable(),
 });
 exports.usersRouter.get("/", auth_js_1.requireAdmin, async (req, res) => {
     const orgId = req.auth.role === "super_user" ? req.query.organizationId : req.auth.organizationId;
     const list = await prisma_js_1.prisma.user.findMany({
         where: orgId ? { organizationId: orgId } : {},
-        select: { id: true, email: true, role: true, organizationId: true, createdAt: true, organization: { select: { id: true, name: true, slug: true } } },
+        select: {
+            id: true, email: true, role: true, organizationId: true, phoneNumber: true, locale: true,
+            createdAt: true, organization: { select: { id: true, name: true, slug: true } },
+            permissions: { select: { permission: true } },
+        },
     });
     return res.json(list);
+});
+exports.usersRouter.patch("/me", async (req, res) => {
+    const parsed = updateMeSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const data = {};
+    if (parsed.data.locale !== undefined)
+        data.locale = parsed.data.locale;
+    if (parsed.data.phoneNumber !== undefined)
+        data.phoneNumber = parsed.data.phoneNumber;
+    const user = await prisma_js_1.prisma.user.update({
+        where: { id: req.auth.userId },
+        data,
+        select: { id: true, email: true, role: true, locale: true, phoneNumber: true },
+    });
+    return res.json(user);
 });
 exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
@@ -75,8 +101,9 @@ exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
             passwordHash,
             role: parsed.data.role,
             organizationId: orgId || null,
+            phoneNumber: parsed.data.phoneNumber ?? null,
         },
-        select: { id: true, email: true, role: true, organizationId: true },
+        select: { id: true, email: true, role: true, organizationId: true, phoneNumber: true, locale: true },
     });
     return res.status(201).json(user);
 });

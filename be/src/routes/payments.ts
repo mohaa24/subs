@@ -3,8 +3,13 @@ import { z } from "zod";
 import { DueStatus } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, withOrgScope, requireAdmin } from "../middleware/auth.js";
+import { requireAuth, withOrgScope } from "../middleware/auth.js";
 import { queuePaymentReceived } from "../lib/message-queue.js";
+import {
+  addOverpaymentCreditEntry,
+  applyAvailableCreditToDue,
+  getMembershipCreditBalance,
+} from "../lib/membership-credit.js";
 
 export const paymentsRouter = Router();
 
@@ -17,6 +22,10 @@ function getOrgId(req: any): string | undefined {
 
 function toDecimal(n: number) {
   return new Decimal(n);
+}
+
+function minDecimal(a: Decimal, b: Decimal): Decimal {
+  return a.lte(b) ? a : b;
 }
 
 function periodString(date: Date): string {
@@ -45,6 +54,7 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
 
   let created = 0;
   let skipped = 0;
+  let autoAppliedCredit = new Decimal(0);
 
   for (const m of memberships) {
     const shouldGenerate =
@@ -65,21 +75,34 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
       continue;
     }
 
-    await prisma.paymentDue.create({
-      data: {
-        membershipId: m.id,
-        organizationId: m.organizationId,
-        dueDate: targetDate,
-        period,
-        amountDue: m.totalContribution,
-        amountPaid: new Decimal(0),
-        status: "pending",
-      },
+    const applied = await prisma.$transaction(async (tx) => {
+      const due = await tx.paymentDue.create({
+        data: {
+          membershipId: m.id,
+          organizationId: m.organizationId,
+          dueDate: targetDate,
+          period,
+          amountDue: m.totalContribution,
+          amountPaid: new Decimal(0),
+          status: "pending",
+        },
+      });
+      return applyAvailableCreditToDue(tx, {
+        dueId: due.id,
+        createdByUserId: req.auth!.userId,
+        note: `Auto-applied member credit to ${period} due`,
+      });
     });
     created++;
+    autoAppliedCredit = autoAppliedCredit.add(applied);
   }
 
-  return res.json({ created, skipped, period });
+  return res.json({
+    created,
+    skipped,
+    period,
+    autoAppliedCredit: autoAppliedCredit.toNumber(),
+  });
 });
 
 // List dues for a membership (with optional status filter)
@@ -130,14 +153,18 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const dues = await prisma.paymentDue.findMany({
-    where: { membershipId: membership.id },
-    orderBy: { dueDate: "desc" },
-  });
+  const [dues, creditBalance] = await Promise.all([
+    prisma.paymentDue.findMany({
+      where: { membershipId: membership.id },
+      orderBy: { dueDate: "desc" },
+    }),
+    prisma.$transaction((tx) => getMembershipCreditBalance(tx, membership.id)),
+  ]);
 
   const totalDue = dues.reduce((sum, d) => sum.add(d.amountDue), new Decimal(0));
   const totalPaid = dues.reduce((sum, d) => sum.add(d.amountPaid), new Decimal(0));
   const outstanding = totalDue.sub(totalPaid);
+  const netOutstanding = outstanding.sub(creditBalance);
   const overdueCount = dues.filter(
     (d) => d.status === "pending" || d.status === "partial" || d.status === "overdue"
   ).length;
@@ -148,8 +175,54 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
     totalDue: totalDue.toNumber(),
     totalPaid: totalPaid.toNumber(),
     outstanding: outstanding.toNumber(),
+    creditBalance: creditBalance.toNumber(),
+    netOutstanding: netOutstanding.toNumber(),
     overdueCount,
     dues,
+  });
+});
+
+// List credit ledger entries for a membership
+paymentsRouter.get("/credit/:membershipId", async (req, res) => {
+  const membership = await prisma.membership.findUnique({
+    where: { id: req.params.membershipId },
+    select: { id: true, organizationId: true, membershipNo: true },
+  });
+  if (!membership) return res.status(404).json({ error: "Membership not found" });
+  if (req.auth!.organizationId && membership.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
+
+  const [entries, total, balance] = await prisma.$transaction(async (tx) => {
+    const [items, count, credit] = await Promise.all([
+      tx.membershipCreditLedger.findMany({
+        where: { membershipId: membership.id },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          paymentDue: { select: { id: true, period: true } },
+          payment: { select: { id: true, amount: true, paymentDate: true } },
+          createdBy: { select: { id: true, email: true } },
+        },
+      }),
+      tx.membershipCreditLedger.count({ where: { membershipId: membership.id } }),
+      getMembershipCreditBalance(tx, membership.id),
+    ]);
+    return [items, count, credit] as const;
+  });
+
+  return res.json({
+    membershipId: membership.id,
+    membershipNo: membership.membershipNo,
+    balance: balance.toNumber(),
+    entries,
+    total,
+    page,
+    limit,
   });
 });
 
@@ -176,12 +249,14 @@ paymentsRouter.post("/", async (req, res) => {
   }
 
   const paymentAmount = toDecimal(parsed.data.amount);
-  const newPaid = due.amountPaid.add(paymentAmount);
-  let newStatus: DueStatus = "partial";
-  if (newPaid.gte(due.amountDue)) newStatus = "paid";
+  const dueRemaining = due.amountDue.sub(due.amountPaid);
+  const remaining = dueRemaining.gt(new Decimal(0)) ? dueRemaining : new Decimal(0);
+  const appliedToDue = minDecimal(paymentAmount, remaining);
+  const overpaymentAmount = paymentAmount.sub(appliedToDue);
+  const nextPaid = due.amountPaid.add(appliedToDue);
 
-  const [payment] = await prisma.$transaction([
-    prisma.payment.create({
+  const payment = await prisma.$transaction(async (tx) => {
+    const createdPayment = await tx.payment.create({
       data: {
         paymentDueId: due.id,
         membershipId: due.membershipId,
@@ -191,12 +266,32 @@ paymentsRouter.post("/", async (req, res) => {
         collectedByUserId: req.auth!.userId,
         note: parsed.data.note ?? null,
       },
-    }),
-    prisma.paymentDue.update({
-      where: { id: due.id },
-      data: { amountPaid: newPaid, status: newStatus },
-    }),
-  ]);
+    });
+
+    if (appliedToDue.gt(new Decimal(0))) {
+      let newStatus: DueStatus = "partial";
+      if (nextPaid.gte(due.amountDue)) newStatus = "paid";
+
+      await tx.paymentDue.update({
+        where: { id: due.id },
+        data: { amountPaid: nextPaid, status: newStatus },
+      });
+    }
+
+    if (overpaymentAmount.gt(new Decimal(0))) {
+      await addOverpaymentCreditEntry(tx, {
+        membershipId: due.membershipId,
+        organizationId: due.organizationId,
+        paymentId: createdPayment.id,
+        paymentDueId: due.id,
+        amount: overpaymentAmount,
+        createdByUserId: req.auth!.userId,
+        note: "Excess amount moved to member credit",
+      });
+    }
+
+    return createdPayment;
+  });
 
   const membership = await prisma.membership.findUnique({
     where: { id: due.membershipId },

@@ -8,6 +8,7 @@ import {
   api,
   type Membership,
   type MembershipBalance,
+  type MembershipCreditEntry,
   type Payment,
   type PaymentDue,
 } from "@/lib/api";
@@ -133,6 +134,11 @@ export default function MembershipDetailPage() {
   const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [paymentsPage, setPaymentsPage] = useState(1);
   const paymentsLimit = 20;
+  const [creditEntries, setCreditEntries] = useState<MembershipCreditEntry[]>([]);
+  const [creditTotal, setCreditTotal] = useState(0);
+  const [creditBalance, setCreditBalance] = useState(0);
+  const [creditPage, setCreditPage] = useState(1);
+  const creditLimit = 20;
 
   const [qrOpen, setQrOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
@@ -176,6 +182,23 @@ export default function MembershipDetailPage() {
       .catch(() => {});
   }, [user, id, paymentsPage]);
 
+  const loadCreditLedger = useCallback(() => {
+    if (!user || !id) return;
+    api<{ entries: MembershipCreditEntry[]; total: number; balance: number }>(`/payments/credit/${id}`, {
+      params: { page: String(creditPage), limit: String(creditLimit) },
+    })
+      .then((r) => {
+        setCreditEntries(r.entries);
+        setCreditTotal(r.total);
+        setCreditBalance(Number(r.balance));
+      })
+      .catch(() => {
+        setCreditEntries([]);
+        setCreditTotal(0);
+        setCreditBalance(0);
+      });
+  }, [user, id, creditPage]);
+
   useEffect(() => {
     loadBalance();
   }, [loadBalance]);
@@ -183,6 +206,10 @@ export default function MembershipDetailPage() {
   useEffect(() => {
     loadPayments();
   }, [loadPayments]);
+
+  useEffect(() => {
+    loadCreditLedger();
+  }, [loadCreditLedger]);
 
   async function generateQr() {
     const url = `${window.location.origin}/members/${id}`;
@@ -238,6 +265,7 @@ export default function MembershipDetailPage() {
       setPayDialogOpen(false);
       loadBalance();
       loadPayments();
+      loadCreditLedger();
     } catch (err) {
       setPayError(
         err instanceof Error ? err.message : "Failed to record payment"
@@ -298,11 +326,20 @@ export default function MembershipDetailPage() {
 
   const yesNo = (v: boolean) => (v ? "Yes" : "No");
   const totalPaymentPages = Math.ceil(paymentsTotal / paymentsLimit) || 1;
+  const totalCreditPages = Math.ceil(creditTotal / creditLimit) || 1;
   const paymentProgress = balance
     ? balance.totalDue > 0
       ? Math.min(100, (balance.totalPaid / balance.totalDue) * 100)
       : 0
     : 0;
+
+  function creditEntryLabel(type: MembershipCreditEntry["entryType"]) {
+    if (type === "credit_overpayment") return "Overpayment";
+    if (type === "debit_auto_apply") return "Auto-applied";
+    if (type === "credit_adjustment") return "Adjustment (credit)";
+    if (type === "debit_adjustment") return "Adjustment (debit)";
+    return type;
+  }
 
   function getAge(dob: string | null | undefined): number | null {
     if (!dob) return null;
@@ -431,6 +468,10 @@ export default function MembershipDetailPage() {
               <Clock className="h-4 w-4" />
               Payment History
             </TabsTrigger>
+            <TabsTrigger value="credit-ledger" className="gap-1.5">
+              <Landmark className="h-4 w-4" />
+              Credit Ledger
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Tab 1: Details ──────────────────────────────── */}
@@ -483,7 +524,7 @@ export default function MembershipDetailPage() {
               {/* Payment summary cards */}
               {balance && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="border-blue-100 bg-gradient-to-br from-blue-50/50 to-card">
                       <CardContent className="pt-5 pb-5 px-5">
                         <div className="flex items-center gap-3">
@@ -522,7 +563,7 @@ export default function MembershipDetailPage() {
 
                     <Card
                       className={`${
-                        balance.outstanding > 0
+                        balance.netOutstanding > 0
                           ? "border-red-100 bg-gradient-to-br from-red-50/50 to-card"
                           : "border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card"
                       }`}
@@ -531,12 +572,12 @@ export default function MembershipDetailPage() {
                         <div className="flex items-center gap-3">
                           <div
                             className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                              balance.outstanding > 0
+                              balance.netOutstanding > 0
                                 ? "bg-red-100"
                                 : "bg-emerald-100"
                             }`}
                           >
-                            {balance.outstanding > 0 ? (
+                            {balance.netOutstanding > 0 ? (
                               <AlertTriangle className="h-5 w-5 text-red-600" />
                             ) : (
                               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -544,14 +585,35 @@ export default function MembershipDetailPage() {
                           </div>
                           <div>
                             <p className="text-xs font-medium text-muted-foreground">
-                              Outstanding
+                              Net Outstanding
                             </p>
                             <p
                               className={`text-2xl font-bold tabular-nums ${
-                                balance.outstanding > 0 ? "text-red-600" : "text-emerald-600"
+                                balance.netOutstanding > 0 ? "text-red-600" : "text-emerald-600"
                               }`}
                             >
-                              {balance.outstanding.toFixed(2)}
+                              {balance.netOutstanding.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Gross: {balance.outstanding.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-card">
+                      <CardContent className="pt-5 pb-5 px-5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <Landmark className="h-5 w-5 text-indigo-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground">
+                              Available Credit
+                            </p>
+                            <p className="text-2xl font-bold tabular-nums text-indigo-700">
+                              {balance.creditBalance.toFixed(2)}
                             </p>
                           </div>
                         </div>
@@ -1021,6 +1083,136 @@ export default function MembershipDetailPage() {
                           onClick={() =>
                             setPaymentsPage((p) => Math.min(totalPaymentPages, p + 1))
                           }
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Tab 3: Credit Ledger ───────────────────────────── */}
+          <TabsContent value="credit-ledger" forceMount className="data-[state=inactive]:hidden print:hidden">
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Landmark className="h-5 w-5 text-primary" />
+                  Credit Ledger
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-muted-foreground">
+                    Member-owned balance from overpayments and auto-applications.
+                  </p>
+                  <div className="text-sm rounded-md bg-muted px-3 py-1.5">
+                    Current Balance:{" "}
+                    <span className="font-semibold tabular-nums text-indigo-700">
+                      {creditBalance.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {creditEntries.length === 0 ? (
+                  <div className="text-center py-10">
+                    <Landmark className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      No credit ledger entries yet.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-lg border overflow-x-auto">
+                      <table className="w-full text-sm min-w-[720px]">
+                        <thead>
+                          <tr className="bg-muted/50 border-b">
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Date
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Entry
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Due Period
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Note
+                            </th>
+                            <th className="text-right p-3 font-medium text-muted-foreground">
+                              Delta
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              By
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {creditEntries.map((entry, i) => {
+                            const delta = Number(entry.amountDelta);
+                            const isCredit = delta >= 0;
+                            return (
+                              <tr
+                                key={entry.id}
+                                className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
+                                  i % 2 === 0 ? "" : "bg-muted/10"
+                                }`}
+                              >
+                                <td className="p-3">
+                                  {new Date(entry.createdAt).toLocaleDateString()}
+                                </td>
+                                <td className="p-3 font-medium">
+                                  {creditEntryLabel(entry.entryType)}
+                                </td>
+                                <td className="p-3">
+                                  {entry.paymentDue?.period ?? "—"}
+                                </td>
+                                <td className="p-3 text-muted-foreground max-w-[260px] truncate">
+                                  {entry.note || "—"}
+                                </td>
+                                <td
+                                  className={`p-3 text-right tabular-nums font-semibold ${
+                                    isCredit ? "text-emerald-600" : "text-amber-700"
+                                  }`}
+                                >
+                                  {isCredit ? "+" : ""}
+                                  {delta.toFixed(2)}
+                                </td>
+                                <td className="p-3 text-muted-foreground">
+                                  {entry.createdBy?.email ?? "System"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex items-center justify-between text-sm text-muted-foreground mt-4 pt-4 border-t">
+                      <span className="font-medium">
+                        {creditTotal} entr{creditTotal === 1 ? "y" : "ies"}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          disabled={creditPage <= 1}
+                          onClick={() => setCreditPage((p) => Math.max(1, p - 1))}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="tabular-nums min-w-[100px] text-center">
+                          Page {creditPage} of {totalCreditPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          disabled={creditPage >= totalCreditPages}
+                          onClick={() => setCreditPage((p) => Math.min(totalCreditPages, p + 1))}
                         >
                           <ChevronRight className="h-4 w-4" />
                         </Button>

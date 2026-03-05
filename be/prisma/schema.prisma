@@ -34,6 +34,7 @@ model Organization {
   memberships        Membership[]
   paymentDues        PaymentDue[]
   payments           Payment[]
+  membershipCreditEntries MembershipCreditLedger[]
   billing            OrganizationBilling[]
   formFieldConfigs   FormFieldConfig[]
   announcementGroups AnnouncementGroup[]
@@ -81,6 +82,7 @@ model User {
   bookmarks           UserBookmark[]
   billingMarks        OrganizationBilling[] @relation("BillingMarkedBy")
   distributionRecords DistributionRecord[]  @relation("DistributedByUser")
+  createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
 }
 
 enum UserRole {
@@ -315,6 +317,7 @@ model Membership {
   dependents   MembershipDependent[]
   dues         PaymentDue[]
   payments     Payment[]
+  creditLedgerEntries MembershipCreditLedger[]
 }
 
 enum DependentGroup {
@@ -374,6 +377,7 @@ model PaymentDue {
   membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payments     Payment[]
+  creditEntries MembershipCreditLedger[]
 
   @@unique([membershipId, period])
 }
@@ -393,6 +397,36 @@ model Payment {
   membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   collectedBy  User         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
+  creditEntries MembershipCreditLedger[]
+}
+
+enum MembershipCreditEntryType {
+  credit_overpayment
+  debit_auto_apply
+  credit_adjustment
+  debit_adjustment
+}
+
+model MembershipCreditLedger {
+  id              String                    @id @default(cuid())
+  membershipId    String
+  organizationId  String
+  paymentId       String?
+  paymentDueId    String?
+  amountDelta     Decimal                   @db.Decimal(12, 2)
+  entryType       MembershipCreditEntryType
+  note            String?
+  createdByUserId String?
+  createdAt       DateTime                  @default(now())
+
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  paymentDue   PaymentDue?  @relation(fields: [paymentDueId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("CreditEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([membershipId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 // ─── Announcements ───────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "./prisma.js";
+import { applyAvailableCreditToDue } from "./membership-credit.js";
 import {
   queuePaymentDueGenerated,
   queuePaymentOverdue,
@@ -28,6 +29,7 @@ export async function generateMonthlyDues() {
 
   let created = 0;
   let skipped = 0;
+  let autoAppliedCredit = new Decimal(0);
 
   for (const m of memberships) {
     const shouldGenerate =
@@ -42,18 +44,25 @@ export async function generateMonthlyDues() {
     });
     if (existing) { skipped++; continue; }
 
-    await prisma.paymentDue.create({
-      data: {
-        membershipId: m.id,
-        organizationId: m.organizationId,
-        dueDate: targetDate,
-        period,
-        amountDue: m.totalContribution,
-        amountPaid: new Decimal(0),
-        status: "pending",
-      },
+    const applied = await prisma.$transaction(async (tx) => {
+      const due = await tx.paymentDue.create({
+        data: {
+          membershipId: m.id,
+          organizationId: m.organizationId,
+          dueDate: targetDate,
+          period,
+          amountDue: m.totalContribution,
+          amountPaid: new Decimal(0),
+          status: "pending",
+        },
+      });
+      return applyAvailableCreditToDue(tx, {
+        dueId: due.id,
+        note: `Auto-applied member credit to ${period} due`,
+      });
     });
     created++;
+    autoAppliedCredit = autoAppliedCredit.add(applied);
 
     if (m.hod?.whatsAppNumber) {
       await queuePaymentDueGenerated(
@@ -66,8 +75,10 @@ export async function generateMonthlyDues() {
     }
   }
 
-  console.log(`[Cron] Dues generated: ${created}, skipped: ${skipped}`);
-  return { created, skipped, period };
+  console.log(
+    `[Cron] Dues generated: ${created}, skipped: ${skipped}, auto-applied credit: ${autoAppliedCredit.toString()}`
+  );
+  return { created, skipped, period, autoAppliedCredit: autoAppliedCredit.toNumber() };
 }
 
 export async function applyLateFees() {
