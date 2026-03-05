@@ -26,6 +26,7 @@ import {
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { toast } from "@/hooks/use-toast";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800",
@@ -90,9 +91,19 @@ export default function PaymentsPage() {
         { method: "POST" }
       );
       setGenResult(`${r.period}: ${r.created} ${t("payments.created")}, ${r.skipped} ${t("payments.skipped")}`);
+      toast({
+        title: "Dues generated",
+        description: `${r.period}: ${r.created} created, ${r.skipped} skipped.`,
+      });
       loadDues();
     } catch (err) {
-      setGenResult(err instanceof Error ? err.message : t("common.saveFailed"));
+      const msg = err instanceof Error ? err.message : t("common.saveFailed");
+      setGenResult(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to generate dues",
+        description: msg,
+      });
     } finally {
       setGenerating(false);
     }
@@ -104,9 +115,19 @@ export default function PaymentsPage() {
         method: "POST",
       });
       setGenResult(`${r.updated} ${t("payments.duesMarkedOverdue")}`);
+      toast({
+        title: "Overdue updated",
+        description: `${r.updated} dues marked overdue.`,
+      });
       loadDues();
-    } catch {
-      setGenResult(t("payments.failedToMarkOverdue"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("payments.failedToMarkOverdue");
+      setGenResult(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to mark overdue",
+        description: msg,
+      });
     }
   }
 
@@ -125,7 +146,13 @@ export default function PaymentsPage() {
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
-      setPayError(t("payments.enterValidAmount"));
+      const msg = t("payments.enterValidAmount");
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Invalid payment amount",
+        description: msg,
+      });
       return;
     }
     setPaySubmitting(true);
@@ -139,9 +166,19 @@ export default function PaymentsPage() {
         }),
       });
       setPayDialogOpen(false);
+      toast({
+        title: "Payment recorded",
+        description: "Payment has been saved successfully.",
+      });
       loadDues();
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : t("payments.failedToRecord"));
+      const msg = err instanceof Error ? err.message : t("payments.failedToRecord");
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to record payment",
+        description: msg,
+      });
     } finally {
       setPaySubmitting(false);
     }

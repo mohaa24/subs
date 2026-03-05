@@ -17,6 +17,7 @@ import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { BLOOD_GROUPS, RESIDENT_TYPES } from "@/lib/constants";
+import { toast } from "@/hooks/use-toast";
 import {
   User,
   BadgeCheck,
@@ -162,8 +163,17 @@ export default function PersonDetailPage() {
       });
       setPerson(updated);
       setEditOpen(false);
-    } catch {
-      // handled by form
+      toast({
+        title: "Person updated",
+        description: "Person details updated successfully.",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update person";
+      toast({
+        variant: "destructive",
+        title: "Failed to update person",
+        description: msg,
+      });
     } finally {
       setSaving(false);
     }
@@ -280,7 +290,7 @@ export default function PersonDetailPage() {
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {displayValue(person.nameWithInitials)}
+                    {displayValue(person.preferredName || person.nameWithInitials)}
                   </p>
                   <div className="flex items-center gap-3 mt-2 flex-wrap">
                     {person.gender && (

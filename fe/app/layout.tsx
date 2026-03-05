@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n";
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
   title: "Membership",
@@ -35,7 +36,10 @@ export default function RootLayout({
           />
         </noscript>
         <AuthProvider>
-          <I18nProvider>{children}</I18nProvider>
+          <I18nProvider>
+            {children}
+            <Toaster />
+          </I18nProvider>
         </AuthProvider>
       </body>
     </html>

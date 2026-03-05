@@ -27,11 +27,25 @@ import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { RESIDENT_TYPES } from "@/lib/constants";
+import { toast } from "@/hooks/use-toast";
 
 function formatResidentType(value: string | null | undefined): string {
   if (!value) return "—";
   const found = RESIDENT_TYPES.find((r) => r.value === value);
   return found?.label ?? value;
+}
+
+function getAge(value: string | null | undefined): string {
+  if (!value) return "—";
+  const dob = new Date(value);
+  if (Number.isNaN(dob.getTime())) return "—";
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age >= 0 ? String(age) : "—";
 }
 
 function PersonsPageContent() {
@@ -137,7 +151,13 @@ function PersonsPageContent() {
 
   async function handleCreatePerson(data: PersonFormData) {
     if (!effectiveOrgId) {
-      setError("Please select an organization.");
+      const msg = "Please select an organization.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Cannot add person",
+        description: msg,
+      });
       return;
     }
     setSaving(true);
@@ -186,8 +206,18 @@ function PersonsPageContent() {
       });
       setItems(res.items);
       setTotal(res.total);
+      toast({
+        title: "Person added",
+        description: "Person created successfully.",
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add person");
+      const msg = err instanceof Error ? err.message : "Failed to add person";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to add person",
+        description: msg,
+      });
     } finally {
       setSaving(false);
     }
@@ -235,8 +265,18 @@ function PersonsPageContent() {
         prev.map((i) => (i.id === updated.id ? updated : i))
       );
       setEditPerson(null);
+      toast({
+        title: "Person updated",
+        description: "Person details updated successfully.",
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update person");
+      const msg = err instanceof Error ? err.message : "Failed to update person";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to update person",
+        description: msg,
+      });
     } finally {
       setSaving(false);
     }
@@ -325,15 +365,71 @@ function PersonsPageContent() {
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : (
               <>
-                <div className="rounded-md border overflow-x-auto">
+                <div className="space-y-3 md:hidden">
+                  {items.map((p) => (
+                    <div key={p.id} className="rounded-md border p-3 bg-card">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/persons/${p.id}`}
+                            className="font-medium text-primary hover:underline break-words"
+                          >
+                            {p.fullName}
+                          </Link>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {p.nameWithInitials}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Link href={`/persons/${p.id}`}>
+                            <Button variant="ghost" size="sm" aria-label="View Person">
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(p)}
+                            aria-label="Edit Person"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Preferred Name</p>
+                          <p className="font-medium">{p.preferredName ?? "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Age</p>
+                          <p className="font-medium">{getAge(p.dateOfBirth)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Resident Type</p>
+                          <p className="font-medium">{formatResidentType(p.residentType)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Mobile</p>
+                          <p className="font-medium">{p.mobileNumber ?? "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Status</p>
+                          <p className="font-medium">{p.livingStatus ?? "Active"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden md:block rounded-md border overflow-x-auto">
                   <table className="w-full text-sm min-w-[640px]">
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-3 font-medium">Name</th>
-                        <th className="text-left p-3 font-medium">Preferred</th>
+                        <th className="text-left p-3 font-medium">Preferred Name</th>
+                        <th className="text-left p-3 font-medium">Age</th>
                         <th className="text-left p-3 font-medium">Resident Type</th>
                         <th className="text-left p-3 font-medium">Mobile</th>
-                        <th className="text-left p-3 font-medium">Email</th>
                         <th className="text-left p-3 font-medium">Status</th>
                         <th></th>
                       </tr>
@@ -342,17 +438,22 @@ function PersonsPageContent() {
                       {items.map((p) => (
                         <tr key={p.id} className="border-t">
                           <td className="p-3">
-                            <span className="font-medium">{p.fullName}</span>
+                            <Link
+                              href={`/persons/${p.id}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {p.fullName}
+                            </Link>
                             <span className="text-muted-foreground text-xs ml-1">
                               ({p.nameWithInitials})
                             </span>
                           </td>
                           <td className="p-3">{p.preferredName ?? "—"}</td>
+                          <td className="p-3">{getAge(p.dateOfBirth)}</td>
                           <td className="p-3">
                             {formatResidentType(p.residentType)}
                           </td>
                           <td className="p-3">{p.mobileNumber ?? "—"}</td>
-                          <td className="p-3">{p.email ?? "—"}</td>
                           <td className="p-3">{p.livingStatus ?? "Active"}</td>
                           <td className="p-3">
                             <div className="flex items-center gap-1">

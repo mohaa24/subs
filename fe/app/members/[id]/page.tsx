@@ -57,6 +57,7 @@ import {
   Printer,
 } from "lucide-react";
 import QRCode from "qrcode";
+import { toast } from "@/hooks/use-toast";
 
 const statusColors: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -249,7 +250,13 @@ export default function MembershipDetailPage() {
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
-      setPayError("Enter a valid amount.");
+      const msg = "Enter a valid amount.";
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Invalid payment amount",
+        description: msg,
+      });
       return;
     }
     setPaySubmitting(true);
@@ -263,13 +270,21 @@ export default function MembershipDetailPage() {
         }),
       });
       setPayDialogOpen(false);
+      toast({
+        title: "Payment recorded",
+        description: "Payment has been saved successfully.",
+      });
       loadBalance();
       loadPayments();
       loadCreditLedger();
     } catch (err) {
-      setPayError(
-        err instanceof Error ? err.message : "Failed to record payment"
-      );
+      const msg = err instanceof Error ? err.message : "Failed to record payment";
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to record payment",
+        description: msg,
+      });
     } finally {
       setPaySubmitting(false);
     }
@@ -422,19 +437,23 @@ export default function MembershipDetailPage() {
                       {membership.membershipStatus}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-1 font-mono text-xs bg-muted px-2 py-0.5 rounded">
-                      <Shield className="h-3 w-3" />
-                      {membership.membershipNo}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <CreditCard className="h-3.5 w-3.5" />
-                      {membership.membershipType}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" />
-                      {new Date(membership.dateOfRegistration).toLocaleDateString()}
-                    </span>
+                  <div className="mt-1.5">
+                    <div className="text-sm text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 font-mono text-xs bg-muted px-2 py-0.5 rounded">
+                        <Shield className="h-3 w-3" />
+                        {membership.membershipNo}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground flex-wrap">
+                      <span className="inline-flex items-center gap-1">
+                        <CreditCard className="h-3.5 w-3.5" />
+                        {membership.membershipType}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {new Date(membership.dateOfRegistration).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -679,6 +698,8 @@ export default function MembershipDetailPage() {
                         <div className="flex-1 min-w-0">
                           <Link
                             href={`/persons/${membership.spouse.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="font-medium text-sm hover:text-primary transition-colors flex items-center gap-1"
                           >
                             {membership.spouse.fullName}
@@ -725,6 +746,8 @@ export default function MembershipDetailPage() {
                               <div className="flex-1 min-w-0">
                                 <Link
                                   href={`/persons/${d.person.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="font-medium text-sm hover:text-primary transition-colors flex items-center gap-1"
                                 >
                                   {d.person.fullName}
@@ -770,6 +793,8 @@ export default function MembershipDetailPage() {
                               <div className="flex-1 min-w-0">
                                 <Link
                                   href={`/persons/${d.person.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="font-medium text-sm hover:text-primary transition-colors flex items-center gap-1"
                                 >
                                   {d.person.fullName}

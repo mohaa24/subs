@@ -66,7 +66,7 @@ export const RESIDENT_TYPES = [
   { value: "BusinessResidency", label: "Business Residency" },
   { value: "EmploymentResidency", label: "Employment Residency" },
   { value: "EducationalResidency", label: "Educational Residency" },
-  { value: "FamilyMemberOfResident", label: "Family member of a resident" },
+  { value: "FamilyMemberOfResident", label: "Family Member of a Resident" },
   { value: "NonResidentPerson", label: "Non-resident Person" },
 ] as const;
 
