@@ -75,8 +75,10 @@ personsRouter.get("/", async (req, res) => {
   const q = (req.query.q as string)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
+  const includeArchived = req.query.includeArchived === "true";
   const where: Prisma.PersonWhereInput = {};
   if (orgId) where.organizationId = orgId;
+  if (!includeArchived) where.isArchived = false;
   if (q) {
     where.OR = [
       { fullName: { contains: q, mode: "insensitive" } },
@@ -152,4 +154,19 @@ personsRouter.patch("/:id", async (req, res) => {
     data,
   });
   return res.json(person);
+});
+
+personsRouter.patch("/:id/archive", async (req, res) => {
+  const person = await prisma.person.findFirst({ where: { id: req.params.id } });
+  if (!person) return res.status(404).json({ error: "Person not found" });
+  const orgId = getOrgId(req as Request & { organizationId?: string });
+  if (orgId && person.organizationId !== orgId && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const isArchived = req.body.isArchived === true;
+  const updated = await prisma.person.update({
+    where: { id: req.params.id },
+    data: { isArchived },
+  });
+  return res.json(updated);
 });

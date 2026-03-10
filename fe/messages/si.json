@@ -55,9 +55,11 @@
   },
   "dashboard": {
     "title": "උපකරණ පුවරුව",
-    "totalMembers": "මුළු සාමාජිකයින්",
-    "children": "ළමුන් (< 8)",
-    "teenagers": "යෞවනයන් (8–18)",
+    "totalHouseholds": "මුළු පවුල්",
+    "totalHeadcount": "මුළු ජනගහනය",
+    "adults": "වැඩිහිටියන් (18+)",
+    "youth": "තරුණයන් (13–17)",
+    "children": "ළමුන් (0–12)",
     "dueThisMonth": "මෙම මාසයේ නියමිත",
     "collectedThisMonth": "මෙම මාසයේ එකතු කළ",
     "quickActions": "ඉක්මන් ක්‍රියා",
@@ -67,6 +69,8 @@
   "persons": {
     "title": "පුද්ගලයන්",
     "addPerson": "පුද්ගලයා එකතු කරන්න",
+    "manageDesc": "පුද්ගල වාර්තා සොයන්න, බලන්න හෝ සංස්කරණය කරන්න",
+    "addDesc": "නව පුද්ගල වාර්තාවක් සාදන්න",
     "editPerson": "පුද්ගලයා සංස්කරණය කරන්න",
     "fullName": "සම්පූර්ණ නම",
     "nameWithInitials": "මුලකුරු සමඟ නම",
@@ -94,6 +98,8 @@
   "memberships": {
     "title": "සාමාජිකත්වයන්",
     "addMembership": "සාමාජිකත්වය එකතු කරන්න",
+    "manageDesc": "සාමාජිකත්ව වාර්තා සොයන්න, බලන්න හෝ සංස්කරණය කරන්න",
+    "addDesc": "නව සාමාජිකත්ව වාර්තාවක් සාදන්න",
     "editMembership": "සාමාජිකත්වය සංස්කරණය",
     "membershipNo": "සාමාජිකත්ව අංකය",
     "membershipType": "සාමාජිකත්ව වර්ගය",
@@ -218,6 +224,8 @@
   },
   "reports": {
     "title": "වාර්තා",
+    "periodicPayments": "ගෙවීම් වාර්තාව",
+    "periodicPaymentsDesc": "දින පරාසය මත ගෙවීම් වාර්තාව මුද්‍රණය සහ අපනයනය",
     "entity": "අස්තිත්වය",
     "filters": "පෙරහන්",
     "query": "විමසුම ක්‍රියාත්මක",
@@ -306,6 +314,7 @@
   "settings": {
     "title": "සැකසීම්",
     "formConfig": "පෝරම සැකසුම",
+    "zones": "කලාප කළමනාකරණය",
     "personForm": "පුද්ගල පෝරමය",
     "membershipForm": "සාමාජිකත්ව පෝරමය",
     "required": "අවශ්‍යයි",

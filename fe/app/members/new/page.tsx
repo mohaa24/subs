@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type DependentGroup, type Organization, type Person, type RelationToHOH } from "@/lib/api";
+import { api, type DependentGroup, type Organization, type Person, type RelationToHOH, type Zone } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,6 +89,7 @@ export default function NewMembershipPage() {
   const [disability, setDisability] = useState(false);
   const [isZakathEligible, setIsZakathEligible] = useState<boolean | null>(null);
   const [areaCode, setAreaCode] = useState("");
+  const [zones, setZones] = useState<Zone[]>([]);
 
   const effectiveOrgId =
     user?.role === "super_user" ? selectedOrgId : (user?.organizationId ?? null);
@@ -103,6 +104,15 @@ export default function NewMembershipPage() {
       .then(setOrgs)
       .catch(() => setOrgs([]));
   }, [user]);
+
+  useEffect(() => {
+    if (!effectiveOrgId) return;
+    const params: Record<string, string> = {};
+    if (user?.role === "super_user") params.organizationId = effectiveOrgId;
+    api<Zone[]>("/zones", { params })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [effectiveOrgId, user?.role]);
 
   useEffect(() => {
     if (!user || !effectiveOrgId) {
@@ -828,7 +838,7 @@ export default function NewMembershipPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Area Code</Label>
+                  <Label>Zone</Label>
                   <Select
                     value={areaCode || "unset"}
                     onValueChange={(v) => setAreaCode(v === "unset" ? "" : v)}
@@ -838,12 +848,11 @@ export default function NewMembershipPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="unset">Not Set</SelectItem>
-                      <SelectItem value="1">1</SelectItem>
-                      <SelectItem value="2">2</SelectItem>
-                      <SelectItem value="3">3</SelectItem>
-                      <SelectItem value="4">4</SelectItem>
-                      <SelectItem value="5">5</SelectItem>
-                      <SelectItem value="6">6</SelectItem>
+                      {zones.map((z) => (
+                        <SelectItem key={z.id} value={String(z.code)}>
+                          {z.code} — {z.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

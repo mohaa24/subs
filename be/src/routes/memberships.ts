@@ -57,7 +57,7 @@ const baseSchema = z.object({
   spouseRelationToHOH: z.enum(spouseRelations as unknown as [string, ...string[]]).optional().nullable(),
   dependentPersons: z.array(dependentSchema).optional(),
   isZakathEligible: z.boolean().optional().nullable(),
-  areaCode: z.number().int().min(1).max(6).optional().nullable(),
+  areaCode: z.number().int().min(1).optional().nullable(),
   land: z.boolean().optional(),
   houseOwnership: z.boolean().optional(),
   commercialProperties: z.boolean().optional(),
@@ -215,16 +215,12 @@ membershipsRouter.get("/", async (req, res) => {
   const orgId = getOrgId(req as any);
   if (!orgId && req.auth!.role !== "super_user") return res.status(400).json({ error: "Organization scope required" });
   const q = (req.query.q as string)?.trim() || "";
+  const includeArchived = req.query.includeArchived === "true";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
-  const where: {
-    organizationId?: string;
-    OR?: Array<{
-      membershipNo?: { contains: string; mode: "insensitive" };
-      hod?: { fullName?: { contains: string; mode: "insensitive" }; nameWithInitials?: { contains: string; mode: "insensitive" } };
-    }>;
-  } = {};
+  const where: any = {};
   if (orgId) where.organizationId = orgId;
+  if (!includeArchived) where.isArchived = false;
   if (q) {
     where.OR = [
       { membershipNo: { contains: q, mode: "insensitive" } },
@@ -454,4 +450,22 @@ membershipsRouter.patch("/:id", async (req, res) => {
   });
 
   return res.json(membership);
+});
+
+membershipsRouter.patch("/:id/archive", async (req, res) => {
+  const membership = await prisma.membership.findUnique({ where: { id: req.params.id } });
+  if (!membership) return res.status(404).json({ error: "Membership not found" });
+  const orgId = getOrgId(req as any);
+  if (orgId && membership.organizationId !== orgId && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const isArchived = req.body.isArchived === true;
+  const updated = await prisma.membership.update({
+    where: { id: req.params.id },
+    data: { isArchived },
+    include: {
+      hod: { select: { id: true, nameWithInitials: true, fullName: true } },
+    },
+  });
+  return res.json(updated);
 });

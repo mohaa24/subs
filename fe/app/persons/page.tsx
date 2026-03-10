@@ -22,7 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, ChevronLeft, ChevronRight, Pencil, Eye } from "lucide-react";
+import { Search, Plus, ChevronLeft, ChevronRight, Pencil, Eye, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
@@ -64,6 +74,8 @@ function PersonsPageContent() {
   const effectiveOrgId =
     user?.role === "super_user" ? selectedOrgId : (user?.organizationId ?? null);
 
+  const [showArchived, setShowArchived] = useState(false);
+
   const [addOpen, setAddOpen] = useState(false);
   const [editPerson, setEditPerson] = useState<{
     id: string;
@@ -71,6 +83,7 @@ function PersonsPageContent() {
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [archiveTarget, setArchiveTarget] = useState<Person | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -98,6 +111,7 @@ function PersonsPageContent() {
       organizationId: effectiveOrgId!,
     };
     if (q) params.q = q;
+    if (showArchived) params.includeArchived = "true";
     setLoading(true);
     api<{ items: Person[]; total: number }>("/persons", { params })
       .then((res) => {
@@ -109,7 +123,7 @@ function PersonsPageContent() {
         setTotal(0);
       })
       .finally(() => setLoading(false));
-  }, [user, page, q, effectiveOrgId]);
+  }, [user, page, q, effectiveOrgId, showArchived]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -282,6 +296,36 @@ function PersonsPageContent() {
     }
   }
 
+  function handleToggleArchive(p: Person) {
+    const newVal = !(p as any).isArchived;
+    if (newVal) {
+      setArchiveTarget(p);
+      return;
+    }
+    doArchive(p, false);
+  }
+
+  async function doArchive(p: Person, isArchived: boolean) {
+    try {
+      await api(`/persons/${p.id}/archive`, {
+        method: "PATCH",
+        body: JSON.stringify({ isArchived }),
+      });
+      toast({ title: isArchived ? "Person archived" : "Person restored" });
+      setItems((prev) => showArchived
+        ? prev.map((i) => (i.id === p.id ? { ...i, isArchived } as any : i))
+        : prev.filter((i) => i.id !== p.id)
+      );
+      if (!showArchived && isArchived) setTotal((t) => Math.max(0, t - 1));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed",
+        description: err instanceof Error ? err.message : "Failed to update",
+      });
+    }
+  }
+
   const totalPages = Math.ceil(total / limit) || 1;
   const isSuperUser = user?.role === "super_user";
 
@@ -354,6 +398,16 @@ function PersonsPageContent() {
                 <Search className="h-4 w-4 mr-1" />
                 Search
               </Button>
+              <Button
+                type="button"
+                variant={showArchived ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 ml-auto"
+                onClick={() => { setShowArchived((v) => !v); setPage(1); }}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {showArchived ? "Hide Archived" : "Show Archived"}
+              </Button>
             </form>
             {!effectiveOrgId ? (
               <p className="text-sm text-muted-foreground">
@@ -393,6 +447,14 @@ function PersonsPageContent() {
                             aria-label="Edit Person"
                           >
                             <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleArchive(p)}
+                            aria-label={(p as any).isArchived ? "Restore" : "Archive"}
+                          >
+                            {(p as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
                           </Button>
                         </div>
                       </div>
@@ -438,13 +500,18 @@ function PersonsPageContent() {
                       {items.map((p) => (
                         <tr key={p.id} className="border-t">
                           <td className="p-3">
-                            <Link
-                              href={`/persons/${p.id}`}
-                              className="font-medium text-primary hover:underline"
-                            >
-                              {p.fullName}
-                            </Link>
-                            <span className="text-muted-foreground text-xs ml-1">
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={`/persons/${p.id}`}
+                                className={`font-medium text-primary hover:underline ${(p as any).isArchived ? "line-through opacity-60" : ""}`}
+                              >
+                                {p.fullName}
+                              </Link>
+                              {(p as any).isArchived && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
+                              )}
+                            </div>
+                            <span className="text-muted-foreground text-xs ml-0">
                               ({p.nameWithInitials})
                             </span>
                           </td>
@@ -469,6 +536,15 @@ function PersonsPageContent() {
                                 aria-label="Edit Person"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleToggleArchive(p)}
+                                aria-label={(p as any).isArchived ? "Restore" : "Archive"}
+                                title={(p as any).isArchived ? "Restore" : "Archive"}
+                              >
+                                {(p as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
                               </Button>
                             </div>
                           </td>
@@ -548,6 +624,32 @@ function PersonsPageContent() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Archive Person
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to archive <strong>{archiveTarget?.fullName}</strong>? They will be hidden from all lists until restored.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={() => {
+                if (archiveTarget) doArchive(archiveTarget, true);
+                setArchiveTarget(null);
+              }}
+            >
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

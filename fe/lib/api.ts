@@ -125,6 +125,7 @@ export interface Membership {
   id: string;
   membershipNo: string;
   organizationId: string;
+  organization?: { id: string; name: string; slug: string } | null;
   dateOfRegistration: string;
   membershipType: string;
   membershipStatus: string;
@@ -207,14 +208,38 @@ export interface Payment {
   collectedByUserId: string;
   note?: string | null;
   createdAt: string;
-  paymentDue?: { period: string; amountDue: number };
+  paymentDue?: { id?: string; period: string; amountDue: number };
   collectedBy?: { id: string; email: string };
+  membership?: {
+    id?: string;
+    membershipNo: string;
+    hod?: { fullName: string; nameWithInitials: string };
+  };
+}
+
+export interface PaymentReceipt {
+  paymentId: string;
+  paymentDate: string;
+  note?: string | null;
+  period: string;
+  membershipId: string;
+  membershipNo: string;
+  memberName: string;
+  organizationId: string;
+  organizationName: string;
+  collectedBy: string;
+  paidAmount: number;
+  appliedToDue: number;
+  overpaymentToCredit: number;
+  remainingAfter: number;
 }
 
 export interface DashboardStats {
-  totalMembers: number;
+  totalHouseholds: number;
+  totalHeadcount: number;
+  adults: number;
+  youth: number;
   children: number;
-  teenagers: number;
   totalDueThisMonth: number;
   collectedThisMonth: number;
   period: string;
@@ -295,6 +320,15 @@ export interface Announcement {
   sentAt?: string | null;
   status: "draft" | "sent" | "failed";
   group?: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+export interface Zone {
+  id: string;
+  organizationId: string;
+  name: string;
+  code: number;
+  isActive: boolean;
   createdAt: string;
 }
 

@@ -188,16 +188,16 @@ export default function ChartsPage() {
             ) : dashboardStats ? (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs text-muted-foreground uppercase">Total Members</p>
-                  <p className="text-xl font-bold">{dashboardStats.totalMembers}</p>
+                  <p className="text-xs text-muted-foreground uppercase">Total Households</p>
+                  <p className="text-xl font-bold">{dashboardStats.totalHouseholds}</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs text-muted-foreground uppercase">Children (&lt; 8)</p>
-                  <p className="text-xl font-bold">{dashboardStats.children}</p>
+                  <p className="text-xs text-muted-foreground uppercase">Total Headcount</p>
+                  <p className="text-xl font-bold">{dashboardStats.totalHeadcount}</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-4">
-                  <p className="text-xs text-muted-foreground uppercase">Teenagers (8–18)</p>
-                  <p className="text-xl font-bold">{dashboardStats.teenagers}</p>
+                  <p className="text-xs text-muted-foreground uppercase">Adults (18+)</p>
+                  <p className="text-xl font-bold">{dashboardStats.adults}</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-4">
                   <p className="text-xs text-muted-foreground uppercase">Collected This Month</p>

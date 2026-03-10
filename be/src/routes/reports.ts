@@ -35,8 +35,58 @@ function buildPersonWhere(orgId: string, filters: Record<string, unknown>): Pris
   return where;
 }
 
+async function getMemberCreditLiabilityRows(orgId: string) {
+  const grouped = await prisma.membershipCreditLedger.groupBy({
+    by: ["membershipId"],
+    where: { organizationId: orgId },
+    _sum: { amountDelta: true },
+  });
+
+  const balances = grouped
+    .map((entry) => ({
+      membershipId: entry.membershipId,
+      creditBalance: Number(entry._sum.amountDelta ?? 0),
+    }))
+    .filter((entry) => entry.creditBalance > 0);
+
+  if (balances.length === 0) return [];
+
+  const memberships = await prisma.membership.findMany({
+    where: {
+      organizationId: orgId,
+      id: { in: balances.map((entry) => entry.membershipId) },
+    },
+    select: {
+      id: true,
+      membershipNo: true,
+      membershipType: true,
+      membershipStatus: true,
+      hod: { select: { fullName: true, nameWithInitials: true } },
+    },
+  });
+
+  const membershipMap = new Map(memberships.map((membership) => [membership.id, membership]));
+
+  return balances
+    .map((entry) => {
+      const membership = membershipMap.get(entry.membershipId);
+      return {
+        membershipId: entry.membershipId,
+        membershipNo: membership?.membershipNo ?? "",
+        membershipType: membership?.membershipType ?? "",
+        membershipStatus: membership?.membershipStatus ?? "",
+        hodName: membership?.hod.fullName || membership?.hod.nameWithInitials || "",
+        creditBalance: Number(entry.creditBalance.toFixed(2)),
+      };
+    })
+    .sort((a, b) => {
+      if (b.creditBalance !== a.creditBalance) return b.creditBalance - a.creditBalance;
+      return a.membershipNo.localeCompare(b.membershipNo);
+    });
+}
+
 const querySchema = z.object({
-  entity: z.enum(["persons", "memberships", "payments", "distributions"]),
+  entity: z.enum(["persons", "memberships", "payments", "distributions", "memberCredits"]),
   filters: z.record(z.any()).optional(),
 });
 
@@ -111,6 +161,10 @@ reportsRouter.post("/query", async (req, res) => {
       });
       return res.json(records.map((r) => ({ ...r, personName: r.person.fullName || r.person.nameWithInitials })));
     }
+    case "memberCredits": {
+      const rows = await getMemberCreditLiabilityRows(orgId!);
+      return res.json(rows);
+    }
     default:
       return res.status(400).json({ error: "Invalid entity" });
   }
@@ -131,7 +185,7 @@ reportsRouter.get("/export", async (req, res) => {
   if (req.auth!.organizationId && orgId !== req.auth!.organizationId && req.auth!.role !== "super_user")
     return res.status(403).json({ error: "Forbidden" });
 
-  const validEntities = ["persons", "memberships", "payments", "distributions"];
+  const validEntities = ["persons", "memberships", "payments", "distributions", "memberCredits"];
   if (!validEntities.includes(entity))
     return res.status(400).json({ error: "Invalid entity", valid: validEntities });
 
@@ -206,6 +260,19 @@ reportsRouter.get("/export", async (req, res) => {
         personName: r.person.fullName || r.person.nameWithInitials,
         distributionDate: r.distributionDate,
         distributedAt: r.distributedAt.toISOString(),
+      }));
+      break;
+    }
+    case "memberCredits": {
+      const liabilities = await getMemberCreditLiabilityRows(orgId!);
+      headers = ["membershipId", "membershipNo", "membershipType", "membershipStatus", "hodName", "creditBalance"];
+      rows = liabilities.map((item) => ({
+        membershipId: item.membershipId,
+        membershipNo: item.membershipNo,
+        membershipType: item.membershipType,
+        membershipStatus: item.membershipStatus,
+        hodName: item.hodName,
+        creditBalance: item.creditBalance.toFixed(2),
       }));
       break;
     }

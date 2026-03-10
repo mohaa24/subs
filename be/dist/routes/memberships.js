@@ -54,7 +54,7 @@ const baseSchema = zod_1.z.object({
     spouseRelationToHOH: zod_1.z.enum(spouseRelations).optional().nullable(),
     dependentPersons: zod_1.z.array(dependentSchema).optional(),
     isZakathEligible: zod_1.z.boolean().optional().nullable(),
-    areaCode: zod_1.z.number().int().min(1).max(6).optional().nullable(),
+    areaCode: zod_1.z.number().int().min(1).optional().nullable(),
     land: zod_1.z.boolean().optional(),
     houseOwnership: zod_1.z.boolean().optional(),
     commercialProperties: zod_1.z.boolean().optional(),
@@ -181,11 +181,14 @@ exports.membershipsRouter.get("/", async (req, res) => {
     if (!orgId && req.auth.role !== "super_user")
         return res.status(400).json({ error: "Organization scope required" });
     const q = req.query.q?.trim() || "";
+    const includeArchived = req.query.includeArchived === "true";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
     const where = {};
     if (orgId)
         where.organizationId = orgId;
+    if (!includeArchived)
+        where.isArchived = false;
     if (q) {
         where.OR = [
             { membershipNo: { contains: q, mode: "insensitive" } },
@@ -398,4 +401,22 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
         return updated;
     });
     return res.json(membership);
+});
+exports.membershipsRouter.patch("/:id/archive", async (req, res) => {
+    const membership = await prisma_js_1.prisma.membership.findUnique({ where: { id: req.params.id } });
+    if (!membership)
+        return res.status(404).json({ error: "Membership not found" });
+    const orgId = getOrgId(req);
+    if (orgId && membership.organizationId !== orgId && req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const isArchived = req.body.isArchived === true;
+    const updated = await prisma_js_1.prisma.membership.update({
+        where: { id: req.params.id },
+        data: { isArchived },
+        include: {
+            hod: { select: { id: true, nameWithInitials: true, fullName: true } },
+        },
+    });
+    return res.json(updated);
 });

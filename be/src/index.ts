@@ -20,6 +20,7 @@ import { formConfigRouter } from "./routes/form-config.js";
 import { distributionsRouter } from "./routes/distributions.js";
 import { reportsRouter } from "./routes/reports.js";
 import { messagesRouter } from "./routes/messages.js";
+import { zonesRouter } from "./routes/zones.js";
 import { startCronJobs } from "./lib/cron.js";
 
 const app = express();
@@ -53,6 +54,7 @@ app.use("/form-config", formConfigRouter);
 app.use("/distributions", distributionsRouter);
 app.use("/reports", reportsRouter);
 app.use("/messages", messagesRouter);
+app.use("/zones", zonesRouter);
 
 app.listen(PORT, () => {
   console.log(`BE running on http://localhost:${PORT}`);

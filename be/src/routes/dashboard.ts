@@ -24,28 +24,39 @@ dashboardRouter.get("/", async (req, res) => {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
   const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
-  const eightYearsAgo = new Date(now.getFullYear() - 8, now.getMonth(), now.getDate());
+  const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
 
   const [
-    totalMembers,
+    totalHouseholds,
+    totalHeadcount,
+    adultsCount,
+    youthCount,
     childrenCount,
-    teenagerCount,
     currentMonthDues,
     currentMonthPayments,
   ] = await Promise.all([
+    prisma.membership.count({ where: orgFilter }),
+
     prisma.person.count({ where: orgFilter }),
 
     prisma.person.count({
       where: {
         ...orgFilter,
-        dateOfBirth: { gt: eightYearsAgo },
+        dateOfBirth: { lte: eighteenYearsAgo },
       },
     }),
 
     prisma.person.count({
       where: {
         ...orgFilter,
-        dateOfBirth: { gt: eighteenYearsAgo, lte: eightYearsAgo },
+        dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo },
+      },
+    }),
+
+    prisma.person.count({
+      where: {
+        ...orgFilter,
+        dateOfBirth: { gt: thirteenYearsAgo },
       },
     }),
 
@@ -70,9 +81,11 @@ dashboardRouter.get("/", async (req, res) => {
   const collectedThisMonth = currentMonthPayments._sum.amount ?? new Decimal(0);
 
   return res.json({
-    totalMembers,
+    totalHouseholds,
+    totalHeadcount,
+    adults: adultsCount,
+    youth: youthCount,
     children: childrenCount,
-    teenagers: teenagerCount,
     totalDueThisMonth: totalDue.toNumber(),
     collectedThisMonth: new Decimal(collectedThisMonth.toString()).toNumber(),
     period: currentPeriod,

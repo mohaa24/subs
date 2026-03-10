@@ -10,7 +10,9 @@ import {
   type MembershipBalance,
   type MembershipCreditEntry,
   type Payment,
+  type PaymentReceipt,
   type PaymentDue,
+  type Zone,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,11 +55,28 @@ import {
   Clock,
   Receipt,
   ArrowUpRight,
-  TrendingUp,
   Printer,
+  Archive,
+  ArchiveRestore,
+  RotateCcw,
+  Pencil,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
+import {
+  PaymentReceiptDialog,
+  type PaymentReceiptData,
+} from "@/components/payment-receipt-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const statusColors: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -141,6 +160,8 @@ export default function MembershipDetailPage() {
   const [creditPage, setCreditPage] = useState(1);
   const creditLimit = 20;
 
+  const [zones, setZones] = useState<Zone[]>([]);
+
   const [qrOpen, setQrOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
 
@@ -150,6 +171,17 @@ export default function MembershipDetailPage() {
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<PaymentReceiptData | null>(null);
+  const [loadingReceiptPaymentId, setLoadingReceiptPaymentId] = useState<string | null>(null);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState<Payment | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reverseSubmitting, setReverseSubmitting] = useState(false);
+  const [editDueTarget, setEditDueTarget] = useState<PaymentDue | null>(null);
+  const [editDueAmount, setEditDueAmount] = useState("");
+  const [editDueReason, setEditDueReason] = useState("");
+  const [editDueSubmitting, setEditDueSubmitting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -212,6 +244,16 @@ export default function MembershipDetailPage() {
     loadCreditLedger();
   }, [loadCreditLedger]);
 
+  useEffect(() => {
+    if (!membership) return;
+    const orgId = membership.organizationId;
+    const params: Record<string, string> = { includeInactive: "true" };
+    if (user?.role === "super_user") params.organizationId = orgId;
+    api<Zone[]>("/zones", { params })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [membership, user?.role]);
+
   async function generateQr() {
     const url = `${window.location.origin}/members/${id}`;
     const dataUrl = await QRCode.toDataURL(url, {
@@ -235,6 +277,76 @@ export default function MembershipDetailPage() {
     window.print();
   }
 
+  function handleToggleArchive() {
+    if (!membership) return;
+    const isCurrentlyArchived = (membership as any).isArchived;
+    if (!isCurrentlyArchived) {
+      setArchiveConfirmOpen(true);
+      return;
+    }
+    doArchive(false);
+  }
+
+  async function doArchive(isArchived: boolean) {
+    try {
+      await api(`/memberships/${id}/archive`, {
+        method: "PATCH",
+        body: JSON.stringify({ isArchived }),
+      });
+      setMembership((prev) => prev ? { ...prev, isArchived } as any : prev);
+      toast({ title: isArchived ? "Membership archived" : "Membership restored" });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed",
+        description: err instanceof Error ? err.message : "Failed to update",
+      });
+    }
+  }
+
+  const canManage = user?.role === "admin" || user?.role === "super_user";
+
+  async function handleReversePayment() {
+    if (!reverseTarget || !reverseReason.trim()) return;
+    setReverseSubmitting(true);
+    try {
+      await api(`/payments/${reverseTarget.id}/reverse`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reverseReason.trim() }),
+      });
+      toast({ title: "Payment reversed" });
+      setReverseTarget(null);
+      setReverseReason("");
+      loadBalance();
+      loadPayments();
+      loadCreditLedger();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setReverseSubmitting(false);
+    }
+  }
+
+  async function handleEditDue() {
+    if (!editDueTarget || !editDueReason.trim()) return;
+    const amt = parseFloat(editDueAmount);
+    if (isNaN(amt) || amt <= 0) return;
+    setEditDueSubmitting(true);
+    try {
+      await api(`/payments/dues/${editDueTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ amountDue: amt, reason: editDueReason.trim() }),
+      });
+      toast({ title: "Due updated" });
+      setEditDueTarget(null);
+      loadBalance();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setEditDueSubmitting(false);
+    }
+  }
+
   function openPayDialog(due: PaymentDue) {
     const remaining = Number(due.amountDue) - Number(due.amountPaid);
     setPayDue(due);
@@ -246,7 +358,7 @@ export default function MembershipDetailPage() {
 
   async function handleRecordPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payDue) return;
+    if (!payDue || !membership) return;
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
@@ -261,7 +373,7 @@ export default function MembershipDetailPage() {
     }
     setPaySubmitting(true);
     try {
-      await api("/payments", {
+      const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
         body: JSON.stringify({
           paymentDueId: payDue.id,
@@ -269,6 +381,31 @@ export default function MembershipDetailPage() {
           note: payNote || undefined,
         }),
       });
+      const amountDue = Number(payDue.amountDue);
+      const amountPaidBefore = Number(payDue.amountPaid);
+      const remainingBefore = Math.max(0, amountDue - amountPaidBefore);
+      const appliedToDue = Math.min(amt, remainingBefore);
+      const overpaymentToCredit = Math.max(0, amt - appliedToDue);
+      const remainingAfter = Math.max(0, remainingBefore - appliedToDue);
+      setReceiptData({
+        organizationName:
+          user?.organization?.name || membership.organization?.name || "Organization",
+        membershipNo: membership.membershipNo,
+        membershipId: membership.id,
+        memberName:
+          membership.hod?.fullName || membership.hod?.nameWithInitials || "",
+        period: payDue.period,
+        paymentId: payment.id,
+        paymentDate: payment.paymentDate,
+        paidAmount: amt,
+        appliedToDue,
+        overpaymentToCredit,
+        remainingAfter,
+        note: payNote || null,
+        collectedBy: user?.email || "",
+        memberQrValue: `${window.location.origin}/members/${membership.id}`,
+      });
+      setReceiptOpen(true);
       setPayDialogOpen(false);
       toast({
         title: "Payment recorded",
@@ -287,6 +424,39 @@ export default function MembershipDetailPage() {
       });
     } finally {
       setPaySubmitting(false);
+    }
+  }
+
+  async function openReceiptForPayment(paymentId: string) {
+    setLoadingReceiptPaymentId(paymentId);
+    try {
+      const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
+      setReceiptData({
+        organizationName: receipt.organizationName,
+        membershipNo: receipt.membershipNo,
+        membershipId: receipt.membershipId,
+        memberName: receipt.memberName,
+        period: receipt.period,
+        paymentId: receipt.paymentId,
+        paymentDate: receipt.paymentDate,
+        paidAmount: receipt.paidAmount,
+        appliedToDue: receipt.appliedToDue,
+        overpaymentToCredit: receipt.overpaymentToCredit,
+        remainingAfter: receipt.remainingAfter,
+        note: receipt.note || null,
+        collectedBy: receipt.collectedBy,
+        memberQrValue: `${window.location.origin}/members/${receipt.membershipId}`,
+      });
+      setReceiptOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load receipt";
+      toast({
+        variant: "destructive",
+        title: "Failed to load receipt",
+        description: msg,
+      });
+    } finally {
+      setLoadingReceiptPaymentId(null);
     }
   }
 
@@ -342,11 +512,6 @@ export default function MembershipDetailPage() {
   const yesNo = (v: boolean) => (v ? "Yes" : "No");
   const totalPaymentPages = Math.ceil(paymentsTotal / paymentsLimit) || 1;
   const totalCreditPages = Math.ceil(creditTotal / creditLimit) || 1;
-  const paymentProgress = balance
-    ? balance.totalDue > 0
-      ? Math.min(100, (balance.totalPaid / balance.totalDue) * 100)
-      : 0
-    : 0;
 
   function creditEntryLabel(type: MembershipCreditEntry["entryType"]) {
     if (type === "credit_overpayment") return "Overpayment";
@@ -372,14 +537,18 @@ export default function MembershipDetailPage() {
     ...(membership.spouse ? [membership.spouse] : []),
     ...(membership.dependents?.map((d) => d.person) ?? []),
   ];
-  const totalHousehold = allMembers.length;
+  const totalHeadcount = allMembers.length;
   const adults = allMembers.filter((p) => {
     const age = getAge(p.dateOfBirth);
     return age === null || age >= 18;
   }).length;
+  const youth = allMembers.filter((p) => {
+    const age = getAge(p.dateOfBirth);
+    return age !== null && age >= 13 && age <= 17;
+  }).length;
   const children = allMembers.filter((p) => {
     const age = getAge(p.dateOfBirth);
-    return age !== null && age < 18;
+    return age !== null && age >= 0 && age <= 12;
   }).length;
 
   const childDependents = membership.dependents?.filter((d) => (d.group ?? "other") === "children") ?? [];
@@ -436,6 +605,12 @@ export default function MembershipDetailPage() {
                       />
                       {membership.membershipStatus}
                     </span>
+                    {(membership as any).isArchived && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                        <Archive className="h-3 w-3" />
+                        Archived
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1.5">
                     <div className="text-sm text-muted-foreground">
@@ -466,6 +641,17 @@ export default function MembershipDetailPage() {
                   <Printer className="h-4 w-4" />
                   <span className="hidden sm:inline">Print</span>
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleToggleArchive}
+                  className="gap-1.5"
+                >
+                  {(membership as any).isArchived
+                    ? <><ArchiveRestore className="h-4 w-4 text-emerald-600" /><span className="hidden sm:inline">Restore</span></>
+                    : <><Archive className="h-4 w-4 text-amber-600" /><span className="hidden sm:inline">Archive</span></>
+                  }
+                </Button>
                 <Link href={`/members/${id}/edit`}>
                   <Button size="sm" className="gap-1.5">
                     <Edit className="h-4 w-4" />
@@ -480,12 +666,12 @@ export default function MembershipDetailPage() {
         <Tabs defaultValue="details">
           <TabsList className="mb-4 print:hidden">
             <TabsTrigger value="details" className="gap-1.5">
-              <Receipt className="h-4 w-4" />
+              <Users className="h-4 w-4" />
               Details
             </TabsTrigger>
-            <TabsTrigger value="history" className="gap-1.5">
-              <Clock className="h-4 w-4" />
-              Payment History
+            <TabsTrigger value="payments" className="gap-1.5">
+              <CreditCard className="h-4 w-4" />
+              Payments
             </TabsTrigger>
             <TabsTrigger value="credit-ledger" className="gap-1.5">
               <Landmark className="h-4 w-4" />
@@ -497,8 +683,8 @@ export default function MembershipDetailPage() {
           <TabsContent value="details" forceMount className="data-[state=inactive]:hidden print:!block">
             <div className="space-y-6">
 
-              {/* ── Household Stat Widgets ────────────────────── */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* ── Headcount Stat Widgets ────────────────────── */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Card>
                   <CardContent className="pt-4 pb-4 px-4">
                     <div className="flex items-center gap-3">
@@ -506,8 +692,8 @@ export default function MembershipDetailPage() {
                         <Users className="h-4.5 w-4.5 text-blue-600" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground">Total Household</p>
-                        <p className="text-2xl font-bold tabular-nums">{totalHousehold}</p>
+                        <p className="text-xs font-medium text-muted-foreground">Total Headcount</p>
+                        <p className="text-2xl font-bold tabular-nums">{totalHeadcount}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -515,8 +701,8 @@ export default function MembershipDetailPage() {
                 <Card>
                   <CardContent className="pt-4 pb-4 px-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-purple-100 flex items-center justify-center">
-                        <User className="h-4.5 w-4.5 text-purple-600" />
+                      <div className="h-9 w-9 rounded-lg bg-sky-100 flex items-center justify-center">
+                        <User className="h-4.5 w-4.5 text-sky-600" />
                       </div>
                       <div>
                         <p className="text-xs font-medium text-muted-foreground">Adults (18+)</p>
@@ -528,152 +714,30 @@ export default function MembershipDetailPage() {
                 <Card>
                   <CardContent className="pt-4 pb-4 px-4">
                     <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-lg bg-purple-100 flex items-center justify-center">
+                        <UserPlus className="h-4.5 w-4.5 text-purple-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Youth (13–17)</p>
+                        <p className="text-2xl font-bold tabular-nums">{youth}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-4 px-4">
+                    <div className="flex items-center gap-3">
                       <div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center">
                         <Baby className="h-4.5 w-4.5 text-amber-600" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-muted-foreground">Children (&lt;18)</p>
+                        <p className="text-xs font-medium text-muted-foreground">Children (0–12)</p>
                         <p className="text-2xl font-bold tabular-nums">{children}</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
               </div>
-
-              {/* Payment summary cards */}
-              {balance && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card className="border-blue-100 bg-gradient-to-br from-blue-50/50 to-card">
-                      <CardContent className="pt-5 pb-5 px-5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                            <DollarSign className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Total Due
-                            </p>
-                            <p className="text-2xl font-bold tabular-nums">
-                              {balance.totalDue.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card">
-                      <CardContent className="pt-5 pb-5 px-5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Total Paid
-                            </p>
-                            <p className="text-2xl font-bold tabular-nums text-emerald-600">
-                              {balance.totalPaid.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card
-                      className={`${
-                        balance.netOutstanding > 0
-                          ? "border-red-100 bg-gradient-to-br from-red-50/50 to-card"
-                          : "border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card"
-                      }`}
-                    >
-                      <CardContent className="pt-5 pb-5 px-5">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                              balance.netOutstanding > 0
-                                ? "bg-red-100"
-                                : "bg-emerald-100"
-                            }`}
-                          >
-                            {balance.netOutstanding > 0 ? (
-                              <AlertTriangle className="h-5 w-5 text-red-600" />
-                            ) : (
-                              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Net Outstanding
-                            </p>
-                            <p
-                              className={`text-2xl font-bold tabular-nums ${
-                                balance.netOutstanding > 0 ? "text-red-600" : "text-emerald-600"
-                              }`}
-                            >
-                              {balance.netOutstanding.toFixed(2)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Gross: {balance.outstanding.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-card">
-                      <CardContent className="pt-5 pb-5 px-5">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                            <Landmark className="h-5 w-5 text-indigo-600" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Available Credit
-                            </p>
-                            <p className="text-2xl font-bold tabular-nums text-indigo-700">
-                              {balance.creditBalance.toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Payment progress bar */}
-                  {balance.totalDue > 0 && (
-                    <div className="rounded-lg border bg-card p-4">
-                      <div className="flex items-center justify-between text-sm mb-2">
-                        <span className="flex items-center gap-1.5 text-muted-foreground">
-                          <TrendingUp className="h-4 w-4" />
-                          Payment Progress
-                        </span>
-                        <span className="font-semibold tabular-nums">
-                          {paymentProgress.toFixed(0)}%
-                        </span>
-                      </div>
-                      <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            paymentProgress >= 100
-                              ? "bg-emerald-500"
-                              : paymentProgress >= 50
-                              ? "bg-primary"
-                              : "bg-amber-500"
-                          }`}
-                          style={{ width: `${paymentProgress}%` }}
-                        />
-                      </div>
-                      {balance.overdueCount > 0 && (
-                        <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          {balance.overdueCount} overdue payment{balance.overdueCount > 1 ? "s" : ""}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Household Members */}
               <Card>
@@ -713,11 +777,27 @@ export default function MembershipDetailPage() {
                             })()}
                           </p>
                         </div>
-                        {membership.spouse.relationToHOH && (
-                          <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                            {membership.spouse.relationToHOH}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {membership.spouse.relationToHOH && (
+                            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                              {membership.spouse.relationToHOH}
+                            </span>
+                          )}
+                          {membership.spouse.livingStatus && membership.spouse.livingStatus !== "Active" && (
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                              membership.spouse.livingStatus === "Deceased"
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}>
+                              {membership.spouse.livingStatus === "PermanentlyRelocated" ? "Relocated" : membership.spouse.livingStatus}
+                            </span>
+                          )}
+                          {(!membership.spouse.livingStatus || membership.spouse.livingStatus === "Active") && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                              Active
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -757,11 +837,27 @@ export default function MembershipDetailPage() {
                                   <p className="text-xs text-muted-foreground">{age} years</p>
                                 )}
                               </div>
-                              {d.person.relationToHOH && (
-                                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                  {d.person.relationToHOH}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {d.person.relationToHOH && (
+                                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                                    {d.person.relationToHOH}
+                                  </span>
+                                )}
+                                {d.person.livingStatus && d.person.livingStatus !== "Active" && (
+                                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                                    d.person.livingStatus === "Deceased"
+                                      ? "bg-red-50 text-red-700 border-red-200"
+                                      : "bg-slate-100 text-slate-600 border-slate-200"
+                                  }`}>
+                                    {d.person.livingStatus === "PermanentlyRelocated" ? "Relocated" : d.person.livingStatus}
+                                  </span>
+                                )}
+                                {(!d.person.livingStatus || d.person.livingStatus === "Active") && (
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -804,11 +900,27 @@ export default function MembershipDetailPage() {
                                   <p className="text-xs text-muted-foreground">{age} years</p>
                                 )}
                               </div>
-                              {d.person.relationToHOH && (
-                                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                  {d.person.relationToHOH}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {d.person.relationToHOH && (
+                                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                                    {d.person.relationToHOH}
+                                  </span>
+                                )}
+                                {d.person.livingStatus && d.person.livingStatus !== "Active" && (
+                                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
+                                    d.person.livingStatus === "Deceased"
+                                      ? "bg-red-50 text-red-700 border-red-200"
+                                      : "bg-slate-100 text-slate-600 border-slate-200"
+                                  }`}>
+                                    {d.person.livingStatus === "PermanentlyRelocated" ? "Relocated" : d.person.livingStatus}
+                                  </span>
+                                )}
+                                {(!d.person.livingStatus || d.person.livingStatus === "Active") && (
+                                  <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
@@ -844,27 +956,6 @@ export default function MembershipDetailPage() {
                         label: "Registered",
                         value: new Date(membership.dateOfRegistration).toLocaleDateString(),
                       },
-                      { label: "Payment Period", value: membership.paymentPeriod },
-                      {
-                        label: "Membership Fee",
-                        value: Number(membership.membershipFee).toFixed(2),
-                        mono: true,
-                      },
-                      {
-                        label: "Discount",
-                        value: Number(membership.membershipFeeDiscount).toFixed(2),
-                        mono: true,
-                      },
-                      {
-                        label: "Voluntary Contributions",
-                        value: Number(membership.additionalVoluntaryContributions).toFixed(2),
-                        mono: true,
-                      },
-                      {
-                        label: "Total Contribution",
-                        value: Number(membership.totalContribution).toFixed(2),
-                        mono: true,
-                      },
                       { label: "Disability", value: yesNo(membership.disability) },
                       {
                         label: "Zakath Eligible",
@@ -875,8 +966,13 @@ export default function MembershipDetailPage() {
                             : yesNo(membership.isZakathEligible),
                       },
                       {
-                        label: "Area Code",
-                        value: membership.areaCode ?? "Not Set",
+                        label: "Zone",
+                        value: membership.areaCode
+                          ? (() => {
+                              const zone = zones.find((z) => z.code === membership.areaCode);
+                              return zone ? `${zone.code} — ${zone.name}` : String(membership.areaCode);
+                            })()
+                          : "Not Set",
                       },
                       ...(membership.createdBy
                         ? [{ label: "Created by", value: membership.createdBy.email }]
@@ -925,97 +1021,216 @@ export default function MembershipDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Dues & record payment */}
+            </div>
+          </TabsContent>
+
+          {/* ── Tab 2: Payments ──────────────────────────────── */}
+          <TabsContent value="payments" forceMount className="data-[state=inactive]:hidden print:!block print:break-before-page">
+            <div className="space-y-6">
+
+              {/* Payment Statistics */}
+              {balance && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <Card className="border-blue-100 bg-gradient-to-br from-blue-50/50 to-card">
+                    <CardContent className="pt-4 pb-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center">
+                          <DollarSign className="h-4.5 w-4.5 text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">Total Due</p>
+                          <p className="text-2xl font-bold tabular-nums">{balance.totalDue.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card">
+                    <CardContent className="pt-4 pb-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+                          <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">Total Paid</p>
+                          <p className="text-2xl font-bold tabular-nums text-emerald-600">{balance.totalPaid.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className={balance.outstanding > 0 ? "border-red-100 bg-gradient-to-br from-red-50/50 to-card" : "border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card"}>
+                    <CardContent className="pt-4 pb-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${balance.outstanding > 0 ? "bg-red-100" : "bg-emerald-100"}`}>
+                          {balance.outstanding > 0 ? <AlertTriangle className="h-4.5 w-4.5 text-red-600" /> : <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">Total Outstanding</p>
+                          <p className={`text-2xl font-bold tabular-nums ${balance.outstanding > 0 ? "text-red-600" : "text-emerald-600"}`}>{balance.outstanding.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-card">
+                    <CardContent className="pt-4 pb-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                          <Landmark className="h-4.5 w-4.5 text-indigo-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground">Available Credit</p>
+                          <p className="text-2xl font-bold tabular-nums text-indigo-700">{balance.creditBalance.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Membership Fee Details */}
               <Card>
                 <CardHeader className="pb-4">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Receipt className="h-5 w-5 text-primary" />
+                    Membership Fee Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-0 text-sm">
+                    {[
+                      { label: "Membership Fee", value: Number(membership.membershipFee).toFixed(2), mono: true },
+                      { label: "Voluntary Contribution", value: Number(membership.additionalVoluntaryContributions).toFixed(2), mono: true },
+                      { label: "Discount", value: Number(membership.membershipFeeDiscount).toFixed(2), mono: true },
+                      { label: "Total Contribution", value: Number(membership.totalContribution).toFixed(2), mono: true },
+                      { label: "Payment Period", value: membership.paymentPeriod },
+                    ].map((item, i) => (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center py-2.5 border-b border-border/40 last:border-0"
+                      >
+                        <span className="text-muted-foreground">{item.label}</span>
+                        <span className={`font-medium ${"mono" in item && item.mono ? "tabular-nums" : ""}`}>{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Dues & Payments */}
+              <Card>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-primary" />
                     Dues & Payments
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {balance && balance.dues.length > 0 ? (
-                    <div className="rounded-lg border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[480px]">
-                        <thead>
-                          <tr className="bg-muted/50 border-b">
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Period
-                            </th>
-                            <th className="text-right p-3 font-medium text-muted-foreground">
-                              Due
-                            </th>
-                            <th className="text-right p-3 font-medium text-muted-foreground">
-                              Paid
-                            </th>
-                            <th className="text-center p-3 font-medium text-muted-foreground">
-                              Status
-                            </th>
-                            <th className="p-3 w-20 print:hidden"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {balance.dues.map((d, i) => {
-                            const remaining = Number(d.amountDue) - Number(d.amountPaid);
-                            const StatusIcon = statusIcons[d.status] ?? Clock;
-                            return (
-                              <tr
-                                key={d.id}
-                                className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
-                                  i % 2 === 0 ? "" : "bg-muted/10"
-                                }`}
-                              >
-                                <td className="p-3 font-medium">{d.period}</td>
-                                <td className="p-3 text-right tabular-nums">
-                                  {Number(d.amountDue).toFixed(2)}
-                                </td>
-                                <td className="p-3 text-right tabular-nums">
-                                  {Number(d.amountPaid).toFixed(2)}
-                                </td>
-                                <td className="p-3 text-center">
-                                  <span
-                                    className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${
-                                      statusColors[d.status] ?? ""
-                                    }`}
-                                  >
-                                    <StatusIcon className="h-3 w-3" />
-                                    {d.status}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-right print:hidden">
-                                  {d.status !== "paid" && remaining > 0 && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs gap-1"
-                                      onClick={() => openPayDialog(d)}
-                                    >
-                                      <DollarSign className="h-3 w-3" />
-                                      Pay
-                                    </Button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <>
+                      <div className="space-y-3 md:hidden print:hidden">
+                        {balance.dues.map((d) => {
+                          const remaining = Number(d.amountDue) - Number(d.amountPaid);
+                          const StatusIcon = statusIcons[d.status] ?? Clock;
+                          return (
+                            <div key={d.id} className="rounded-md border p-3 bg-card">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="font-medium">{d.period}</p>
+                                </div>
+                                <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${statusColors[d.status] ?? ""}`}>
+                                  <StatusIcon className="h-3 w-3" />
+                                  {d.status}
+                                </span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground">Due</p>
+                                  <p className="font-medium tabular-nums">{Number(d.amountDue).toFixed(2)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Paid</p>
+                                  <p className="font-medium tabular-nums">{Number(d.amountPaid).toFixed(2)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Remaining</p>
+                                  <p className="font-medium tabular-nums">{remaining.toFixed(2)}</p>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                {d.status !== "paid" && remaining > 0 && (
+                                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                    <DollarSign className="h-3 w-3" />
+                                    Pay
+                                  </Button>
+                                )}
+                                {canManage && d.status !== "paid" && (
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
+                                    <Pencil className="h-3 w-3" />
+                                    Edit
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="hidden md:block print:block rounded-lg border overflow-x-auto">
+                        <table className="w-full text-sm min-w-[480px]">
+                          <thead>
+                            <tr className="bg-muted/50 border-b">
+                              <th className="text-left p-3 font-medium text-muted-foreground">Period</th>
+                              <th className="text-right p-3 font-medium text-muted-foreground">Due</th>
+                              <th className="text-right p-3 font-medium text-muted-foreground">Paid</th>
+                              <th className="text-center p-3 font-medium text-muted-foreground">Status</th>
+                              <th className="p-3 w-20 print:hidden"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {balance.dues.map((d, i) => {
+                              const remaining = Number(d.amountDue) - Number(d.amountPaid);
+                              const StatusIcon = statusIcons[d.status] ?? Clock;
+                              return (
+                                <tr key={d.id} className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
+                                  <td className="p-3 font-medium">{d.period}</td>
+                                  <td className="p-3 text-right tabular-nums">{Number(d.amountDue).toFixed(2)}</td>
+                                  <td className="p-3 text-right tabular-nums">{Number(d.amountPaid).toFixed(2)}</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${statusColors[d.status] ?? ""}`}>
+                                      <StatusIcon className="h-3 w-3" />
+                                      {d.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right print:hidden">
+                                    <div className="flex items-center justify-end gap-1">
+                                      {d.status !== "paid" && remaining > 0 && (
+                                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                          <DollarSign className="h-3 w-3" />
+                                          Pay
+                                        </Button>
+                                      )}
+                                      {canManage && d.status !== "paid" && (
+                                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   ) : (
                     <div className="text-center py-10">
                       <Receipt className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        No dues generated yet.
-                      </p>
+                      <p className="text-sm text-muted-foreground">No dues generated yet.</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
-            </div>
-          </TabsContent>
 
-          {/* ── Tab 2: Payment History ──────────────────────── */}
-          <TabsContent value="history" forceMount className="data-[state=inactive]:hidden print:!block print:break-before-page">
+              {/* Transaction History */}
             <Card>
               <CardHeader className="pb-4">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -1033,7 +1248,60 @@ export default function MembershipDetailPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-lg border overflow-x-auto">
+                    <div className="space-y-3 md:hidden print:hidden">
+                      {payments.map((p) => (
+                        <div key={p.id} className="rounded-md border p-3 bg-card">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="font-medium">
+                              {p.paymentDue?.period ?? "—"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(p.paymentDate).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">Amount</p>
+                              <p className="font-medium tabular-nums text-emerald-600">
+                                +{Number(p.amount).toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Collected by</p>
+                              <p className="font-medium">{p.collectedBy?.email ?? "—"}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-muted-foreground">Note</p>
+                              <p className="font-medium">{p.note || "—"}</p>
+                            </div>
+                          </div>
+                          {(p as any).isReversed && (
+                            <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
+                              <RotateCcw className="h-3 w-3" />
+                              Reversed{(p as any).reversalReason ? `: ${(p as any).reversalReason}` : ""}
+                            </div>
+                          )}
+                          <div className="mt-3 flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={loadingReceiptPaymentId === p.id}
+                              onClick={() => openReceiptForPayment(p.id)}
+                            >
+                              {loadingReceiptPaymentId === p.id ? "Loading…" : "View Receipt"}
+                            </Button>
+                            {canManage && !(p as any).isReversed && (
+                              <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
+                                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                Reverse
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="hidden md:block print:block rounded-lg border overflow-x-auto">
                       <table className="w-full text-sm min-w-[540px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
@@ -1052,6 +1320,11 @@ export default function MembershipDetailPage() {
                             <th className="text-left p-3 font-medium text-muted-foreground">
                               Note
                             </th>
+                            <th className="text-center p-3 font-medium text-muted-foreground">
+                              Status
+                            </th>
+                            <th className="text-right p-3 font-medium text-muted-foreground">
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1060,7 +1333,7 @@ export default function MembershipDetailPage() {
                               key={p.id}
                               className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
                                 i % 2 === 0 ? "" : "bg-muted/10"
-                              }`}
+                              } ${(p as any).isReversed ? "opacity-50" : ""}`}
                             >
                               <td className="p-3">
                                 {new Date(p.paymentDate).toLocaleDateString()}
@@ -1068,7 +1341,7 @@ export default function MembershipDetailPage() {
                               <td className="p-3 font-medium">
                                 {p.paymentDue?.period ?? "—"}
                               </td>
-                              <td className="p-3 text-right tabular-nums font-semibold text-emerald-600">
+                              <td className={`p-3 text-right tabular-nums font-semibold ${(p as any).isReversed ? "line-through text-muted-foreground" : "text-emerald-600"}`}>
                                 +{Number(p.amount).toFixed(2)}
                               </td>
                               <td className="p-3 text-muted-foreground">
@@ -1076,6 +1349,39 @@ export default function MembershipDetailPage() {
                               </td>
                               <td className="p-3 text-muted-foreground max-w-[200px] truncate">
                                 {p.note || "—"}
+                              </td>
+                              <td className="p-3 text-center">
+                                {(p as any).isReversed ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-red-600">
+                                    <RotateCcw className="h-3 w-3" />
+                                    Reversed
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-emerald-600">Active</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={loadingReceiptPaymentId === p.id}
+                                    onClick={() => openReceiptForPayment(p.id)}
+                                  >
+                                    {loadingReceiptPaymentId === p.id ? "Loading…" : "Receipt"}
+                                  </Button>
+                                  {canManage && !(p as any).isReversed && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-red-600 h-8 w-8 p-0"
+                                      onClick={() => { setReverseTarget(p); setReverseReason(""); }}
+                                      title="Reverse Payment"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -1117,6 +1423,8 @@ export default function MembershipDetailPage() {
                 )}
               </CardContent>
             </Card>
+
+            </div>
           </TabsContent>
 
           {/* ── Tab 3: Credit Ledger ───────────────────────────── */}
@@ -1358,6 +1666,108 @@ export default function MembershipDetailPage() {
               <Download className="h-4 w-4" />
               Download PNG
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <PaymentReceiptDialog
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receiptData}
+      />
+
+      <AlertDialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Archive Membership
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to archive this membership? It will be hidden from all lists until restored.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={() => {
+                doArchive(true);
+                setArchiveConfirmOpen(false);
+              }}
+            >
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reverse Payment Dialog */}
+      <Dialog open={!!reverseTarget} onOpenChange={(open) => !open && setReverseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Reverse Payment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/50 border p-4 space-y-1">
+              <p className="text-sm">
+                Period: <strong>{reverseTarget?.paymentDue?.period ?? "—"}</strong> ·
+                Amount: <strong>{reverseTarget ? Number(reverseTarget.amount).toFixed(2) : ""}</strong>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason for reversal *</Label>
+              <Input
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                placeholder="e.g. Wrong member, duplicate entry..."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">This action is recorded in the audit trail and cannot be undone.</p>
+            <div className="flex gap-2">
+              <Button variant="destructive" onClick={handleReversePayment} disabled={reverseSubmitting || !reverseReason.trim()} className="flex-1">
+                {reverseSubmitting ? "Reversing…" : "Confirm Reversal"}
+              </Button>
+              <Button variant="outline" onClick={() => setReverseTarget(null)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Due Dialog */}
+      <Dialog open={!!editDueTarget} onOpenChange={(open) => !open && setEditDueTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Edit Due Amount
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/50 border p-4 space-y-1">
+              <p className="text-sm">
+                Period: <strong>{editDueTarget?.period}</strong> ·
+                Current Due: <strong>{editDueTarget ? Number(editDueTarget.amountDue).toFixed(2) : ""}</strong> ·
+                Paid: <strong>{editDueTarget ? Number(editDueTarget.amountPaid).toFixed(2) : ""}</strong>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>New Due Amount *</Label>
+              <Input type="number" min={0} step="0.01" value={editDueAmount} onChange={(e) => setEditDueAmount(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Reason for change *</Label>
+              <Input value={editDueReason} onChange={(e) => setEditDueReason(e.target.value)} placeholder="e.g. Fee adjustment..." />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleEditDue} disabled={editDueSubmitting || !editDueReason.trim() || !editDueAmount} className="flex-1">
+                {editDueSubmitting ? "Saving…" : "Update Due"}
+              </Button>
+              <Button variant="outline" onClick={() => setEditDueTarget(null)}>Cancel</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

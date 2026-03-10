@@ -21,19 +21,26 @@ exports.dashboardRouter.get("/", async (req, res) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
-    const eightYearsAgo = new Date(now.getFullYear() - 8, now.getMonth(), now.getDate());
-    const [totalMembers, childrenCount, teenagerCount, currentMonthDues, currentMonthPayments,] = await Promise.all([
+    const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
+    const [totalHouseholds, totalHeadcount, adultsCount, youthCount, childrenCount, currentMonthDues, currentMonthPayments,] = await Promise.all([
+        prisma_js_1.prisma.membership.count({ where: orgFilter }),
         prisma_js_1.prisma.person.count({ where: orgFilter }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
-                dateOfBirth: { gt: eightYearsAgo },
+                dateOfBirth: { lte: eighteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
-                dateOfBirth: { gt: eighteenYearsAgo, lte: eightYearsAgo },
+                dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo },
+            },
+        }),
+        prisma_js_1.prisma.person.count({
+            where: {
+                ...orgFilter,
+                dateOfBirth: { gt: thirteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.paymentDue.findMany({
@@ -51,9 +58,11 @@ exports.dashboardRouter.get("/", async (req, res) => {
     const totalDue = currentMonthDues.reduce((sum, d) => sum.add(d.amountDue), new library_1.Decimal(0));
     const collectedThisMonth = currentMonthPayments._sum.amount ?? new library_1.Decimal(0);
     return res.json({
-        totalMembers,
+        totalHouseholds,
+        totalHeadcount,
+        adults: adultsCount,
+        youth: youthCount,
         children: childrenCount,
-        teenagers: teenagerCount,
         totalDueThisMonth: totalDue.toNumber(),
         collectedThisMonth: new library_1.Decimal(collectedThisMonth.toString()).toNumber(),
         period: currentPeriod,

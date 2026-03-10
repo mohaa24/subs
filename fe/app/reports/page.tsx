@@ -21,7 +21,7 @@ import {
 import { FileText, Download, Search, Filter } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 
-type EntityType = "persons" | "memberships" | "payments" | "distributions";
+type EntityType = "persons" | "memberships" | "payments" | "distributions" | "memberCredits";
 
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
 
@@ -67,11 +67,21 @@ interface DistributionRecordResult {
   distributionDate: string;
 }
 
+interface MemberCreditLiabilityResult {
+  membershipId: string;
+  membershipNo: string;
+  membershipType: string;
+  membershipStatus: string;
+  hodName: string;
+  creditBalance: number;
+}
+
 type ReportResult =
   | PersonResult[]
   | MembershipResult[]
   | PaymentResult[]
-  | DistributionRecordResult[];
+  | DistributionRecordResult[]
+  | MemberCreditLiabilityResult[];
 
 export default function ReportsPage() {
   const { t } = useTranslation();
@@ -186,6 +196,13 @@ export default function ReportsPage() {
     );
   }
 
+  const memberCreditRows =
+    entity === "memberCredits" ? (results as MemberCreditLiabilityResult[]) : [];
+  const totalLiability = memberCreditRows.reduce(
+    (sum, row) => sum + Number(row.creditBalance || 0),
+    0,
+  );
+
   return (
     <div className="min-h-screen bg-background relative">
       <AbstractBg />
@@ -233,6 +250,7 @@ export default function ReportsPage() {
                     <SelectItem value="memberships">{t("reports.memberships")}</SelectItem>
                     <SelectItem value="payments">{t("reports.payments")}</SelectItem>
                     <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
+                    <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -437,6 +455,16 @@ export default function ReportsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {entity === "memberCredits" && (
+                <div className="mb-4 rounded-lg border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Total Liability
+                  </p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {totalLiability.toFixed(2)}
+                  </p>
+                </div>
+              )}
               <div className="rounded-md border overflow-x-auto">
                 {entity === "persons" && (
                   <table className="w-full text-sm min-w-[500px]">
@@ -546,6 +574,32 @@ export default function ReportsPage() {
                           <td className="p-3">{r.distributionDate}</td>
                           <td className="p-3 text-muted-foreground">
                             {new Date(r.distributedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "memberCredits" && (
+                  <table className="w-full text-sm min-w-[650px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Membership No.</th>
+                        <th className="text-left p-3 font-medium">Head</th>
+                        <th className="text-left p-3 font-medium">Type</th>
+                        <th className="text-left p-3 font-medium">Status</th>
+                        <th className="text-right p-3 font-medium">Liability</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberCreditRows.map((r) => (
+                        <tr key={r.membershipId} className="border-t">
+                          <td className="p-3 font-medium">{r.membershipNo || "—"}</td>
+                          <td className="p-3">{r.hodName || "—"}</td>
+                          <td className="p-3">{r.membershipType || "—"}</td>
+                          <td className="p-3">{r.membershipStatus || "—"}</td>
+                          <td className="p-3 text-right tabular-nums font-medium">
+                            {Number(r.creditBalance).toFixed(2)}
                           </td>
                         </tr>
                       ))}

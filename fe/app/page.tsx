@@ -11,7 +11,8 @@ import {
   UserCog,
   CreditCard,
   Baby,
-  GraduationCap,
+  User,
+  Home,
   Receipt,
   Banknote,
   ScanLine,
@@ -204,27 +205,13 @@ export default function HomePage() {
   }
   if (!user) return null;
 
-  const STAT_CARDS = [
+  const ROW1_CARDS = [
     {
-      label: t("dashboard.totalMembers"),
-      value: stats?.totalMembers ?? "—",
-      icon: Users,
+      label: t("dashboard.totalHouseholds"),
+      value: stats?.totalHouseholds ?? "—",
+      icon: Home,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
-    },
-    {
-      label: t("dashboard.children"),
-      value: stats?.children ?? "—",
-      icon: Baby,
-      color: "text-amber-500",
-      bg: "bg-amber-500/10",
-    },
-    {
-      label: t("dashboard.teenagers"),
-      value: stats?.teenagers ?? "—",
-      icon: GraduationCap,
-      color: "text-purple-500",
-      bg: "bg-purple-500/10",
     },
     {
       label: t("dashboard.dueThisMonth"),
@@ -242,6 +229,37 @@ export default function HomePage() {
     },
   ];
 
+  const ROW2_CARDS = [
+    {
+      label: t("dashboard.totalHeadcount"),
+      value: stats?.totalHeadcount ?? "—",
+      icon: Users,
+      color: "text-indigo-500",
+      bg: "bg-indigo-500/10",
+    },
+    {
+      label: t("dashboard.adults"),
+      value: stats?.adults ?? "—",
+      icon: User,
+      color: "text-sky-500",
+      bg: "bg-sky-500/10",
+    },
+    {
+      label: t("dashboard.youth"),
+      value: stats?.youth ?? "—",
+      icon: UserPlus,
+      color: "text-purple-500",
+      bg: "bg-purple-500/10",
+    },
+    {
+      label: t("dashboard.children"),
+      value: stats?.children ?? "—",
+      icon: Baby,
+      color: "text-amber-500",
+      bg: "bg-amber-500/10",
+    },
+  ];
+
   const FLOW_TABS: FlowTab[] = [
     {
       value: "person",
@@ -250,14 +268,14 @@ export default function HomePage() {
         {
           actionKey: "person-manage-people",
           title: t("persons.title"),
-          description: t("persons.addPerson"),
+          description: t("persons.manageDesc"),
           icon: Users,
           href: "/persons",
         },
         {
           actionKey: "person-add-new-person",
           title: t("persons.addPerson"),
-          description: t("persons.addPerson"),
+          description: t("persons.addDesc"),
           icon: UserPlus,
           href: "/persons",
         },
@@ -270,14 +288,14 @@ export default function HomePage() {
         {
           actionKey: "membership-manage-membership",
           title: t("memberships.title"),
-          description: t("memberships.title"),
+          description: t("memberships.manageDesc"),
           icon: Users,
           href: "/members",
         },
         {
           actionKey: "membership-add-new-member",
           title: t("memberships.addMembership"),
-          description: t("memberships.addMembership"),
+          description: t("memberships.addDesc"),
           icon: UserPlus,
           href: "/members/new",
         },
@@ -345,6 +363,14 @@ export default function HomePage() {
           href: "/settings/form-config",
           roles: ["admin", "super_user"],
         },
+        {
+          actionKey: "admin-zones",
+          title: t("settings.zones"),
+          description: t("settings.zones"),
+          icon: Building2,
+          href: "/settings/zones",
+          roles: ["admin", "super_user"],
+        },
       ],
     },
     {
@@ -385,6 +411,13 @@ export default function HomePage() {
           href: "/reports",
         },
         {
+          actionKey: "reports-periodic-payments",
+          title: t("reports.periodicPayments"),
+          description: t("reports.periodicPaymentsDesc"),
+          icon: Receipt,
+          href: "/reports/payments",
+        },
+        {
           actionKey: "reports-charts",
           title: t("charts.title"),
           description: t("charts.title"),
@@ -407,9 +440,32 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* ── Stat cards ────────────────────────────────────── */}
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5 mb-8">
-          {STAT_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
+        {/* ── Stat cards — Row 1 ────────────────────────────── */}
+        <div className="grid gap-3 grid-cols-3 mb-3">
+          {ROW1_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
+            <Card key={label} className="relative overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                <div className={`h-7 w-7 rounded-lg ${bg} flex items-center justify-center`}>
+                  <Icon className={`h-3.5 w-3.5 ${color}`} />
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                {statsLoading ? (
+                  <div className="h-7 w-20 rounded bg-muted animate-pulse" />
+                ) : (
+                  <p className="text-xl font-bold text-foreground tracking-tight">
+                    {value}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* ── Stat cards — Row 2 ────────────────────────────── */}
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 mb-8">
+          {ROW2_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="relative overflow-hidden">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                 <p className="text-xs font-medium text-muted-foreground">{label}</p>

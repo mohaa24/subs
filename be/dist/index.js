@@ -24,6 +24,7 @@ const form_config_js_1 = require("./routes/form-config.js");
 const distributions_js_1 = require("./routes/distributions.js");
 const reports_js_1 = require("./routes/reports.js");
 const messages_js_1 = require("./routes/messages.js");
+const zones_js_1 = require("./routes/zones.js");
 const cron_js_1 = require("./lib/cron.js");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4000;
@@ -52,6 +53,7 @@ app.use("/form-config", form_config_js_1.formConfigRouter);
 app.use("/distributions", distributions_js_1.distributionsRouter);
 app.use("/reports", reports_js_1.reportsRouter);
 app.use("/messages", messages_js_1.messagesRouter);
+app.use("/zones", zones_js_1.zonesRouter);
 app.listen(PORT, () => {
     console.log(`BE running on http://localhost:${PORT}`);
     (0, cron_js_1.startCronJobs)();

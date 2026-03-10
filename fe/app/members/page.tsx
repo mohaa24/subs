@@ -9,9 +9,20 @@ import { api, type Membership } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil } from "lucide-react";
+import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { toast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function MembersContent() {
   const { user, loading: authLoading } = useAuth();
@@ -23,6 +34,8 @@ function MembersContent() {
   const [q, setQ] = useState(searchParams.get("q") || "");
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
   const limit = 10;
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<Membership | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -32,6 +45,7 @@ function MembersContent() {
     if (!user) return;
     const params: Record<string, string> = { page: String(page), limit: String(limit) };
     if (q) params.q = q;
+    if (showArchived) params.includeArchived = "true";
     if (user.role === "super_user" && user.organizationId) params.organizationId = user.organizationId;
     setLoading(true);
     api<{ items: Membership[]; total: number }>("/memberships", { params })
@@ -41,7 +55,37 @@ function MembersContent() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [user, page, q]);
+  }, [user, page, q, showArchived]);
+
+  function handleToggleArchive(m: Membership) {
+    const newVal = !(m as any).isArchived;
+    if (newVal) {
+      setArchiveTarget(m);
+      return;
+    }
+    doArchive(m, false);
+  }
+
+  async function doArchive(m: Membership, isArchived: boolean) {
+    try {
+      await api(`/memberships/${m.id}/archive`, {
+        method: "PATCH",
+        body: JSON.stringify({ isArchived }),
+      });
+      toast({ title: isArchived ? "Membership archived" : "Membership restored" });
+      setItems((prev) => showArchived
+        ? prev.map((i) => (i.id === m.id ? { ...i, isArchived } as any : i))
+        : prev.filter((i) => i.id !== m.id)
+      );
+      if (!showArchived && isArchived) setTotal((t) => Math.max(0, t - 1));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed",
+        description: err instanceof Error ? err.message : "Failed to update",
+      });
+    }
+  }
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -89,6 +133,16 @@ function MembersContent() {
                 <Search className="h-4 w-4 mr-1" />
                 Search
               </Button>
+              <Button
+                type="button"
+                variant={showArchived ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 ml-auto"
+                onClick={() => { setShowArchived((v) => !v); setPage(1); }}
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {showArchived ? "Hide Archived" : "Show Archived"}
+              </Button>
             </form>
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
@@ -118,6 +172,14 @@ function MembersContent() {
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleArchive(m)}
+                            aria-label={(m as any).isArchived ? "Restore" : "Archive"}
+                          >
+                            {(m as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
+                          </Button>
                         </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -157,12 +219,17 @@ function MembersContent() {
                       {items.map((m) => (
                         <tr key={m.id} className="border-t">
                           <td className="p-3">
-                            <Link
-                              href={`/members/${m.id}`}
-                              className="font-medium text-primary hover:underline"
-                            >
-                              {m.hod?.fullName ?? m.hodPersonId}
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={`/members/${m.id}`}
+                                className={`font-medium text-primary hover:underline ${(m as any).isArchived ? "line-through opacity-60" : ""}`}
+                              >
+                                {m.hod?.fullName ?? m.hodPersonId}
+                              </Link>
+                              {(m as any).isArchived && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3">{m.membershipNo}</td>
                           <td className="p-3">{m.membershipType}</td>
@@ -184,6 +251,15 @@ function MembersContent() {
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
                               </Link>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleToggleArchive(m)}
+                                aria-label={(m as any).isArchived ? "Restore" : "Archive"}
+                                title={(m as any).isArchived ? "Restore" : "Archive"}
+                              >
+                                {(m as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
+                              </Button>
                             </div>
                           </td>
                         </tr>
@@ -222,6 +298,32 @@ function MembersContent() {
           </CardContent>
         </Card>
       </main>
+
+      <AlertDialog open={!!archiveTarget} onOpenChange={(open) => !open && setArchiveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Archive Membership
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to archive the membership for <strong>{archiveTarget?.hod?.fullName ?? archiveTarget?.membershipNo}</strong>? It will be hidden from all lists until restored.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={() => {
+                if (archiveTarget) doArchive(archiveTarget, true);
+                setArchiveTarget(null);
+              }}
+            >
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
