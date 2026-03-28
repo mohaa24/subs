@@ -17,7 +17,7 @@ Database name: `membership_db`.
    ```bash
    npm install
    npx prisma generate
-   npx prisma db push
+   npm run db:migrate
    npx prisma db seed
    ```
 4. Run: `npm run dev` (port 4000)
@@ -52,6 +52,7 @@ Uses **Neon** for PostgreSQL. Create a project at [neon.tech](https://neon.tech)
    ```bash
    docker compose up -d --build
    ```
+   The backend container applies committed Prisma migrations automatically on startup.
 4. Seed the database (optional):
    ```bash
    docker compose exec be npx prisma db seed
