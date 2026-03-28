@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   api,
   type Membership,
+  type Person,
   type MembershipBalance,
   type MembershipCreditEntry,
   type Payment,
@@ -27,6 +28,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import {
   ChevronLeft,
   ChevronRight,
@@ -60,6 +62,7 @@ import {
   ArchiveRestore,
   RotateCcw,
   Pencil,
+  MessageSquareText,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
@@ -274,7 +277,14 @@ export default function MembershipDetailPage() {
   }
 
   function handlePrint() {
-    window.print();
+    const opened = window.open(`/members/${id}/export?print=1`, "_blank");
+    if (!opened) {
+      toast({
+        variant: "destructive",
+        title: "Unable to open export",
+        description: "Please allow popups for this site and try again.",
+      });
+    }
   }
 
   function handleToggleArchive() {
@@ -532,21 +542,28 @@ export default function MembershipDetailPage() {
     return age;
   }
 
+  function isCountableMember(person: Person | undefined | null) {
+    if (!person) return false;
+    if (person.isArchived) return false;
+    return !person.livingStatus || person.livingStatus === "Active";
+  }
+
   const allMembers = [
     ...(membership.hod ? [membership.hod] : []),
     ...(membership.spouse ? [membership.spouse] : []),
     ...(membership.dependents?.map((d) => d.person) ?? []),
   ];
-  const totalHeadcount = allMembers.length;
-  const adults = allMembers.filter((p) => {
+  const countableMembers = allMembers.filter(isCountableMember);
+  const totalHeadcount = countableMembers.length;
+  const adults = countableMembers.filter((p) => {
     const age = getAge(p.dateOfBirth);
     return age === null || age >= 18;
   }).length;
-  const youth = allMembers.filter((p) => {
+  const youth = countableMembers.filter((p) => {
     const age = getAge(p.dateOfBirth);
     return age !== null && age >= 13 && age <= 17;
   }).length;
-  const children = allMembers.filter((p) => {
+  const children = countableMembers.filter((p) => {
     const age = getAge(p.dateOfBirth);
     return age !== null && age >= 0 && age <= 12;
   }).length;
@@ -639,7 +656,7 @@ export default function MembershipDetailPage() {
                 </Button>
                 <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
                   <Printer className="h-4 w-4" />
-                  <span className="hidden sm:inline">Print</span>
+                  <span className="hidden sm:inline">Export Record</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -672,6 +689,10 @@ export default function MembershipDetailPage() {
             <TabsTrigger value="payments" className="gap-1.5">
               <CreditCard className="h-4 w-4" />
               Payments
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="gap-1.5">
+              <MessageSquareText className="h-4 w-4" />
+              Activity
             </TabsTrigger>
             <TabsTrigger value="credit-ledger" className="gap-1.5">
               <Landmark className="h-4 w-4" />
@@ -1425,6 +1446,24 @@ export default function MembershipDetailPage() {
             </Card>
 
             </div>
+          </TabsContent>
+
+          <TabsContent value="activity" forceMount className="data-[state=inactive]:hidden print:hidden">
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageSquareText className="h-5 w-5 text-primary" />
+                  Activity Feed
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ActivityFeedPanel
+                  resourcePath={`/memberships/${id}/feed`}
+                  placeholder="Write a remark for this membership..."
+                  emptyMessage="No remarks or activity recorded yet."
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ── Tab 3: Credit Ledger ───────────────────────────── */}

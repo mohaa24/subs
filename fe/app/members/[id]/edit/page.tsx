@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type DependentGroup, type Membership, type Person, type RelationToHOH, type Zone } from "@/lib/api";
+import { api, type DependentGroup, type Membership, type MembershipStatus, type Person, type RelationToHOH, type Zone } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,7 @@ import { toast } from "@/hooks/use-toast";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+const MAX_ZONE_CODE = 24;
 type DependentEntry = {
   id: string;
   fullName: string;
@@ -73,7 +74,7 @@ export default function EditMembershipPage() {
 
   const [dateOfRegistration, setDateOfRegistration] = useState("");
   const [membershipType, setMembershipType] = useState("Resident");
-  const [membershipStatus, setMembershipStatus] = useState("Active");
+  const [membershipStatus, setMembershipStatus] = useState<MembershipStatus>("Active");
   const [land, setLand] = useState(false);
   const [houseOwnership, setHouseOwnership] = useState(false);
   const [commercialProperties, setCommercialProperties] = useState(false);
@@ -197,6 +198,7 @@ export default function EditMembershipPage() {
         bloodGroup: data.bloodGroup || undefined,
         maritalStatus: data.maritalStatus || undefined,
         address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
         mobileNumber: data.mobileNumber || undefined,
         whatsAppNumber: data.whatsAppNumber || undefined,
         email: data.email || undefined,
@@ -257,6 +259,7 @@ export default function EditMembershipPage() {
       bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
+      areaCode: p.areaCode ? String(p.areaCode) : "",
       mobileNumber: p.mobileNumber ?? "",
       whatsAppNumber: p.whatsAppNumber ?? "",
       email: p.email ?? "",
@@ -301,6 +304,7 @@ export default function EditMembershipPage() {
       bloodGroup: data.bloodGroup || undefined,
       maritalStatus: data.maritalStatus || undefined,
       address: data.address || undefined,
+      areaCode: data.areaCode ? Number(data.areaCode) : null,
       mobileNumber: data.mobileNumber || undefined,
       whatsAppNumber: data.whatsAppNumber || undefined,
       email: data.email || undefined,
@@ -355,6 +359,16 @@ export default function EditMembershipPage() {
       });
       return;
     }
+    if (!areaCode) {
+      const msg = "Zone is required.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Cannot update membership",
+        description: msg,
+      });
+      return;
+    }
     setSaving(true);
     try {
       await api(`/memberships/${id}`, {
@@ -385,7 +399,7 @@ export default function EditMembershipPage() {
           totalContribution: computedTotal,
           disability,
           isZakathEligible,
-          areaCode: areaCode ? Number(areaCode) : null,
+          areaCode: Number(areaCode),
         }),
       });
       toast({
@@ -837,21 +851,25 @@ export default function EditMembershipPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Zone</Label>
+                  <Label>Zone <span className="text-destructive">*</span></Label>
                   <Select
-                    value={areaCode || "unset"}
-                    onValueChange={(v) => setAreaCode(v === "unset" ? "" : v)}
+                    value={areaCode || undefined}
+                    onValueChange={setAreaCode}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select zone" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="unset">Not Set</SelectItem>
                       {zones
-                        .filter((z) => z.isActive || String(z.code) === areaCode)
+                        .filter(
+                          (z) =>
+                            z.code >= 1 &&
+                            z.code <= MAX_ZONE_CODE &&
+                            (z.isActive || String(z.code) === areaCode)
+                        )
                         .map((z) => (
                           <SelectItem key={z.id} value={String(z.code)}>
-                            {z.code} — {z.name}{!z.isActive ? " (Inactive)" : ""}
+                            {String(z.code).padStart(2, "0")} — {z.name}{!z.isActive ? " (Inactive)" : ""}
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -886,6 +904,7 @@ export default function EditMembershipPage() {
             </DialogTitle>
           </DialogHeader>
           <PersonForm
+            zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={() => setAddPersonOpen(null)}
             submitLabel="Add Person"
@@ -902,6 +921,7 @@ export default function EditMembershipPage() {
           {editPerson?.initial && (
             <PersonForm
               initial={editPerson.initial}
+              zones={zones}
               onSubmit={handleEditPerson}
               onCancel={() => setEditPerson(null)}
               submitLabel="Save Changes"

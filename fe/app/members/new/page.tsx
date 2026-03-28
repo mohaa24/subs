@@ -31,6 +31,7 @@ import { toast } from "@/hooks/use-toast";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+const MAX_ZONE_CODE = 24;
 type DependentEntry = {
   id: string;
   fullName: string;
@@ -182,6 +183,7 @@ export default function NewMembershipPage() {
         bloodGroup: data.bloodGroup || undefined,
         maritalStatus: data.maritalStatus || undefined,
         address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
         mobileNumber: data.mobileNumber || undefined,
         whatsAppNumber: data.whatsAppNumber || undefined,
         email: data.email || undefined,
@@ -242,6 +244,7 @@ export default function NewMembershipPage() {
       bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
+      areaCode: p.areaCode ? String(p.areaCode) : "",
       mobileNumber: p.mobileNumber ?? "",
       whatsAppNumber: p.whatsAppNumber ?? "",
       email: p.email ?? "",
@@ -286,6 +289,7 @@ export default function NewMembershipPage() {
       bloodGroup: data.bloodGroup || undefined,
       maritalStatus: data.maritalStatus || undefined,
       address: data.address || undefined,
+      areaCode: data.areaCode ? Number(data.areaCode) : null,
       mobileNumber: data.mobileNumber || undefined,
       whatsAppNumber: data.whatsAppNumber || undefined,
       email: data.email || undefined,
@@ -350,6 +354,16 @@ export default function NewMembershipPage() {
       });
       return;
     }
+    if (!areaCode) {
+      const msg = "Zone is required.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Cannot create membership",
+        description: msg,
+      });
+      return;
+    }
     setSaving(true);
     try {
       await api("/memberships", {
@@ -381,7 +395,7 @@ export default function NewMembershipPage() {
           totalContribution: computedTotal,
           disability,
           isZakathEligible,
-          areaCode: areaCode ? Number(areaCode) : null,
+          areaCode: Number(areaCode),
         }),
       });
       toast({
@@ -838,19 +852,20 @@ export default function NewMembershipPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Zone</Label>
+                  <Label>Zone <span className="text-destructive">*</span></Label>
                   <Select
-                    value={areaCode || "unset"}
-                    onValueChange={(v) => setAreaCode(v === "unset" ? "" : v)}
+                    value={areaCode || undefined}
+                    onValueChange={setAreaCode}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select zone" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="unset">Not Set</SelectItem>
-                      {zones.map((z) => (
+                      {zones
+                        .filter((z) => z.code >= 1 && z.code <= MAX_ZONE_CODE)
+                        .map((z) => (
                         <SelectItem key={z.id} value={String(z.code)}>
-                          {z.code} — {z.name}
+                          {String(z.code).padStart(2, "0")} — {z.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -885,6 +900,7 @@ export default function NewMembershipPage() {
             </DialogTitle>
           </DialogHeader>
           <PersonForm
+            zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={() => setAddPersonOpen(null)}
             submitLabel="Add Person"
@@ -901,6 +917,7 @@ export default function NewMembershipPage() {
           {editPerson?.initial && (
             <PersonForm
               initial={editPerson.initial}
+              zones={zones}
               onSubmit={handleEditPerson}
               onCancel={() => setEditPerson(null)}
               submitLabel="Save Changes"

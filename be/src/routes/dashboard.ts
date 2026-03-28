@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
@@ -25,6 +26,10 @@ dashboardRouter.get("/", async (req, res) => {
 
   const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
   const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
+  const activePersonFilter: Prisma.PersonWhereInput = {
+    isArchived: false,
+    OR: [{ livingStatus: "Active" }, { livingStatus: null }],
+  };
 
   const [
     totalHouseholds,
@@ -35,13 +40,14 @@ dashboardRouter.get("/", async (req, res) => {
     currentMonthDues,
     currentMonthPayments,
   ] = await Promise.all([
-    prisma.membership.count({ where: orgFilter }),
+    prisma.membership.count({ where: { ...orgFilter, isArchived: false } }),
 
-    prisma.person.count({ where: orgFilter }),
+    prisma.person.count({ where: { ...orgFilter, ...activePersonFilter } }),
 
     prisma.person.count({
       where: {
         ...orgFilter,
+        ...activePersonFilter,
         dateOfBirth: { lte: eighteenYearsAgo },
       },
     }),
@@ -49,6 +55,7 @@ dashboardRouter.get("/", async (req, res) => {
     prisma.person.count({
       where: {
         ...orgFilter,
+        ...activePersonFilter,
         dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo },
       },
     }),
@@ -56,6 +63,7 @@ dashboardRouter.get("/", async (req, res) => {
     prisma.person.count({
       where: {
         ...orgFilter,
+        ...activePersonFilter,
         dateOfBirth: { gt: thirteenYearsAgo },
       },
     }),

@@ -8,13 +8,15 @@ export const zonesRouter = Router();
 zonesRouter.use(requireAuth);
 zonesRouter.use(withOrgScope);
 
+const maxZoneCode = 24;
+
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  code: z.number().int().min(1),
+  code: z.number().int().min(1).max(maxZoneCode),
   organizationId: z.string().optional(),
 });
 
@@ -90,12 +92,18 @@ zonesRouter.delete("/:id", requireAdmin, async (req, res) => {
   if (req.auth!.role !== "super_user" && zone.organizationId !== req.auth!.organizationId)
     return res.status(403).json({ error: "Forbidden" });
 
-  const usageCount = await prisma.membership.count({
-    where: { organizationId: zone.organizationId, areaCode: zone.code },
-  });
+  const [membershipUsageCount, personUsageCount] = await Promise.all([
+    prisma.membership.count({
+      where: { organizationId: zone.organizationId, areaCode: zone.code },
+    }),
+    prisma.person.count({
+      where: { organizationId: zone.organizationId, areaCode: zone.code },
+    }),
+  ]);
+  const usageCount = membershipUsageCount + personUsageCount;
   if (usageCount > 0) {
     return res.status(409).json({
-      error: `Cannot delete this zone — it is used by ${usageCount} membership${usageCount > 1 ? "s" : ""}. Deactivate it instead.`,
+      error: `Cannot delete this zone because it is used by ${usageCount} record${usageCount > 1 ? "s" : ""} (${membershipUsageCount} membership${membershipUsageCount === 1 ? "" : "s"}, ${personUsageCount} person${personUsageCount === 1 ? "" : "s"}). Deactivate it instead.`,
     });
   }
 

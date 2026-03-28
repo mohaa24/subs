@@ -48,6 +48,29 @@ export interface User {
   } | null;
 }
 
+export type ActivityFeedEntryType =
+  | "remark"
+  | "document_generated"
+  | "image_added"
+  | "system_event";
+
+export type ActivityFeedActorType = "user" | "system";
+export type MembershipStatus = "Active" | "Inactive";
+
+export interface ActivityFeedItem {
+  id: string;
+  organizationId: string;
+  personId?: string | null;
+  membershipId?: string | null;
+  entryType: ActivityFeedEntryType;
+  actorType: ActivityFeedActorType;
+  body?: string | null;
+  metadata?: Record<string, unknown> | null;
+  createdByUserId?: string | null;
+  createdAt: string;
+  createdBy?: { id: string; email: string } | null;
+}
+
 export type ResidentType =
   | "ResidentSinceBirth"
   | "ResidentByMarriage"
@@ -108,6 +131,7 @@ export interface Person {
   bloodGroup?: "A_pos" | "A_neg" | "B_pos" | "B_neg" | "AB_pos" | "AB_neg" | "O_pos" | "O_neg" | null;
   maritalStatus?: "single" | "married" | "widower" | "widow" | null;
   address?: string | null;
+  areaCode?: number | null;
   mobileNumber?: string | null;
   whatsAppNumber?: string | null;
   email?: string | null;
@@ -119,16 +143,17 @@ export interface Person {
   relationToHOH?: RelationToHOH | null;
   livingStatus?: LivingStatus | null;
   isMadarasaStudent: boolean;
+  isArchived?: boolean;
 }
 
 export interface Membership {
   id: string;
   membershipNo: string;
   organizationId: string;
-  organization?: { id: string; name: string; slug: string } | null;
+  organization?: { id: string; name: string; slug: string; address?: string | null } | null;
   dateOfRegistration: string;
   membershipType: string;
-  membershipStatus: string;
+  membershipStatus: MembershipStatus;
   hodPersonId: string;
   spousePersonId?: string | null;
   isZakathEligible?: boolean | null;
@@ -152,6 +177,7 @@ export interface Membership {
   membershipFeeDiscount: number;
   totalContribution: number;
   disability: boolean;
+  isArchived?: boolean;
   createdByUserId?: string | null;
   createdBy?: { id: string; email: string } | null;
 }

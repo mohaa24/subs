@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { api, type Person } from "@/lib/api";
+import { api, type Person, type Zone } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
+import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { BLOOD_GROUPS, RESIDENT_TYPES } from "@/lib/constants";
@@ -21,6 +22,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   User,
   BadgeCheck,
+  Archive,
   Edit,
   Phone,
   Mail,
@@ -32,6 +34,7 @@ import {
   Activity,
   ArrowUpRight,
   BookOpen,
+  MessageSquareText,
 } from "lucide-react";
 
 function displayValue(value: string | null | undefined) {
@@ -88,6 +91,7 @@ export default function PersonDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [zones, setZones] = useState<Zone[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -100,6 +104,18 @@ export default function PersonDetailPage() {
       .catch(() => setPerson(null))
       .finally(() => setLoading(false));
   }, [user, id]);
+
+  useEffect(() => {
+    if (!person?.organizationId) {
+      setZones([]);
+      return;
+    }
+    const params: Record<string, string> = { includeInactive: "true" };
+    if (user?.role === "super_user") params.organizationId = person.organizationId;
+    api<Zone[]>("/zones", { params })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [person?.organizationId, user?.role]);
 
   function personToFormData(p: Person): Partial<PersonFormData> {
     return {
@@ -116,6 +132,7 @@ export default function PersonDetailPage() {
       bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
+      areaCode: p.areaCode ? String(p.areaCode) : "",
       mobileNumber: p.mobileNumber ?? "",
       whatsAppNumber: p.whatsAppNumber ?? "",
       email: p.email ?? "",
@@ -146,6 +163,7 @@ export default function PersonDetailPage() {
         bloodGroup: data.bloodGroup || undefined,
         maritalStatus: data.maritalStatus || undefined,
         address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
         mobileNumber: data.mobileNumber || undefined,
         whatsAppNumber: data.whatsAppNumber || undefined,
         email: data.email || undefined,
@@ -188,6 +206,11 @@ export default function PersonDetailPage() {
     if (!person?.residentType) return "—";
     return RESIDENT_TYPES.find((r) => r.value === person.residentType)?.label ?? person.residentType;
   }, [person?.residentType]);
+  const areaCodeLabel = useMemo(() => {
+    if (!person?.areaCode) return "—";
+    const zone = zones.find((z) => z.code === person.areaCode);
+    return zone ? `${zone.code} - ${zone.name}` : String(person.areaCode);
+  }, [person?.areaCode, zones]);
 
   const age = useMemo(() => getAge(person?.dateOfBirth), [person?.dateOfBirth]);
   const initials = useMemo(() => (person ? getInitials(person) : "P"), [person]);
@@ -288,6 +311,12 @@ export default function PersonDetailPage() {
                       <span className={`h-1.5 w-1.5 rounded-full ${livingStatusDot}`} />
                       {displayValue(person.livingStatus)}
                     </span>
+                    {person.isArchived && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+                        <Archive className="h-3 w-3" />
+                        Archived
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-muted-foreground mt-0.5">
                     {displayValue(person.preferredName || person.nameWithInitials)}
@@ -427,6 +456,7 @@ export default function PersonDetailPage() {
                     )
                   }
                 />
+                <InfoRow label="Zone" value={areaCodeLabel} />
               </CardContent>
             </Card>
 
@@ -467,6 +497,22 @@ export default function PersonDetailPage() {
                 />
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageSquareText className="h-5 w-5 text-primary" />
+                  Activity Feed
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ActivityFeedPanel
+                  resourcePath={`/persons/${id}/feed`}
+                  placeholder="Write a remark for this person..."
+                  emptyMessage="No remarks or activity recorded yet."
+                />
+              </CardContent>
+            </Card>
           </div>
 
           {/* Sidebar */}
@@ -482,6 +528,7 @@ export default function PersonDetailPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <InfoRow label="Living Status" value={displayValue(person.livingStatus)} />
+                <InfoRow label="Archived" value={person.isArchived ? "Yes" : "No"} />
                 <InfoRow
                   label="Local Madarasa Student"
                   value={person.isMadarasaStudent ? "Yes" : "No"}
@@ -537,6 +584,7 @@ export default function PersonDetailPage() {
           {person && (
             <PersonForm
               initial={personToFormData(person)}
+              zones={zones}
               onSubmit={handleEdit}
               onCancel={() => setEditOpen(false)}
               submitLabel={saving ? "Saving…" : "Save"}

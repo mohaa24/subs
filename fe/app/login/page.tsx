@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Users, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { AbstractBg } from "@/components/abstract-bg";
+import Image from "next/image";
+import civicaSq from '@/public/img/Civica_square.png'
 
 export default function LoginPage() {
   const router = useRouter();
@@ -42,10 +44,15 @@ export default function LoginPage() {
       <AbstractBg />
 
       <div className="relative z-10 w-full max-w-sm">
-        {/* Logo / brand */}
+    
+
+        {/* Card */}
+        <div className="bg-card border border-border/80 rounded-2xl p-6 shadow-2xl shadow-black/40">
+            {/* Logo / brand */}
         <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-5 shadow-lg shadow-primary/10">
-            <Users className="h-7 w-7 text-primary" />
+          <div className=" ">
+            {/* <Users className=" text-primary" /> */}
+            <Image alt="" height={200} width={200} src={civicaSq}/>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Welcome Back
@@ -54,9 +61,6 @@ export default function LoginPage() {
             Sign in to your organization account
           </p>
         </div>
-
-        {/* Card */}
-        <div className="bg-card border border-border/80 rounded-2xl p-6 shadow-2xl shadow-black/40">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label

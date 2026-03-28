@@ -8,12 +8,13 @@ const auth_js_1 = require("../middleware/auth.js");
 exports.zonesRouter = (0, express_1.Router)();
 exports.zonesRouter.use(auth_js_1.requireAuth);
 exports.zonesRouter.use(auth_js_1.withOrgScope);
+const maxZoneCode = 24;
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
 const createSchema = zod_1.z.object({
     name: zod_1.z.string().min(1).max(100),
-    code: zod_1.z.number().int().min(1),
+    code: zod_1.z.number().int().min(1).max(maxZoneCode),
     organizationId: zod_1.z.string().optional(),
 });
 const updateSchema = zod_1.z.object({
@@ -81,12 +82,18 @@ exports.zonesRouter.delete("/:id", auth_js_1.requireAdmin, async (req, res) => {
         return res.status(404).json({ error: "Zone not found" });
     if (req.auth.role !== "super_user" && zone.organizationId !== req.auth.organizationId)
         return res.status(403).json({ error: "Forbidden" });
-    const usageCount = await prisma_js_1.prisma.membership.count({
-        where: { organizationId: zone.organizationId, areaCode: zone.code },
-    });
+    const [membershipUsageCount, personUsageCount] = await Promise.all([
+        prisma_js_1.prisma.membership.count({
+            where: { organizationId: zone.organizationId, areaCode: zone.code },
+        }),
+        prisma_js_1.prisma.person.count({
+            where: { organizationId: zone.organizationId, areaCode: zone.code },
+        }),
+    ]);
+    const usageCount = membershipUsageCount + personUsageCount;
     if (usageCount > 0) {
         return res.status(409).json({
-            error: `Cannot delete this zone — it is used by ${usageCount} membership${usageCount > 1 ? "s" : ""}. Deactivate it instead.`,
+            error: `Cannot delete this zone because it is used by ${usageCount} record${usageCount > 1 ? "s" : ""} (${membershipUsageCount} membership${membershipUsageCount === 1 ? "" : "s"}, ${personUsageCount} person${personUsageCount === 1 ? "" : "s"}). Deactivate it instead.`,
         });
     }
     await prisma_js_1.prisma.zone.delete({ where: { id: req.params.id } });

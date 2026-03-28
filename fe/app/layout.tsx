@@ -6,8 +6,13 @@ import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "Membership",
+  title: "Civica",
   description: "Organization membership management",
+  icons: {
+    icon: "/img/favicon.ico",
+    shortcut: "/img/favicon.ico",
+    apple: "/img/favicon.ico",
+  },
 };
 
 export default function RootLayout({

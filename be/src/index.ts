@@ -21,6 +21,8 @@ import { distributionsRouter } from "./routes/distributions.js";
 import { reportsRouter } from "./routes/reports.js";
 import { messagesRouter } from "./routes/messages.js";
 import { zonesRouter } from "./routes/zones.js";
+import { activityFeedRouter } from "./routes/activity-feed.js";
+import { publicMembershipExportRouter } from "./routes/public-membership-export.js";
 import { startCronJobs } from "./lib/cron.js";
 
 const app = express();
@@ -49,12 +51,14 @@ app.use("/memberships", membershipsRouter);
 app.use("/payments", paymentsRouter);
 app.use("/dashboard", dashboardRouter);
 app.use("/bookmarks", bookmarksRouter);
+app.use("/", publicMembershipExportRouter);
 app.use("/", announcementsRouter);
 app.use("/form-config", formConfigRouter);
 app.use("/distributions", distributionsRouter);
 app.use("/reports", reportsRouter);
 app.use("/messages", messagesRouter);
 app.use("/zones", zonesRouter);
+app.use("/", activityFeedRouter);
 
 app.listen(PORT, () => {
   console.log(`BE running on http://localhost:${PORT}`);

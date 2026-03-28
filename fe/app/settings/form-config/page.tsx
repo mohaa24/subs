@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 const PERSON_FIELDS = [
   "title", "nameWithInitials", "fullName", "preferredName", "residentType", "gender",
   "identityType", "nicNumber", "idNumber", "dateOfBirth", "bloodGroup", "maritalStatus",
-  "address", "mobileNumber", "whatsAppNumber", "email", "occupation", "placeOfWork",
+  "address", "areaCode", "mobileNumber", "whatsAppNumber", "email", "occupation", "placeOfWork",
   "highestQualificationType", "highestQualificationTitle", "permanentDisability",
   "schoolName", "livingStatus", "isMadarasaStudent",
 ];

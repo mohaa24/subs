@@ -22,24 +22,31 @@ exports.dashboardRouter.get("/", async (req, res) => {
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
     const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
+    const activePersonFilter = {
+        isArchived: false,
+        OR: [{ livingStatus: "Active" }, { livingStatus: null }],
+    };
     const [totalHouseholds, totalHeadcount, adultsCount, youthCount, childrenCount, currentMonthDues, currentMonthPayments,] = await Promise.all([
-        prisma_js_1.prisma.membership.count({ where: orgFilter }),
-        prisma_js_1.prisma.person.count({ where: orgFilter }),
+        prisma_js_1.prisma.membership.count({ where: { ...orgFilter, isArchived: false } }),
+        prisma_js_1.prisma.person.count({ where: { ...orgFilter, ...activePersonFilter } }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
+                ...activePersonFilter,
                 dateOfBirth: { lte: eighteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
+                ...activePersonFilter,
                 dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
+                ...activePersonFilter,
                 dateOfBirth: { gt: thirteenYearsAgo },
             },
         }),

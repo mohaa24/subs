@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { MembershipType, PaymentPeriod, RelationToHOH, DependentGroup, Prisma } from "@prisma/client";
+import { MembershipType, MembershipStatus, PaymentPeriod, RelationToHOH, DependentGroup, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
@@ -11,6 +11,8 @@ membershipsRouter.use(requireAuth);
 membershipsRouter.use(withOrgScope);
 
 const paymentPeriods: PaymentPeriod[] = ["Monthly", "Quarterly", "Annually"];
+const membershipStatuses: MembershipStatus[] = ["Active", "Inactive"];
+const maxZoneCode = 24;
 const spouseRelations: RelationToHOH[] = ["Wife"];
 const relationToHohOptions: RelationToHOH[] = [
   "Husband",
@@ -51,13 +53,13 @@ const baseSchema = z.object({
   organizationId: z.string().optional(),
   dateOfRegistration: z.string(),
   membershipType: z.enum(["Resident", "NonResident", "Widow", "Widower"] as [MembershipType, ...MembershipType[]]),
-  membershipStatus: z.string().min(1),
+  membershipStatus: z.enum(membershipStatuses as unknown as [string, ...string[]]),
   hodPersonId: z.string(),
   spousePersonId: z.string().optional().nullable(),
   spouseRelationToHOH: z.enum(spouseRelations as unknown as [string, ...string[]]).optional().nullable(),
   dependentPersons: z.array(dependentSchema).optional(),
   isZakathEligible: z.boolean().optional().nullable(),
-  areaCode: z.number().int().min(1).optional().nullable(),
+  areaCode: z.number().int().min(1).max(maxZoneCode),
   land: z.boolean().optional(),
   houseOwnership: z.boolean().optional(),
   commercialProperties: z.boolean().optional(),
@@ -175,14 +177,36 @@ async function ensurePeopleAssignable(
   }
 }
 
-async function nextMembershipNo(organizationId: string): Promise<string> {
+function formatMembershipZoneSegment(areaCode: number): string {
+  return String(areaCode).padStart(2, "0");
+}
+
+async function ensureZoneExists(organizationId: string, areaCode: number) {
+  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+  if (!org) {
+    throw new Error("Organization not found");
+  }
+  const zone = await prisma.zone.findFirst({
+    where: { organizationId, code: areaCode },
+    select: { id: true },
+  });
+  if (!zone) {
+    throw new Error("Selected zone was not found");
+  }
+}
+
+async function nextMembershipNo(organizationId: string, areaCode: number): Promise<string> {
   const org = await prisma.organization.findUnique({ where: { id: organizationId } });
   const slug = org?.slug ?? "ORG";
   const year = new Date().getFullYear();
+  const zoneSegment = formatMembershipZoneSegment(areaCode);
   const count = await prisma.membership.count({
-    where: { organizationId, membershipNo: { startsWith: `${slug}-${year}-` } },
+    where: {
+      organizationId,
+      membershipNo: { startsWith: `${slug}-${year}-${zoneSegment}-` },
+    },
   });
-  return `${slug}-${year}-${String(count + 1).padStart(5, "0")}`;
+  return `${slug}-${year}-${zoneSegment}-${String(count + 1).padStart(3, "0")}`;
 }
 
 async function applyPersonLinks(
@@ -216,11 +240,49 @@ membershipsRouter.get("/", async (req, res) => {
   if (!orgId && req.auth!.role !== "super_user") return res.status(400).json({ error: "Organization scope required" });
   const q = (req.query.q as string)?.trim() || "";
   const includeArchived = req.query.includeArchived === "true";
+  const membershipType = (req.query.membershipType as string)?.trim() || "";
+  const membershipStatus = (req.query.membershipStatus as string)?.trim() || "";
+  const paymentPeriod = (req.query.paymentPeriod as string)?.trim() || "";
+  const areaCode = Number.parseInt(String(req.query.areaCode ?? ""), 10);
+  const zakathEligible = (req.query.isZakathEligible as string)?.trim() || "";
+  const disability = (req.query.disability as string)?.trim() || "";
+  const registeredFrom = (req.query.registeredFrom as string)?.trim() || "";
+  const registeredTo = (req.query.registeredTo as string)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
   const where: any = {};
   if (orgId) where.organizationId = orgId;
   if (!includeArchived) where.isArchived = false;
+  if (membershipType && (["Resident", "NonResident", "Widow", "Widower"] as string[]).includes(membershipType)) {
+    where.membershipType = membershipType;
+  }
+  if (membershipStatus && membershipStatuses.includes(membershipStatus as MembershipStatus)) {
+    where.membershipStatus = membershipStatus as MembershipStatus;
+  }
+  if (paymentPeriod && paymentPeriods.includes(paymentPeriod as PaymentPeriod)) {
+    where.paymentPeriod = paymentPeriod as PaymentPeriod;
+  }
+  if (Number.isInteger(areaCode) && areaCode > 0 && areaCode <= maxZoneCode) where.areaCode = areaCode;
+  if (zakathEligible === "true") where.isZakathEligible = true;
+  if (zakathEligible === "false") where.isZakathEligible = false;
+  if (zakathEligible === "unset") where.isZakathEligible = null;
+  if (disability === "true") where.disability = true;
+  if (disability === "false") where.disability = false;
+  if (registeredFrom || registeredTo) {
+    const dateFilter: { gte?: Date; lt?: Date } = {};
+    if (registeredFrom) {
+      const from = new Date(registeredFrom);
+      if (!Number.isNaN(from.getTime())) dateFilter.gte = from;
+    }
+    if (registeredTo) {
+      const to = new Date(registeredTo);
+      if (!Number.isNaN(to.getTime())) {
+        to.setDate(to.getDate() + 1);
+        dateFilter.lt = to;
+      }
+    }
+    if (Object.keys(dateFilter).length > 0) where.dateOfRegistration = dateFilter;
+  }
   if (q) {
     where.OR = [
       { membershipNo: { contains: q, mode: "insensitive" } },
@@ -268,7 +330,7 @@ membershipsRouter.get("/:id", async (req, res) => {
       hod: true,
       spouse: true,
       dependents: { orderBy: { order: "asc" }, include: { person: true } },
-      organization: { select: { id: true, name: true, slug: true } },
+      organization: { select: { id: true, name: true, slug: true, address: true } },
       createdBy: { select: { id: true, email: true } },
     },
   });
@@ -298,21 +360,22 @@ membershipsRouter.post("/", async (req, res) => {
   try {
     validateNoRoleDuplicates(assignments);
     await ensurePeopleAssignable(orgId, assignments, null);
+    await ensureZoneExists(orgId, parsed.data.areaCode);
   } catch (err) {
     return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
   }
 
-  const membershipNo = await nextMembershipNo(orgId);
+  const membershipNo = await nextMembershipNo(orgId, parsed.data.areaCode);
   const payload = {
     organizationId: orgId,
     membershipNo,
     dateOfRegistration: new Date(parsed.data.dateOfRegistration),
     membershipType: parsed.data.membershipType,
-    membershipStatus: parsed.data.membershipStatus,
+    membershipStatus: parsed.data.membershipStatus as MembershipStatus,
     hodPersonId: parsed.data.hodPersonId,
     spousePersonId,
     isZakathEligible: parsed.data.isZakathEligible ?? null,
-    areaCode: parsed.data.areaCode ?? null,
+    areaCode: parsed.data.areaCode,
     land: parsed.data.land ?? false,
     houseOwnership: parsed.data.houseOwnership ?? false,
     commercialProperties: parsed.data.commercialProperties ?? false,
@@ -400,6 +463,9 @@ membershipsRouter.patch("/:id", async (req, res) => {
   try {
     validateNoRoleDuplicates(assignments);
     await ensurePeopleAssignable(existing.organizationId, assignments, existing.id);
+    if (parsed.data.areaCode !== undefined) {
+      await ensureZoneExists(existing.organizationId, parsed.data.areaCode);
+    }
   } catch (err) {
     return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
   }
@@ -416,6 +482,7 @@ membershipsRouter.patch("/:id", async (req, res) => {
   delete data.spouseRelationToHOH;
 
   if (data.dateOfRegistration) data.dateOfRegistration = new Date(data.dateOfRegistration);
+  if (data.membershipStatus !== undefined) data.membershipStatus = data.membershipStatus as MembershipStatus;
   if (data.membershipFee !== undefined) data.membershipFee = toDecimal(data.membershipFee);
   if (data.additionalVoluntaryContributions !== undefined) data.additionalVoluntaryContributions = toDecimal(data.additionalVoluntaryContributions);
   if (data.membershipFeeDiscount !== undefined) data.membershipFeeDiscount = toDecimal(data.membershipFeeDiscount);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { type Zone } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,7 @@ export interface PersonFormData {
   bloodGroup: string;
   maritalStatus: string;
   address: string;
+  areaCode: string;
   mobileNumber: string;
   whatsAppNumber: string;
   email: string;
@@ -89,6 +91,7 @@ const defaultPerson: PersonFormData = {
   bloodGroup: "",
   maritalStatus: "",
   address: "",
+  areaCode: "",
   mobileNumber: "",
   whatsAppNumber: "",
   email: "",
@@ -137,12 +140,14 @@ function Section({
 
 export function PersonForm({
   initial,
+  zones = [],
   onSubmit,
   onCancel,
   submitLabel = "Save",
   disabled = false,
 }: {
   initial?: Partial<PersonFormData>;
+  zones?: Zone[];
   onSubmit: (data: PersonFormData) => void;
   onCancel?: () => void;
   submitLabel?: string;
@@ -236,6 +241,7 @@ export function PersonForm({
   }
 
   const isNIC = form.identityType === "NIC";
+  const zoneOptions = zones.filter((zone) => zone.isActive || String(zone.code) === form.areaCode);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -393,6 +399,25 @@ export function PersonForm({
             required
             placeholder="Street, city, postal code"
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Zone</Label>
+          <Select
+            value={form.areaCode || "unset"}
+            onValueChange={(v) => setForm((f) => ({ ...f, areaCode: v === "unset" ? "" : v }))}
+          >
+            <SelectTrigger disabled={disabled}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unset">Not Set</SelectItem>
+              {zoneOptions.map((zone) => (
+                <SelectItem key={zone.id} value={String(zone.code)}>
+                  {zone.code} - {zone.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </Section>
 

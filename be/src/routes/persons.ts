@@ -34,6 +34,7 @@ const permanentDisabilityOptions = [
   "More than one disability",
   "Other",
 ] as const;
+const maxZoneCode = 24;
 
 const createSchema = z.object({
   organizationId: z.string().optional(),
@@ -50,6 +51,7 @@ const createSchema = z.object({
   bloodGroup: z.enum(bloodGroups as unknown as [string, ...string[]]).optional(),
   maritalStatus: z.enum(maritalStatuses as unknown as [string, ...string[]]),
   address: z.string().min(1),
+  areaCode: z.number().int().min(1).max(maxZoneCode).optional().nullable(),
   mobileNumber: z.string().optional(),
   whatsAppNumber: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
@@ -76,9 +78,25 @@ personsRouter.get("/", async (req, res) => {
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
   const includeArchived = req.query.includeArchived === "true";
+  const residentType = (req.query.residentType as string)?.trim() || "";
+  const livingStatus = (req.query.livingStatus as string)?.trim() || "";
+  const areaCode = Number.parseInt(String(req.query.areaCode ?? ""), 10);
+  const isMadarasaStudent = (req.query.isMadarasaStudent as string)?.trim() || "";
+  const hasMembership = (req.query.hasMembership as string)?.trim() || "";
   const where: Prisma.PersonWhereInput = {};
   if (orgId) where.organizationId = orgId;
   if (!includeArchived) where.isArchived = false;
+  if (residentType && residentTypes.includes(residentType as ResidentType)) {
+    where.residentType = residentType as ResidentType;
+  }
+  if (livingStatus && livingStatuses.includes(livingStatus as LivingStatus)) {
+    where.livingStatus = livingStatus as LivingStatus;
+  }
+  if (Number.isInteger(areaCode) && areaCode > 0 && areaCode <= maxZoneCode) where.areaCode = areaCode;
+  if (isMadarasaStudent === "true") where.isMadarasaStudent = true;
+  if (isMadarasaStudent === "false") where.isMadarasaStudent = false;
+  if (hasMembership === "true") where.membershipId = { not: null };
+  if (hasMembership === "false") where.membershipId = null;
   if (q) {
     where.OR = [
       { fullName: { contains: q, mode: "insensitive" } },

@@ -3,9 +3,9 @@
 import { Suspense } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, type Person } from "@/lib/api";
+import { api, type Person, type Zone } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, ChevronLeft, ChevronRight, Pencil, Eye, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +44,41 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { RESIDENT_TYPES } from "@/lib/constants";
 import { toast } from "@/hooks/use-toast";
+
+const LIVING_STATUS_OPTIONS = ["Active", "Deceased", "PermanentlyRelocated"] as const;
+
+type PersonFilters = {
+  residentType: string;
+  livingStatus: string;
+  areaCode: string;
+  isMadarasaStudent: string;
+  hasMembership: string;
+};
+
+function emptyPersonFilters(): PersonFilters {
+  return {
+    residentType: "",
+    livingStatus: "",
+    areaCode: "",
+    isMadarasaStudent: "",
+    hasMembership: "",
+  };
+}
+
+function personFiltersFromSearchParams(searchParams: URLSearchParams): PersonFilters {
+  return {
+    residentType: searchParams.get("residentType") || "",
+    livingStatus: searchParams.get("livingStatus") || "",
+    areaCode: searchParams.get("areaCode") || "",
+    isMadarasaStudent: searchParams.get("isMadarasaStudent") || "",
+    hasMembership: searchParams.get("hasMembership") || "",
+  };
+}
+
+type AppliedPersonPill = {
+  key: "q" | keyof PersonFilters | "includeArchived";
+  label: string;
+};
 
 function formatResidentType(value: string | null | undefined): string {
   if (!value) return "—";
@@ -65,7 +106,8 @@ function PersonsPageContent() {
   const [items, setItems] = useState<Person[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState(searchParams.get("q") || "");
+  const [qInput, setQInput] = useState(searchParams.get("q") || "");
+  const [appliedQ, setAppliedQ] = useState(searchParams.get("q") || "");
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
   const limit = 10;
 
@@ -74,7 +116,12 @@ function PersonsPageContent() {
   const effectiveOrgId =
     user?.role === "super_user" ? selectedOrgId : (user?.organizationId ?? null);
 
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState(searchParams.get("includeArchived") === "true");
+  const [filters, setFilters] = useState<PersonFilters>(() => personFiltersFromSearchParams(searchParams));
+  const [appliedFilters, setAppliedFilters] = useState<PersonFilters>(() => personFiltersFromSearchParams(searchParams));
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftShowArchived, setDraftShowArchived] = useState(searchParams.get("includeArchived") === "true");
+  const [zones, setZones] = useState<Zone[]>([]);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editPerson, setEditPerson] = useState<{
@@ -84,10 +131,53 @@ function PersonsPageContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [archiveTarget, setArchiveTarget] = useState<Person | null>(null);
+  const filterRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  function buildQueryString(
+    nextPage: number,
+    nextQ = appliedQ,
+    nextFilters = appliedFilters,
+    nextShowArchived = showArchived
+  ) {
+    const params = new URLSearchParams();
+    params.set("page", String(nextPage));
+    if (nextQ) params.set("q", nextQ);
+    if (nextShowArchived) params.set("includeArchived", "true");
+    if (nextFilters.residentType) params.set("residentType", nextFilters.residentType);
+    if (nextFilters.livingStatus) params.set("livingStatus", nextFilters.livingStatus);
+    if (nextFilters.areaCode) params.set("areaCode", nextFilters.areaCode);
+    if (nextFilters.isMadarasaStudent) params.set("isMadarasaStudent", nextFilters.isMadarasaStudent);
+    if (nextFilters.hasMembership) params.set("hasMembership", nextFilters.hasMembership);
+    return params.toString();
+  }
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!filterRef.current?.contains(event.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setFilterOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [filterOpen]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    setFilters(appliedFilters);
+    setDraftShowArchived(showArchived);
+  }, [filterOpen, appliedFilters, showArchived]);
 
   useEffect(() => {
     if (!user || user.role !== "super_user") return;
@@ -110,8 +200,13 @@ function PersonsPageContent() {
       limit: String(limit),
       organizationId: effectiveOrgId!,
     };
-    if (q) params.q = q;
+    if (appliedQ) params.q = appliedQ;
     if (showArchived) params.includeArchived = "true";
+    if (appliedFilters.residentType) params.residentType = appliedFilters.residentType;
+    if (appliedFilters.livingStatus) params.livingStatus = appliedFilters.livingStatus;
+    if (appliedFilters.areaCode) params.areaCode = appliedFilters.areaCode;
+    if (appliedFilters.isMadarasaStudent) params.isMadarasaStudent = appliedFilters.isMadarasaStudent;
+    if (appliedFilters.hasMembership) params.hasMembership = appliedFilters.hasMembership;
     setLoading(true);
     api<{ items: Person[]; total: number }>("/persons", { params })
       .then((res) => {
@@ -123,16 +218,36 @@ function PersonsPageContent() {
         setTotal(0);
       })
       .finally(() => setLoading(false));
-  }, [user, page, q, effectiveOrgId, showArchived]);
+  }, [
+    user,
+    page,
+    appliedQ,
+    effectiveOrgId,
+    showArchived,
+    appliedFilters.residentType,
+    appliedFilters.livingStatus,
+    appliedFilters.areaCode,
+    appliedFilters.isMadarasaStudent,
+    appliedFilters.hasMembership,
+  ]);
+
+  useEffect(() => {
+    if (!effectiveOrgId) {
+      setZones([]);
+      return;
+    }
+    const params: Record<string, string> = { includeInactive: "true" };
+    if (user?.role === "super_user") params.organizationId = effectiveOrgId;
+    api<Zone[]>("/zones", { params })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [effectiveOrgId, user?.role]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    setAppliedQ(qInput);
     setPage(1);
-    const u = new URLSearchParams(searchParams);
-    u.set("page", "1");
-    if (q) u.set("q", q);
-    else u.delete("q");
-    router.push(`/persons?${u.toString()}`);
+    router.push(`/persons?${buildQueryString(1, qInput, appliedFilters, showArchived)}`);
   }
 
   function personToFormData(p: Person): Partial<PersonFormData> {
@@ -150,6 +265,7 @@ function PersonsPageContent() {
       bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
+      areaCode: p.areaCode ? String(p.areaCode) : "",
       mobileNumber: p.mobileNumber ?? "",
       whatsAppNumber: p.whatsAppNumber ?? "",
       email: p.email ?? "",
@@ -192,6 +308,7 @@ function PersonsPageContent() {
         bloodGroup: data.bloodGroup || undefined,
         maritalStatus: data.maritalStatus || undefined,
         address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
         mobileNumber: data.mobileNumber || undefined,
         whatsAppNumber: data.whatsAppNumber || undefined,
         email: data.email || undefined,
@@ -214,7 +331,13 @@ function PersonsPageContent() {
         limit: String(limit),
         organizationId: effectiveOrgId,
       };
-      if (q) params.q = q;
+      if (appliedQ) params.q = appliedQ;
+      if (appliedFilters.residentType) params.residentType = appliedFilters.residentType;
+      if (appliedFilters.livingStatus) params.livingStatus = appliedFilters.livingStatus;
+      if (appliedFilters.areaCode) params.areaCode = appliedFilters.areaCode;
+      if (appliedFilters.isMadarasaStudent) params.isMadarasaStudent = appliedFilters.isMadarasaStudent;
+      if (appliedFilters.hasMembership) params.hasMembership = appliedFilters.hasMembership;
+      if (showArchived) params.includeArchived = "true";
       const res = await api<{ items: Person[]; total: number }>("/persons", {
         params,
       });
@@ -260,6 +383,7 @@ function PersonsPageContent() {
         bloodGroup: data.bloodGroup || undefined,
         maritalStatus: data.maritalStatus || undefined,
         address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
         mobileNumber: data.mobileNumber || undefined,
         whatsAppNumber: data.whatsAppNumber || undefined,
         email: data.email || undefined,
@@ -326,7 +450,144 @@ function PersonsPageContent() {
     }
   }
 
+  function applyAdvancedFilters() {
+    setAppliedFilters(filters);
+    setShowArchived(draftShowArchived);
+    setPage(1);
+    setFilterOpen(false);
+    router.push(`/persons?${buildQueryString(1, appliedQ, filters, draftShowArchived)}`);
+  }
+
+  function clearAdvancedFilters() {
+    const cleared = emptyPersonFilters();
+    setFilters(cleared);
+    setAppliedFilters(cleared);
+    setShowArchived(false);
+    setDraftShowArchived(false);
+    setPage(1);
+    setFilterOpen(false);
+    router.push(`/persons?${buildQueryString(1, appliedQ, cleared, false)}`);
+  }
+
+  function handleClearAllFilters() {
+    const cleared = emptyPersonFilters();
+    setQInput("");
+    setAppliedQ("");
+    setFilters(cleared);
+    setAppliedFilters(cleared);
+    setShowArchived(false);
+    setDraftShowArchived(false);
+    setPage(1);
+    setFilterOpen(false);
+    router.push("/persons?page=1");
+  }
+
+  function removeAppliedFilter(key: AppliedPersonPill["key"]) {
+    if (key === "q") {
+      setQInput("");
+      setAppliedQ("");
+      setPage(1);
+      router.push(`/persons?${buildQueryString(1, "", appliedFilters, showArchived)}`);
+      return;
+    }
+
+    if (key === "includeArchived") {
+      setShowArchived(false);
+      setDraftShowArchived(false);
+      setPage(1);
+      router.push(`/persons?${buildQueryString(1, appliedQ, appliedFilters, false)}`);
+      return;
+    }
+
+    const nextFilters = { ...appliedFilters, [key]: "" };
+    setFilters((prev) => ({ ...prev, [key]: "" }));
+    setAppliedFilters(nextFilters);
+    setPage(1);
+    router.push(`/persons?${buildQueryString(1, appliedQ, nextFilters, showArchived)}`);
+  }
+
+  function PersonActions({ person }: { person: Person }) {
+    const archived = Boolean((person as any).isArchived);
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Open actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <Link href={`/persons/${person.id}`} className="flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              <span>View</span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => openEdit(person)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            <span>Edit</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => handleToggleArchive(person)}
+            className={
+              archived
+                ? "text-emerald-700 focus:bg-emerald-50 focus:text-emerald-700"
+                : "text-red-600 focus:bg-red-50 focus:text-red-700"
+            }
+          >
+            {archived ? (
+              <>
+                <ArchiveRestore className="mr-2 h-4 w-4" />
+                <span>Restore</span>
+              </>
+            ) : (
+              <>
+                <Archive className="mr-2 h-4 w-4" />
+                <span>Archive</span>
+              </>
+            )}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  function openPersonDetails(personId: string) {
+    router.push(`/persons/${personId}`);
+  }
+
+  const zoneLabel = (areaCode: string) => {
+    const zone = zones.find((item) => String(item.code) === areaCode);
+    return zone ? `${zone.code} - ${zone.name}` : areaCode;
+  };
+
+  const appliedPills: AppliedPersonPill[] = [];
+  if (appliedQ) appliedPills.push({ key: "q", label: `Search: ${appliedQ}` });
+  if (appliedFilters.residentType) {
+    const residentLabel = RESIDENT_TYPES.find((item) => item.value === appliedFilters.residentType)?.label ?? appliedFilters.residentType;
+    appliedPills.push({ key: "residentType", label: `Resident Type: ${residentLabel}` });
+  }
+  if (appliedFilters.livingStatus) {
+    appliedPills.push({ key: "livingStatus", label: `Status: ${appliedFilters.livingStatus}` });
+  }
+  if (appliedFilters.areaCode) {
+    appliedPills.push({ key: "areaCode", label: `Zone: ${zoneLabel(appliedFilters.areaCode)}` });
+  }
+  if (appliedFilters.isMadarasaStudent) {
+    appliedPills.push({
+      key: "isMadarasaStudent",
+      label: `Madarasa: ${appliedFilters.isMadarasaStudent === "true" ? "Yes" : "No"}`,
+    });
+  }
+  if (appliedFilters.hasMembership) {
+    appliedPills.push({
+      key: "hasMembership",
+      label: `Membership: ${appliedFilters.hasMembership === "true" ? "Linked" : "Not linked"}`,
+    });
+  }
+  if (showArchived) appliedPills.push({ key: "includeArchived", label: "Archived included" });
+
   const totalPages = Math.ceil(total / limit) || 1;
+  const appliedFilterCount = appliedPills.length;
   const isSuperUser = user?.role === "super_user";
 
   if (authLoading || !user) {
@@ -387,28 +648,218 @@ function PersonsPageContent() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <Input
-                placeholder="Search by name, NIC, email, mobile..."
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                className="max-w-sm"
-              />
-              <Button type="submit" variant="secondary">
-                <Search className="h-4 w-4 mr-1" />
-                Search
-              </Button>
-              <Button
-                type="button"
-                variant={showArchived ? "default" : "outline"}
-                size="sm"
-                className="gap-1.5 ml-auto"
-                onClick={() => { setShowArchived((v) => !v); setPage(1); }}
-              >
-                <Archive className="h-3.5 w-3.5" />
-                {showArchived ? "Hide Archived" : "Show Archived"}
-              </Button>
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  placeholder="Search by name, NIC, email, mobile..."
+                  value={qInput}
+                  onChange={(e) => setQInput(e.target.value)}
+                  className="sm:max-w-sm"
+                />
+                <Button type="submit" variant="secondary">
+                  <Search className="h-4 w-4 mr-1" />
+                  Search
+                </Button>
+                <div className="relative" ref={filterRef}>
+                  <Button
+                    type="button"
+                    variant={appliedFilterCount > 0 ? "default" : "outline"}
+                    className="gap-1.5"
+                    onClick={() => setFilterOpen((open) => !open)}
+                  >
+                    <Filter className="h-4 w-4" />
+                    Filters
+                    {appliedFilterCount > 0 && (
+                      <span className="rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
+                        {appliedFilterCount}
+                      </span>
+                    )}
+                  </Button>
+
+                  {filterOpen && (
+                    <div className="absolute right-0 z-50 mt-2 w-[min(92vw,26rem)] rounded-xl border border-border/80 bg-popover p-4 shadow-xl">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Advanced Filters</p>
+                          <p className="text-xs text-muted-foreground">
+                            Narrow people by status, residency, and linked household info.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setFilterOpen(false)}
+                          aria-label="Close filters"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Resident Type</p>
+                          <Select
+                            value={filters.residentType || "__all__"}
+                            onValueChange={(value) =>
+                              setFilters((prev) => ({ ...prev, residentType: value === "__all__" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Any type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Any type</SelectItem>
+                              {RESIDENT_TYPES.map((type) => (
+                                <SelectItem key={type.value} value={type.value}>
+                                  {type.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Living Status</p>
+                          <Select
+                            value={filters.livingStatus || "__all__"}
+                            onValueChange={(value) =>
+                              setFilters((prev) => ({ ...prev, livingStatus: value === "__all__" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Any status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Any status</SelectItem>
+                              {LIVING_STATUS_OPTIONS.map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  {status}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Zone</p>
+                          <Select
+                            value={filters.areaCode || "__all__"}
+                            onValueChange={(value) =>
+                              setFilters((prev) => ({ ...prev, areaCode: value === "__all__" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Any zone" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Any zone</SelectItem>
+                              {zones.map((zone) => (
+                                <SelectItem key={zone.id} value={String(zone.code)}>
+                                  {zone.code} - {zone.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Linked Membership</p>
+                          <Select
+                            value={filters.hasMembership || "__all__"}
+                            onValueChange={(value) =>
+                              setFilters((prev) => ({ ...prev, hasMembership: value === "__all__" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Any" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Any</SelectItem>
+                              <SelectItem value="true">Linked</SelectItem>
+                              <SelectItem value="false">Not linked</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Madarasa Student</p>
+                          <Select
+                            value={filters.isMadarasaStudent || "__all__"}
+                            onValueChange={(value) =>
+                              setFilters((prev) => ({ ...prev, isMadarasaStudent: value === "__all__" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Any" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">Any</SelectItem>
+                              <SelectItem value="true">Yes</SelectItem>
+                              <SelectItem value="false">No</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-medium text-muted-foreground">Archived Records</p>
+                          <Select
+                            value={draftShowArchived ? "include" : "active_only"}
+                            onValueChange={(value) => setDraftShowArchived(value === "include")}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active_only">Active only</SelectItem>
+                              <SelectItem value="include">Include archived</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          {appliedFilterCount > 0
+                            ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? "" : "s"} applied`
+                            : "No filters applied yet"}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="ghost" onClick={clearAdvancedFilters}>
+                            Clear
+                          </Button>
+                          <Button type="button" onClick={applyAdvancedFilters}>
+                            Apply
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {appliedFilterCount > 0 && (
+                  <Button type="button" variant="ghost" onClick={handleClearAllFilters} className="sm:ml-auto">
+                    Clear All
+                  </Button>
+                )}
+              </div>
             </form>
+
+            {appliedPills.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-t border-border/60 pt-3">
+                {appliedPills.map((pill) => (
+                  <button
+                    key={`${pill.key}-${pill.label}`}
+                    type="button"
+                    onClick={() => removeAppliedFilter(pill.key)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    <span>{pill.label}</span>
+                    <X className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            )}
             {!effectiveOrgId ? (
               <p className="text-sm text-muted-foreground">
                 {isSuperUser
@@ -421,7 +872,11 @@ function PersonsPageContent() {
               <>
                 <div className="space-y-3 md:hidden">
                   {items.map((p) => (
-                    <div key={p.id} className="rounded-md border p-3 bg-card">
+                    <div
+                      key={p.id}
+                      className="rounded-md border p-3 bg-card cursor-pointer transition-colors hover:bg-muted/30"
+                      onClick={() => openPersonDetails(p.id)}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <Link
@@ -434,28 +889,8 @@ function PersonsPageContent() {
                             {p.nameWithInitials}
                           </p>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Link href={`/persons/${p.id}`}>
-                            <Button variant="ghost" size="sm" aria-label="View Person">
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                          </Link>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(p)}
-                            aria-label="Edit Person"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleToggleArchive(p)}
-                            aria-label={(p as any).isArchived ? "Restore" : "Archive"}
-                          >
-                            {(p as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
-                          </Button>
+                        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <PersonActions person={p} />
                         </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -498,7 +933,11 @@ function PersonsPageContent() {
                     </thead>
                     <tbody>
                       {items.map((p) => (
-                        <tr key={p.id} className="border-t">
+                        <tr
+                          key={p.id}
+                          className="border-t cursor-pointer transition-colors hover:bg-muted/30"
+                          onClick={() => openPersonDetails(p.id)}
+                        >
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               <Link
@@ -523,29 +962,8 @@ function PersonsPageContent() {
                           <td className="p-3">{p.mobileNumber ?? "—"}</td>
                           <td className="p-3">{p.livingStatus ?? "Active"}</td>
                           <td className="p-3">
-                            <div className="flex items-center gap-1">
-                              <Link href={`/persons/${p.id}`}>
-                                <Button variant="ghost" size="sm" aria-label="View Person">
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEdit(p)}
-                                aria-label="Edit Person"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleToggleArchive(p)}
-                                aria-label={(p as any).isArchived ? "Restore" : "Archive"}
-                                title={(p as any).isArchived ? "Restore" : "Archive"}
-                              >
-                                {(p as any).isArchived ? <ArchiveRestore className="h-3.5 w-3.5 text-emerald-600" /> : <Archive className="h-3.5 w-3.5 text-amber-600" />}
-                              </Button>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <PersonActions person={p} />
                             </div>
                           </td>
                         </tr>
@@ -562,7 +980,11 @@ function PersonsPageContent() {
                       variant="outline"
                       size="sm"
                       disabled={page <= 1}
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      onClick={() => {
+                        const nextPage = Math.max(1, page - 1);
+                        setPage(nextPage);
+                        router.push(`/persons?${buildQueryString(nextPage)}`);
+                      }}
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
@@ -573,7 +995,11 @@ function PersonsPageContent() {
                       variant="outline"
                       size="sm"
                       disabled={page >= totalPages}
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      onClick={() => {
+                        const nextPage = Math.min(totalPages, page + 1);
+                        setPage(nextPage);
+                        router.push(`/persons?${buildQueryString(nextPage)}`);
+                      }}
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -596,6 +1022,7 @@ function PersonsPageContent() {
             <DialogTitle>Add New Person</DialogTitle>
           </DialogHeader>
           <PersonForm
+            zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={() => setAddOpen(false)}
             submitLabel={saving ? "Adding…" : "Add Person"}
@@ -616,6 +1043,7 @@ function PersonsPageContent() {
           {editPerson?.initial && (
             <PersonForm
               initial={editPerson.initial}
+              zones={zones}
               onSubmit={handleEditPerson}
               onCancel={() => setEditPerson(null)}
               submitLabel={saving ? "Saving…" : "Save"}

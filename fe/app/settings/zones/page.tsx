@@ -27,6 +27,8 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { MapPin, Plus, Pencil, Power, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
+const MAX_ZONE_CODE = 24;
+
 export default function ZonesPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -80,10 +82,21 @@ export default function ZonesPage() {
   }, [user, effectiveOrgId, fetchZones]);
 
   function openCreateDialog() {
+    const usedCodes = new Set(zones.map((zone) => zone.code));
+    const nextAvailableCode = Array.from({ length: MAX_ZONE_CODE }, (_, index) => index + 1).find(
+      (code) => !usedCodes.has(code)
+    );
+    if (!nextAvailableCode) {
+      toast({
+        variant: "destructive",
+        title: "Zone limit reached",
+        description: `Only ${MAX_ZONE_CODE} zones are allowed. Remove an unused zone before adding a new one.`,
+      });
+      return;
+    }
     setEditingZone(null);
-    const nextCode = zones.length > 0 ? Math.max(...zones.map((z) => z.code)) + 1 : 1;
     setFormName("");
-    setFormCode(String(nextCode));
+    setFormCode(String(nextAvailableCode));
     setFormError("");
     setDialogOpen(true);
   }
@@ -99,7 +112,10 @@ export default function ZonesPage() {
   async function handleSave() {
     if (!formName.trim()) { setFormError("Name is required"); return; }
     const code = parseInt(formCode, 10);
-    if (isNaN(code) || code < 1) { setFormError("Code must be a positive number"); return; }
+    if (isNaN(code) || code < 1 || code > MAX_ZONE_CODE) {
+      setFormError(`Code must be between 1 and ${MAX_ZONE_CODE}`);
+      return;
+    }
 
     setFormSaving(true);
     setFormError("");
@@ -229,7 +245,7 @@ export default function ZonesPage() {
                   <tbody>
                     {zones.map((zone) => (
                       <tr key={zone.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="p-3 font-mono font-semibold">{zone.code}</td>
+                        <td className="p-3 font-mono font-semibold">{String(zone.code).padStart(2, "0")}</td>
                         <td className="p-3">
                           <span className={zone.isActive ? "" : "text-muted-foreground line-through"}>
                             {zone.name}
@@ -289,11 +305,15 @@ export default function ZonesPage() {
               <Input
                 type="number"
                 min={1}
+                max={MAX_ZONE_CODE}
                 value={formCode}
                 onChange={(e) => setFormCode(e.target.value)}
                 disabled={!!editingZone}
-                placeholder="e.g. 1"
+                placeholder="e.g. 01"
               />
+              {!editingZone && (
+                <p className="text-xs text-muted-foreground">Allowed range: 01 to 24.</p>
+              )}
               {editingZone && (
                 <p className="text-xs text-muted-foreground">Code cannot be changed after creation.</p>
               )}

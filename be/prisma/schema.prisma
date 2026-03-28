@@ -42,6 +42,7 @@ model Organization {
   messageQueue       MessageQueue[]
   distributions      Distribution[]
   zones              Zone[]
+  activityFeedItems  ActivityFeedItem[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -85,6 +86,7 @@ model User {
   billingMarks        OrganizationBilling[] @relation("BillingMarkedBy")
   distributionRecords DistributionRecord[]  @relation("DistributedByUser")
   createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
+  createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
 }
 
 enum UserRole {
@@ -192,6 +194,7 @@ model Person {
   bloodGroup                BloodGroup?
   maritalStatus             MaritalStatus?
   address                   String?
+  areaCode                  Int?
   mobileNumber              String?
   whatsAppNumber            String?
   email                     String?
@@ -216,6 +219,7 @@ model Person {
   membershipDependents    MembershipDependent[]
   announcementGroupMember AnnouncementGroupMember[]
   distributionRecords     DistributionRecord[]
+  activityFeedItems       ActivityFeedItem[]
 }
 
 enum PersonTitle {
@@ -282,6 +286,11 @@ enum MaritalStatus {
   widow
 }
 
+enum MembershipStatus {
+  Active
+  Inactive
+}
+
 // ─── Zone ────────────────────────────────────────────────────────
 
 model Zone {
@@ -306,7 +315,7 @@ model Membership {
   organizationId                   String
   dateOfRegistration               DateTime
   membershipType                   MembershipType
-  membershipStatus                 String
+  membershipStatus                 MembershipStatus @default(Active)
   hodPersonId                      String
   spousePersonId                   String?
   isZakathEligible                 Boolean?
@@ -338,6 +347,7 @@ model Membership {
   dues         PaymentDue[]
   payments     Payment[]
   creditLedgerEntries MembershipCreditLedger[]
+  activityFeedItems    ActivityFeedItem[]
 }
 
 enum DependentGroup {
@@ -430,6 +440,40 @@ enum MembershipCreditEntryType {
   debit_auto_apply
   credit_adjustment
   debit_adjustment
+}
+
+enum ActivityFeedEntryType {
+  remark
+  document_generated
+  image_added
+  system_event
+}
+
+enum ActivityFeedActorType {
+  user
+  system
+}
+
+model ActivityFeedItem {
+  id              String                @id @default(cuid())
+  organizationId  String
+  personId        String?
+  membershipId    String?
+  entryType       ActivityFeedEntryType
+  actorType       ActivityFeedActorType
+  body            String?               @db.Text
+  metadata        Json?
+  createdByUserId String?
+  createdAt       DateTime              @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person       Person?      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  membership   Membership?  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("ActivityFeedCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([personId, createdAt])
+  @@index([membershipId, createdAt])
 }
 
 model MembershipCreditLedger {
