@@ -33,7 +33,7 @@ const permanentDisabilityOptions = [
     "More than one disability",
     "Other",
 ];
-const maxZoneCode = 24;
+const maxZoneCode = 9;
 const createSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
     title: zod_1.z.enum(titles),

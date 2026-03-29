@@ -12,7 +12,7 @@ membershipsRouter.use(withOrgScope);
 
 const paymentPeriods: PaymentPeriod[] = ["Monthly", "Quarterly", "Annually"];
 const membershipStatuses: MembershipStatus[] = ["Active", "Inactive"];
-const maxZoneCode = 24;
+const maxZoneCode = 9;
 const spouseRelations: RelationToHOH[] = ["Wife"];
 const relationToHohOptions: RelationToHOH[] = [
   "Husband",
@@ -178,7 +178,11 @@ async function ensurePeopleAssignable(
 }
 
 function formatMembershipZoneSegment(areaCode: number): string {
-  return String(areaCode).padStart(2, "0");
+  return String(areaCode);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function ensureZoneExists(organizationId: string, areaCode: number) {
@@ -198,15 +202,23 @@ async function ensureZoneExists(organizationId: string, areaCode: number) {
 async function nextMembershipNo(organizationId: string, areaCode: number): Promise<string> {
   const org = await prisma.organization.findUnique({ where: { id: organizationId } });
   const slug = org?.slug ?? "ORG";
-  const year = new Date().getFullYear();
   const zoneSegment = formatMembershipZoneSegment(areaCode);
-  const count = await prisma.membership.count({
+  const prefix = `${slug}-${zoneSegment}`;
+  const membershipNos = await prisma.membership.findMany({
     where: {
       organizationId,
-      membershipNo: { startsWith: `${slug}-${year}-${zoneSegment}-` },
+      membershipNo: { startsWith: prefix },
     },
+    select: { membershipNo: true },
   });
-  return `${slug}-${year}-${zoneSegment}-${String(count + 1).padStart(3, "0")}`;
+  const regex = new RegExp(`^${escapeRegExp(prefix)}(\\d{3,})$`);
+  const maxSequence = membershipNos.reduce((highest, membership) => {
+    const match = regex.exec(membership.membershipNo);
+    if (!match) return highest;
+    const sequence = Number.parseInt(match[1], 10);
+    return Number.isNaN(sequence) ? highest : Math.max(highest, sequence);
+  }, 0);
+  return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
 }
 
 async function applyPersonLinks(

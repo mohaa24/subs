@@ -31,7 +31,7 @@ import { toast } from "@/hooks/use-toast";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
-const MAX_ZONE_CODE = 24;
+const MAX_ZONE_CODE = 9;
 type DependentEntry = {
   id: string;
   fullName: string;
@@ -869,7 +869,7 @@ export default function EditMembershipPage() {
                         )
                         .map((z) => (
                           <SelectItem key={z.id} value={String(z.code)}>
-                            {String(z.code).padStart(2, "0")} — {z.name}{!z.isActive ? " (Inactive)" : ""}
+                            {z.code} — {z.name}{!z.isActive ? " (Inactive)" : ""}
                           </SelectItem>
                         ))}
                     </SelectContent>

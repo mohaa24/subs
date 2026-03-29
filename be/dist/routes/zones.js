@@ -8,7 +8,7 @@ const auth_js_1 = require("../middleware/auth.js");
 exports.zonesRouter = (0, express_1.Router)();
 exports.zonesRouter.use(auth_js_1.requireAuth);
 exports.zonesRouter.use(auth_js_1.withOrgScope);
-const maxZoneCode = 24;
+const maxZoneCode = 9;
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }

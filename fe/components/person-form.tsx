@@ -241,7 +241,9 @@ export function PersonForm({
   }
 
   const isNIC = form.identityType === "NIC";
-  const zoneOptions = zones.filter((zone) => zone.isActive || String(zone.code) === form.areaCode);
+  const zoneOptions = zones.filter(
+    (zone) => zone.code >= 1 && zone.code <= 9 && (zone.isActive || String(zone.code) === form.areaCode)
+  );
 
   const today = new Date().toISOString().slice(0, 10);
 

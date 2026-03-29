@@ -8,7 +8,7 @@ export const zonesRouter = Router();
 zonesRouter.use(requireAuth);
 zonesRouter.use(withOrgScope);
 
-const maxZoneCode = 24;
+const maxZoneCode = 9;
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;

@@ -27,7 +27,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { MapPin, Plus, Pencil, Power, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
-const MAX_ZONE_CODE = 24;
+const MAX_ZONE_CODE = 9;
 
 export default function ZonesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -245,7 +245,7 @@ export default function ZonesPage() {
                   <tbody>
                     {zones.map((zone) => (
                       <tr key={zone.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="p-3 font-mono font-semibold">{String(zone.code).padStart(2, "0")}</td>
+                        <td className="p-3 font-mono font-semibold">{zone.code}</td>
                         <td className="p-3">
                           <span className={zone.isActive ? "" : "text-muted-foreground line-through"}>
                             {zone.name}
@@ -309,10 +309,10 @@ export default function ZonesPage() {
                 value={formCode}
                 onChange={(e) => setFormCode(e.target.value)}
                 disabled={!!editingZone}
-                placeholder="e.g. 01"
+                placeholder="e.g. 1"
               />
               {!editingZone && (
-                <p className="text-xs text-muted-foreground">Allowed range: 01 to 24.</p>
+                <p className="text-xs text-muted-foreground">Allowed range: 1 to 9.</p>
               )}
               {editingZone && (
                 <p className="text-xs text-muted-foreground">Code cannot be changed after creation.</p>

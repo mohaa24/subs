@@ -540,7 +540,9 @@ function MembersContent() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__all__">Any zone</SelectItem>
-                              {zones.map((zone) => (
+                              {zones
+                                .filter((zone) => zone.code >= 1 && zone.code <= 9)
+                                .map((zone) => (
                                 <SelectItem key={zone.id} value={String(zone.code)}>
                                   {zone.code} - {zone.name}
                                 </SelectItem>
