@@ -183,11 +183,26 @@ export function buildMembershipRecordHtml({
   ]);
 
   const childrenRows = buildMemberRows(
-    childDependents.map((dep) => dep.person),
+    childDependents.map((dep) => ({
+      name: dep.person.fullName,
+      dateOfBirth: dep.person.dateOfBirth,
+      gender: dep.person.gender,
+      nicNumber: dep.person.nicNumber,
+      idNumber: dep.person.idNumber,
+      occupation: dep.person.occupation,
+    })),
     false
   );
   const otherRows = buildMemberRows(
-    otherDependents.map((dep) => dep.person),
+    otherDependents.map((dep) => ({
+      name: dep.person.fullName,
+      dateOfBirth: dep.person.dateOfBirth,
+      gender: dep.person.gender,
+      nicNumber: dep.person.nicNumber,
+      idNumber: dep.person.idNumber,
+      occupation: dep.person.occupation,
+      relationToHOH: dep.person.relationToHOH,
+    })),
     true
   );
 
@@ -330,11 +345,19 @@ export function buildMembershipRecordHtml({
         grid-template-columns: 1fr 1fr 1fr;
       }
       .signature-block {
-        padding-top: 12mm;
+        min-height: 24mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 1.5mm;
+      }
+      .signature-line {
         border-top: 1px solid #111827;
+        width: 100%;
+      }
+      .signature-title {
         text-align: center;
         font-size: 12px;
-        min-height: 18mm;
       }
       .system-signature {
         margin-top: 10mm;
@@ -448,8 +471,14 @@ export function buildMembershipRecordHtml({
           I confirm that the information provided above is true and correct. I agree to abide by the rules and regulations of the mosque and to cooperate with the mosque administration.
         </p>
         <div class="signature-grid">
-          <div class="signature-block">Member Signature</div>
-          <div class="signature-block">Date</div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-title">Member Signature</div>
+          </div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-title">Date</div>
+          </div>
         </div>
       </section>
 
@@ -459,13 +488,21 @@ export function buildMembershipRecordHtml({
           This membership record is issued by the mosque following the approval of the member's application.
         </p>
         <div class="signature-grid three">
-          <div class="signature-block">Chairman Signature</div>
-          <div class="signature-block">Secretary Signature</div>
-          <div class="signature-block">Official Seal</div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-title">Chairman Signature</div>
+          </div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-title">Secretary Signature</div>
+          </div>
+          <div class="signature-block">
+            <div class="signature-line"></div>
+            <div class="signature-title">Official Seal</div>
+          </div>
         </div>
         <div class="system-signature">
-          <strong>System Signature:</strong> ${formatValue(systemSignature ?? "")}<br />
-          ${verificationUrl ? `<strong>Verification URL:</strong> ${formatValue(verificationUrl)}` : ""}
+          <strong>System Signature:</strong> ${formatValue(systemSignature ?? "")}
         </div>
       </section>
     </main>

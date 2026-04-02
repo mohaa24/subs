@@ -396,6 +396,10 @@ model PaymentDue {
   organizationId String
   dueDate        DateTime
   period         String
+  isManual       Boolean   @default(false)
+  reason         String?   @db.Text
+  periodStart    DateTime?
+  periodEnd      DateTime?
   amountDue      Decimal   @db.Decimal(12, 2)
   amountPaid     Decimal   @db.Decimal(12, 2) @default(0)
   lateFeeApplied Decimal   @db.Decimal(12, 2) @default(0)
@@ -409,7 +413,7 @@ model PaymentDue {
   payments     Payment[]
   creditEntries MembershipCreditLedger[]
 
-  @@unique([membershipId, period])
+  @@index([membershipId, period])
 }
 
 model Payment {

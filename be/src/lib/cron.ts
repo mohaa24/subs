@@ -39,8 +39,8 @@ export async function generateMonthlyDues() {
 
     if (!shouldGenerate) { skipped++; continue; }
 
-    const existing = await prisma.paymentDue.findUnique({
-      where: { membershipId_period: { membershipId: m.id, period } },
+    const existing = await prisma.paymentDue.findFirst({
+      where: { membershipId: m.id, period, isManual: false },
     });
     if (existing) { skipped++; continue; }
 
@@ -96,6 +96,11 @@ export async function applyLateFees() {
       status: { in: ["pending", "partial", "overdue"] },
       dueDate: { lt: now },
       lateFeeApplied: { equals: new Decimal(0) },
+      OR: [
+        { isManual: false },
+        { periodStart: { not: null } },
+        { periodEnd: { not: null } },
+      ],
     },
     include: {
       membership: {
@@ -151,6 +156,11 @@ export async function markOverdueDues() {
     where: {
       status: { in: ["pending", "partial"] },
       dueDate: { lt: now },
+      OR: [
+        { isManual: false },
+        { periodStart: { not: null } },
+        { periodEnd: { not: null } },
+      ],
     },
     include: {
       membership: { select: { membershipNo: true, hod: { select: { whatsAppNumber: true } } } },

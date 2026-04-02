@@ -214,6 +214,10 @@ export interface PaymentDue {
   organizationId: string;
   dueDate: string;
   period: string;
+  isManual?: boolean;
+  reason?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
   amountDue: number;
   amountPaid: number;
   status: DueStatus;

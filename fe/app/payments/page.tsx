@@ -27,6 +27,12 @@ import { ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle } f
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
+import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
+import {
+  RecordPaymentDialog,
+  type PaymentMethod,
+  getPaymentMethodLabel,
+} from "@/components/record-payment-dialog";
 import {
   PaymentReceiptDialog,
   type PaymentReceiptData,
@@ -63,7 +69,7 @@ export default function PaymentsPage() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState("cash");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
@@ -233,7 +239,7 @@ export default function PaymentsPage() {
     }
     setPaySubmitting(true);
     try {
-      const methodLabel = payMethod === "cash" ? "Cash" : payMethod === "bank_transfer" ? "Bank Transfer" : payMethod === "card" ? "Card" : "Other";
+      const methodLabel = getPaymentMethodLabel(payMethod);
       const combinedNote = [methodLabel, payNote].filter(Boolean).join(" — ");
       const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
@@ -321,7 +327,7 @@ export default function PaymentsPage() {
   async function handleEditDue() {
     if (!editDueTarget || !editDueReason.trim()) return;
     const amt = parseFloat(editDueAmount);
-    if (isNaN(amt) || amt <= 0) return;
+    if (isNaN(amt) || amt < 0) return;
     setEditDueSubmitting(true);
     try {
       await api(`/payments/dues/${editDueTarget.id}`, {
@@ -443,7 +449,10 @@ export default function PaymentsPage() {
                         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                           <div>
                             <p className="text-muted-foreground">{t("payments.period")}</p>
-                            <p className="font-medium">{d.period}</p>
+                            <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                            {getPaymentDueSubtitle(d) && (
+                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                            )}
                           </div>
                           <div>
                             <p className="text-muted-foreground">{t("payments.amountDue")}</p>
@@ -505,7 +514,12 @@ export default function PaymentsPage() {
                                 {d.membership?.membershipNo}
                               </p>
                             </td>
-                            <td className="p-2.5">{d.period}</td>
+                            <td className="p-2.5">
+                              <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                              {getPaymentDueSubtitle(d) && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                              )}
+                            </td>
                             <td className="p-2.5 text-right tabular-nums">
                               {Number(d.amountDue).toFixed(2)}
                             </td>
@@ -736,82 +750,24 @@ export default function PaymentsPage() {
         </Card>
       </main>
 
-      {/* Record payment dialog */}
-      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("payments.recordPayment")}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleRecordPayment} className="space-y-4">
-            <div className="rounded-lg bg-muted/50 border p-4 space-y-2">
-              <p className="text-sm font-semibold">
-                {payDue?.membership?.hod?.fullName || payDue?.membership?.hod?.nameWithInitials || "—"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {payDue?.membership?.membershipNo} · {payDue?.period}
-              </p>
-              <div className="grid grid-cols-3 gap-3 text-sm pt-1">
-                <div>
-                  <p className="text-xs text-muted-foreground">{t("payments.amountDue")}</p>
-                  <p className="font-semibold tabular-nums">{payDue ? Number(payDue.amountDue).toFixed(2) : ""}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t("payments.paid")}</p>
-                  <p className="font-semibold tabular-nums text-emerald-600">{payDue ? Number(payDue.amountPaid).toFixed(2) : ""}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t("payments.remaining")}</p>
-                  <p className="font-semibold tabular-nums text-red-600">{payDue ? (Number(payDue.amountDue) - Number(payDue.amountPaid)).toFixed(2) : ""}</p>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t("payments.amount")}</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <Select value={payMethod} onValueChange={setPayMethod}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Note / Remark (optional)</Label>
-              <Input
-                value={payNote}
-                onChange={(e) => { if (e.target.value.length <= 50) setPayNote(e.target.value); }}
-                placeholder="Optional remark..."
-                maxLength={50}
-              />
-              <p className="text-xs text-muted-foreground text-right">{payNote.length}/50</p>
-            </div>
-            {payError && <p className="text-sm text-destructive">{payError}</p>}
-            <div className="flex gap-2">
-              <Button type="submit" disabled={paySubmitting} className="flex-1">
-                {paySubmitting ? t("payments.recording") : t("payments.recordPayment")}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setPayDialogOpen(false)}>
-                {t("common.cancel")}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <RecordPaymentDialog
+        open={payDialogOpen}
+        onOpenChange={setPayDialogOpen}
+        due={payDue}
+        amount={payAmount}
+        onAmountChange={setPayAmount}
+        paymentMethod={payMethod}
+        onPaymentMethodChange={setPayMethod}
+        note={payNote}
+        onNoteChange={setPayNote}
+        error={payError}
+        submitting={paySubmitting}
+        onSubmit={handleRecordPayment}
+        title={t("payments.recordPayment")}
+        submitLabel={t("payments.recordPayment")}
+        submittingLabel={t("payments.recording")}
+        cancelLabel={t("common.cancel")}
+      />
 
       <PaymentReceiptDialog
         open={receiptOpen}

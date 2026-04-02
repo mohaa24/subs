@@ -50,6 +50,28 @@ function formatRs(n: number) {
     .replace("LKR", "Rs.");
 }
 
+function formatCompactInteger(n: number) {
+  if (Math.abs(n) < 100000) return String(n);
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  })
+    .format(n)
+    .replace(".0", "")
+    .toLowerCase();
+}
+
+function formatCompactRs(n: number) {
+  if (Math.abs(n) < 100000) return formatRs(n);
+  return `Rs.${new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  })
+    .format(n)
+    .replace(".0", "")
+    .toLowerCase()}`;
+}
+
 function formatPeriod(period: string) {
   const [y, m] = period.split("-");
   const date = new Date(Number(y), Number(m) - 1);
@@ -208,21 +230,21 @@ export default function HomePage() {
   const ROW1_CARDS = [
     {
       label: t("dashboard.totalHouseholds"),
-      value: stats?.totalHouseholds ?? "—",
+      value: stats ? formatCompactInteger(stats.totalHouseholds) : "—",
       icon: Home,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
     },
     {
       label: t("dashboard.dueThisMonth"),
-      value: stats ? formatRs(stats.totalDueThisMonth) : "—",
+      value: stats ? formatCompactRs(stats.totalDueThisMonth) : "—",
       icon: Receipt,
       color: "text-rose-500",
       bg: "bg-rose-500/10",
     },
     {
       label: t("dashboard.collectedThisMonth"),
-      value: stats ? formatRs(stats.collectedThisMonth) : "—",
+      value: stats ? formatCompactRs(stats.collectedThisMonth) : "—",
       icon: Banknote,
       color: "text-emerald-500",
       bg: "bg-emerald-500/10",
@@ -232,28 +254,28 @@ export default function HomePage() {
   const ROW2_CARDS = [
     {
       label: t("dashboard.totalHeadcount"),
-      value: stats?.totalHeadcount ?? "—",
+      value: stats ? formatCompactInteger(stats.totalHeadcount) : "—",
       icon: Users,
       color: "text-indigo-500",
       bg: "bg-indigo-500/10",
     },
     {
       label: t("dashboard.adults"),
-      value: stats?.adults ?? "—",
+      value: stats ? formatCompactInteger(stats.adults) : "—",
       icon: User,
       color: "text-sky-500",
       bg: "bg-sky-500/10",
     },
     {
       label: t("dashboard.youth"),
-      value: stats?.youth ?? "—",
+      value: stats ? formatCompactInteger(stats.youth) : "—",
       icon: UserPlus,
       color: "text-purple-500",
       bg: "bg-purple-500/10",
     },
     {
       label: t("dashboard.children"),
-      value: stats?.children ?? "—",
+      value: stats ? formatCompactInteger(stats.children) : "—",
       icon: Baby,
       color: "text-amber-500",
       bg: "bg-amber-500/10",
@@ -441,20 +463,22 @@ export default function HomePage() {
         </div>
 
         {/* ── Stat cards — Row 1 ────────────────────────────── */}
-        <div className="grid gap-3 grid-cols-3 mb-3">
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {ROW1_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="relative overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                <p className="text-xs font-medium text-muted-foreground">{label}</p>
-                <div className={`h-7 w-7 rounded-lg ${bg} flex items-center justify-center`}>
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+                <p className="pr-2 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
+                  {label}
+                </p>
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${bg} sm:h-7 sm:w-7`}>
                   <Icon className={`h-3.5 w-3.5 ${color}`} />
                 </div>
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
+              <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
                 {statsLoading ? (
                   <div className="h-7 w-20 rounded bg-muted animate-pulse" />
                 ) : (
-                  <p className="text-xl font-bold text-foreground tracking-tight">
+                  <p className="truncate text-lg font-bold leading-none tracking-tight text-foreground sm:text-xl">
                     {value}
                   </p>
                 )}
@@ -464,20 +488,22 @@ export default function HomePage() {
         </div>
 
         {/* ── Stat cards — Row 2 ────────────────────────────── */}
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 mb-8">
+        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
           {ROW2_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="relative overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                <p className="text-xs font-medium text-muted-foreground">{label}</p>
-                <div className={`h-7 w-7 rounded-lg ${bg} flex items-center justify-center`}>
+              <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
+                <p className="pr-2 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
+                  {label}
+                </p>
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${bg} sm:h-7 sm:w-7`}>
                   <Icon className={`h-3.5 w-3.5 ${color}`} />
                 </div>
               </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
+              <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
                 {statsLoading ? (
                   <div className="h-7 w-20 rounded bg-muted animate-pulse" />
                 ) : (
-                  <p className="text-xl font-bold text-foreground tracking-tight">
+                  <p className="truncate text-lg font-bold leading-none tracking-tight text-foreground sm:text-xl">
                     {value}
                   </p>
                 )}

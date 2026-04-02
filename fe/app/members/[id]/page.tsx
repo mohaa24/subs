@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -29,6 +30,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { ActivityFeedPanel } from "@/components/activity-feed-panel";
+import {
+  RecordPaymentDialog,
+  type PaymentMethod,
+  getPaymentMethodLabel,
+} from "@/components/record-payment-dialog";
 import {
   ChevronLeft,
   ChevronRight,
@@ -55,17 +61,19 @@ import {
   Bath,
   MapPin,
   Clock,
-  Receipt,
-  ArrowUpRight,
-  Printer,
-  Archive,
-  ArchiveRestore,
+    Receipt,
+    ArrowUpRight,
+    Printer,
+    Archive,
+    ArchiveRestore,
   RotateCcw,
-  Pencil,
-  MessageSquareText,
+    Pencil,
+    MessageSquareText,
+    Plus,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
+import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
 import {
   PaymentReceiptDialog,
   type PaymentReceiptData,
@@ -171,6 +179,7 @@ export default function MembershipDetailPage() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
@@ -185,6 +194,12 @@ export default function MembershipDetailPage() {
   const [editDueAmount, setEditDueAmount] = useState("");
   const [editDueReason, setEditDueReason] = useState("");
   const [editDueSubmitting, setEditDueSubmitting] = useState(false);
+  const [manualDueOpen, setManualDueOpen] = useState(false);
+  const [manualDueAmount, setManualDueAmount] = useState("");
+  const [manualDueReason, setManualDueReason] = useState("");
+  const [manualDueFrom, setManualDueFrom] = useState("");
+  const [manualDueTo, setManualDueTo] = useState("");
+  const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -340,7 +355,7 @@ export default function MembershipDetailPage() {
   async function handleEditDue() {
     if (!editDueTarget || !editDueReason.trim()) return;
     const amt = parseFloat(editDueAmount);
-    if (isNaN(amt) || amt <= 0) return;
+    if (isNaN(amt) || amt < 0) return;
     setEditDueSubmitting(true);
     try {
       await api(`/payments/dues/${editDueTarget.id}`, {
@@ -357,10 +372,78 @@ export default function MembershipDetailPage() {
     }
   }
 
+  function resetManualDueForm() {
+    setManualDueAmount("");
+    setManualDueReason("");
+    setManualDueFrom("");
+    setManualDueTo("");
+    setManualDueSubmitting(false);
+  }
+
+  function openManualDueDialog() {
+    resetManualDueForm();
+    setManualDueOpen(true);
+  }
+
+  async function handleCreateManualDue() {
+    if (!membership) return;
+    const amt = parseFloat(manualDueAmount);
+    if (isNaN(amt) || amt <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Invalid due amount",
+        description: "Enter an amount greater than zero.",
+      });
+      return;
+    }
+    if (manualDueFrom && manualDueTo && manualDueTo < manualDueFrom) {
+      toast({
+        variant: "destructive",
+        title: "Invalid period",
+        description: "Period end must be on or after period start.",
+      });
+      return;
+    }
+
+    setManualDueSubmitting(true);
+    try {
+      const created = await api<PaymentDue & { autoAppliedCredit?: number }>("/payments/dues", {
+        method: "POST",
+        body: JSON.stringify({
+          membershipId: membership.id,
+          amountDue: amt,
+          reason: manualDueReason.trim() || undefined,
+          periodFrom: manualDueFrom || undefined,
+          periodTo: manualDueTo || undefined,
+        }),
+      });
+      toast({
+        title: "Manual due created",
+        description:
+          created.autoAppliedCredit && created.autoAppliedCredit > 0
+            ? `Due created and Rs. ${created.autoAppliedCredit.toFixed(2)} credit was auto-applied.`
+            : "The due entry has been created.",
+      });
+      setManualDueOpen(false);
+      resetManualDueForm();
+      loadBalance();
+      loadCreditLedger();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to create due",
+        description: err instanceof Error ? err.message : "Failed",
+      });
+    } finally {
+      setManualDueSubmitting(false);
+    }
+  }
+
   function openPayDialog(due: PaymentDue) {
     const remaining = Number(due.amountDue) - Number(due.amountPaid);
     setPayDue(due);
     setPayAmount(String(remaining > 0 ? remaining.toFixed(2) : "0"));
+    setPayMethod("cash");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -383,12 +466,14 @@ export default function MembershipDetailPage() {
     }
     setPaySubmitting(true);
     try {
+      const methodLabel = getPaymentMethodLabel(payMethod);
+      const combinedNote = [methodLabel, payNote].filter(Boolean).join(" — ");
       const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
         body: JSON.stringify({
           paymentDueId: payDue.id,
           amount: amt,
-          note: payNote || undefined,
+          note: combinedNote || undefined,
         }),
       });
       const amountDue = Number(payDue.amountDue);
@@ -411,7 +496,7 @@ export default function MembershipDetailPage() {
         appliedToDue,
         overpaymentToCredit,
         remainingAfter,
-        note: payNote || null,
+        note: combinedNote || null,
         collectedBy: user?.email || "",
         memberQrValue: `${window.location.origin}/members/${membership.id}`,
       });
@@ -1138,11 +1223,17 @@ export default function MembershipDetailPage() {
 
               {/* Dues & Payments */}
               <Card>
-                <CardHeader className="pb-4">
+                <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <DollarSign className="h-5 w-5 text-primary" />
                     Dues & Payments
                   </CardTitle>
+                  {canManage && (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={openManualDueDialog}>
+                      <Plus className="h-4 w-4" />
+                      Add Manual Due
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent>
                   {balance && balance.dues.length > 0 ? (
@@ -1155,7 +1246,10 @@ export default function MembershipDetailPage() {
                             <div key={d.id} className="rounded-md border p-3 bg-card">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="font-medium">{d.period}</p>
+                                  <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                                  {getPaymentDueSubtitle(d) && (
+                                    <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                                  )}
                                 </div>
                                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${statusColors[d.status] ?? ""}`}>
                                   <StatusIcon className="h-3 w-3" />
@@ -1211,7 +1305,12 @@ export default function MembershipDetailPage() {
                               const StatusIcon = statusIcons[d.status] ?? Clock;
                               return (
                                 <tr key={d.id} className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
-                                  <td className="p-3 font-medium">{d.period}</td>
+                                  <td className="p-3">
+                                    <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                                    {getPaymentDueSubtitle(d) && (
+                                      <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                                    )}
+                                  </td>
                                   <td className="p-3 text-right tabular-nums">{Number(d.amountDue).toFixed(2)}</td>
                                   <td className="p-3 text-right tabular-nums">{Number(d.amountPaid).toFixed(2)}</td>
                                   <td className="p-3 text-center">
@@ -1598,82 +1697,26 @@ export default function MembershipDetailPage() {
         </Tabs>
       </main>
 
-      {/* Record payment dialog */}
-      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              Record Payment
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleRecordPayment} className="space-y-5">
-            {payDue && (
-              <div className="rounded-lg bg-muted/50 border p-4 space-y-2">
-                <p className="text-sm font-medium">{payDue.period}</p>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Due</p>
-                    <p className="font-semibold tabular-nums">
-                      {Number(payDue.amountDue).toFixed(2)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Paid</p>
-                    <p className="font-semibold tabular-nums text-emerald-600">
-                      {Number(payDue.amountPaid).toFixed(2)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Remaining</p>
-                    <p className="font-semibold tabular-nums text-red-600">
-                      {(Number(payDue.amountDue) - Number(payDue.amountPaid)).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Amount</Label>
-              <Input
-                type="number"
-                min={0}
-                step="0.01"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Note (optional)</Label>
-              <Input
-                value={payNote}
-                onChange={(e) => setPayNote(e.target.value)}
-                placeholder="e.g. Cash, bank transfer…"
-              />
-            </div>
-            {payError && (
-              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                {payError}
-              </div>
-            )}
-            <div className="flex gap-2 pt-1">
-              <Button type="submit" disabled={paySubmitting} className="flex-1 gap-1.5">
-                <CheckCircle2 className="h-4 w-4" />
-                {paySubmitting ? "Recording…" : "Record Payment"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setPayDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <RecordPaymentDialog
+        open={payDialogOpen}
+        onOpenChange={setPayDialogOpen}
+        due={payDue}
+        amount={payAmount}
+        onAmountChange={setPayAmount}
+        paymentMethod={payMethod}
+        onPaymentMethodChange={setPayMethod}
+        note={payNote}
+        onNoteChange={setPayNote}
+        error={payError}
+        submitting={paySubmitting}
+        onSubmit={handleRecordPayment}
+        memberName={membership?.hod?.fullName || membership?.hod?.nameWithInitials || ""}
+        membershipNo={membership?.membershipNo || ""}
+        title="Record Payment"
+        submitLabel="Record Payment"
+        submittingLabel="Recording…"
+        cancelLabel="Cancel"
+      />
 
       {/* QR Code dialog */}
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
@@ -1806,6 +1849,71 @@ export default function MembershipDetailPage() {
                 {editDueSubmitting ? "Saving…" : "Update Due"}
               </Button>
               <Button variant="outline" onClick={() => setEditDueTarget(null)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={manualDueOpen}
+        onOpenChange={(open) => {
+          setManualDueOpen(open);
+          if (!open) resetManualDueForm();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-primary" />
+              Create Manual Due
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/50 p-4 space-y-1">
+              <p className="text-sm font-semibold">
+                {membership?.hod?.fullName ?? membership?.membershipNo ?? "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {membership?.membershipNo ?? ""}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Due Amount *</Label>
+              <Input
+                type="number"
+                min={0.01}
+                step="0.01"
+                value={manualDueAmount}
+                onChange={(e) => setManualDueAmount(e.target.value)}
+                placeholder="e.g. 500.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea
+                value={manualDueReason}
+                onChange={(e) => setManualDueReason(e.target.value)}
+                placeholder="e.g. Registration fee, Reference letter fee..."
+                rows={3}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Period From</Label>
+                <Input type="date" value={manualDueFrom} onChange={(e) => setManualDueFrom(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Period To</Label>
+                <Input type="date" value={manualDueTo} onChange={(e) => setManualDueTo(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleCreateManualDue} disabled={manualDueSubmitting} className="flex-1">
+                {manualDueSubmitting ? "Creating…" : "Create Due"}
+              </Button>
+              <Button variant="outline" onClick={() => setManualDueOpen(false)}>
+                Cancel
+              </Button>
             </div>
           </div>
         </DialogContent>

@@ -38,6 +38,23 @@ function periodString(date: Date): string {
   return `${y}-${m}`;
 }
 
+function dateOnlyString(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseOptionalDate(value: unknown): Date | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function buildManualDuePeriod(start: Date | null, end: Date | null) {
+  if (start && end) return `${dateOnlyString(start)} to ${dateOnlyString(end)}`;
+  if (start) return `From ${dateOnlyString(start)}`;
+  if (end) return `Until ${dateOnlyString(end)}`;
+  return "Manual due";
+}
+
 async function buildReceiptForPayment(paymentId: string) {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
@@ -152,8 +169,8 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
       continue;
     }
 
-    const existing = await prisma.paymentDue.findUnique({
-      where: { membershipId_period: { membershipId: m.id, period } },
+    const existing = await prisma.paymentDue.findFirst({
+      where: { membershipId: m.id, period, isManual: false },
     });
     if (existing) {
       skipped++;
@@ -187,6 +204,85 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
     skipped,
     period,
     autoAppliedCredit: autoAppliedCredit.toNumber(),
+  });
+});
+
+const createManualDueSchema = z.object({
+  membershipId: z.string().min(1),
+  amountDue: z.number().positive("Amount must be greater than zero"),
+  reason: z.string().trim().optional().nullable(),
+  periodFrom: z.string().optional().nullable(),
+  periodTo: z.string().optional().nullable(),
+});
+
+paymentsRouter.post("/dues", async (req, res) => {
+  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Only admins can create manual dues" });
+  }
+
+  const parsed = createManualDueSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+
+  const membership = await prisma.membership.findUnique({
+    where: { id: parsed.data.membershipId },
+    select: { id: true, organizationId: true, membershipNo: true },
+  });
+  if (!membership) return res.status(404).json({ error: "Membership not found" });
+  if (req.auth!.organizationId && membership.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const periodStart = parseOptionalDate(parsed.data.periodFrom);
+  const periodEnd = parseOptionalDate(parsed.data.periodTo);
+  if (parsed.data.periodFrom && !periodStart) return res.status(400).json({ error: "Invalid period start" });
+  if (parsed.data.periodTo && !periodEnd) return res.status(400).json({ error: "Invalid period end" });
+  if (periodStart && periodEnd && periodEnd < periodStart) {
+    return res.status(400).json({ error: "Period end must be on or after period start" });
+  }
+
+  const period = buildManualDuePeriod(periodStart, periodEnd);
+  const dueDate = periodEnd ?? periodStart ?? new Date();
+  const normalizedReason = parsed.data.reason?.trim() ? parsed.data.reason.trim() : null;
+
+  const created = await prisma.$transaction(async (tx) => {
+    const due = await tx.paymentDue.create({
+      data: {
+        membershipId: membership.id,
+        organizationId: membership.organizationId,
+        dueDate,
+        period,
+        isManual: true,
+        reason: normalizedReason,
+        periodStart,
+        periodEnd,
+        amountDue: toDecimal(parsed.data.amountDue),
+        amountPaid: new Decimal(0),
+        status: "pending",
+      },
+      include: {
+        membership: {
+          select: {
+            membershipNo: true,
+            hod: { select: { fullName: true, nameWithInitials: true } },
+          },
+        },
+      },
+    });
+    const autoAppliedCredit = await applyAvailableCreditToDue(tx, {
+      dueId: due.id,
+      createdByUserId: req.auth!.userId,
+      note: normalizedReason
+        ? `Auto-applied member credit to manual due: ${normalizedReason}`
+        : "Auto-applied member credit to manual due",
+    });
+    return { due, autoAppliedCredit };
+  });
+
+  return res.status(201).json({
+    ...created.due,
+    autoAppliedCredit: created.autoAppliedCredit.toNumber(),
   });
 });
 
@@ -570,7 +666,7 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
 
 // Edit due amount (admin only)
 const editDueSchema = z.object({
-  amountDue: z.number().positive("Amount must be positive"),
+  amountDue: z.number().min(0, "Amount must be zero or greater"),
   reason: z.string().min(1, "Reason is required"),
 });
 
@@ -710,6 +806,11 @@ paymentsRouter.post("/mark-overdue", async (req, res) => {
   const where: any = {
     status: { in: ["pending", "partial"] },
     dueDate: { lt: new Date() },
+    OR: [
+      { isManual: false },
+      { periodStart: { not: null } },
+      { periodEnd: { not: null } },
+    ],
   };
   if (orgId) where.organizationId = orgId;
 

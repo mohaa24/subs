@@ -104,6 +104,10 @@ function MembersContent() {
   const effectiveOrgId = user?.organizationId ?? null;
   const filterRef = useRef<HTMLDivElement | null>(null);
 
+  function isFilterPortalInteraction(target: EventTarget | null) {
+    return target instanceof Element && Boolean(target.closest("[data-radix-popper-content-wrapper]"));
+  }
+
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
@@ -111,6 +115,9 @@ function MembersContent() {
   useEffect(() => {
     if (!filterOpen) return;
     function handlePointerDown(event: MouseEvent) {
+      if (isFilterPortalInteraction(event.target)) {
+        return;
+      }
       if (!filterRef.current?.contains(event.target as Node)) {
         setFilterOpen(false);
       }
