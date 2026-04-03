@@ -125,14 +125,27 @@ export async function applyLateFees() {
     const feePercentage = orgFeeMap.get(due.organizationId) ?? new Decimal(5);
     const lateFee = due.amountDue.mul(feePercentage).div(100);
 
-    await prisma.paymentDue.update({
-      where: { id: due.id },
-      data: {
-        lateFeeApplied: lateFee,
-        lateFeeDate: now,
-        amountDue: due.amountDue.add(lateFee),
-        status: "overdue",
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentDue.update({
+        where: { id: due.id },
+        data: {
+          lateFeeApplied: lateFee,
+          lateFeeDate: now,
+          amountDue: due.amountDue.add(lateFee),
+          status: "overdue",
+        },
+      });
+
+      await tx.paymentDueAdjustment.create({
+        data: {
+          paymentDueId: due.id,
+          membershipId: due.membershipId,
+          organizationId: due.organizationId,
+          amountDelta: lateFee,
+          adjustmentType: "late_fee",
+          reason: "Late fee applied automatically",
+        },
+      });
     });
     applied++;
 

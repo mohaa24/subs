@@ -43,6 +43,7 @@ model Organization {
   distributions      Distribution[]
   zones              Zone[]
   activityFeedItems  ActivityFeedItem[]
+  paymentDueAdjustments PaymentDueAdjustment[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -87,6 +88,7 @@ model User {
   distributionRecords DistributionRecord[]  @relation("DistributedByUser")
   createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
   createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
+  createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
 }
 
 enum UserRole {
@@ -348,6 +350,7 @@ model Membership {
   payments     Payment[]
   creditLedgerEntries MembershipCreditLedger[]
   activityFeedItems    ActivityFeedItem[]
+  dueAdjustments       PaymentDueAdjustment[]
 }
 
 enum DependentGroup {
@@ -390,6 +393,11 @@ enum DueStatus {
   overdue
 }
 
+enum PaymentDueAdjustmentType {
+  due_edit
+  late_fee
+}
+
 model PaymentDue {
   id             String    @id @default(cuid())
   membershipId   String
@@ -412,8 +420,30 @@ model PaymentDue {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payments     Payment[]
   creditEntries MembershipCreditLedger[]
+  adjustments  PaymentDueAdjustment[]
 
   @@index([membershipId, period])
+}
+
+model PaymentDueAdjustment {
+  id              String                   @id @default(cuid())
+  paymentDueId     String
+  membershipId     String
+  organizationId   String
+  amountDelta      Decimal                  @db.Decimal(12, 2)
+  adjustmentType   PaymentDueAdjustmentType
+  reason           String?                  @db.Text
+  createdByUserId  String?
+  createdAt        DateTime                 @default(now())
+
+  paymentDue    PaymentDue    @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  membership    Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy     User?         @relation("DueAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([paymentDueId, createdAt])
+  @@index([membershipId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 model Payment {

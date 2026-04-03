@@ -264,6 +264,31 @@ export interface PaymentReceipt {
   remainingAfter: number;
 }
 
+export interface PaymentStatementItem {
+  id: string;
+  entryType:
+    | "due"
+    | "due_adjustment"
+    | "payment"
+    | "payment_reversal"
+    | "credit_overpayment"
+    | "debit_auto_apply"
+    | "credit_adjustment"
+    | "debit_adjustment";
+  occurredAt: string;
+  description: string;
+  reference: string | null;
+  note: string | null;
+  debit: number;
+  credit: number;
+  balance: number;
+  actor: string | null;
+  paymentId: string | null;
+  paymentDueId: string | null;
+  receiptAvailable: boolean;
+  reversible: boolean;
+}
+
 export interface DashboardStats {
   totalHouseholds: number;
   totalHeadcount: number;

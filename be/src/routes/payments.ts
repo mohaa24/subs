@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
-import { DueStatus } from "@prisma/client";
+import {
+  DueStatus,
+  MembershipCreditEntryType,
+  PaymentDueAdjustmentType,
+} from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
@@ -53,6 +57,76 @@ function buildManualDuePeriod(start: Date | null, end: Date | null) {
   if (start) return `From ${dateOnlyString(start)}`;
   if (end) return `Until ${dateOnlyString(end)}`;
   return "Manual due";
+}
+
+function describeDueEntry(isManual: boolean) {
+  return isManual ? "Manual Due Added" : "Due Generated";
+}
+
+function describeDueAdjustment(type: PaymentDueAdjustmentType, amountDelta: Decimal) {
+  if (type === "late_fee") return "Late Fee Applied";
+  return amountDelta.gte(new Decimal(0)) ? "Due Increased" : "Due Reduced";
+}
+
+function formatMoney(amount: Decimal) {
+  return `Rs. ${amount.abs().toFixed(2)}`;
+}
+
+function joinNoteParts(parts: Array<string | null | undefined>) {
+  return parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(" ");
+}
+
+function describeCreditLedgerEntry(
+  entryType: MembershipCreditEntryType,
+  amountDelta: Decimal,
+  paymentId: string | null
+) {
+  if (entryType === "credit_overpayment") return "Overpayment Moved to Credit";
+  if (entryType === "debit_auto_apply") return "Member Credit Applied";
+  if (entryType === "credit_adjustment") return "Credit Added";
+  if (paymentId) return "Credit Clawback";
+  return amountDelta.lt(new Decimal(0)) ? "Credit Removed" : "Credit Adjusted";
+}
+
+function shouldCreditLedgerEntryAffectBalance(
+  entryType: MembershipCreditEntryType,
+  paymentId: string | null
+) {
+  if (entryType === "credit_overpayment" || entryType === "debit_auto_apply") return false;
+  if (paymentId) return false;
+  return true;
+}
+
+function describeCreditLedgerNote(input: {
+  entryType: MembershipCreditEntryType;
+  amountDelta: Decimal;
+  note: string | null;
+  affectsBalance: boolean;
+}) {
+  const amountLabel = formatMoney(input.amountDelta);
+  const note = input.note?.trim() ?? "";
+  if (input.entryType === "credit_overpayment") {
+    return joinNoteParts([
+      `${amountLabel} moved into member credit.`,
+      note.toLowerCase() === "overpayment moved to member credit" ? null : note,
+    ]);
+  }
+  if (input.entryType === "debit_auto_apply") {
+    return joinNoteParts([
+      `${amountLabel} auto-applied from member credit.`,
+      note.toLowerCase().startsWith("auto-applied credit to due") ? null : note,
+    ]);
+  }
+  if (!input.affectsBalance) {
+    return joinNoteParts([`${amountLabel} reclassified within member credit.`, note]);
+  }
+  if (input.entryType === "credit_adjustment") {
+    return joinNoteParts([`${amountLabel} added to member credit.`, note]);
+  }
+  return joinNoteParts([`${amountLabel} removed from member credit.`, note]);
 }
 
 async function buildReceiptForPayment(paymentId: string) {
@@ -373,6 +447,249 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
   });
 });
 
+paymentsRouter.get("/statement/:membershipId", async (req, res) => {
+  const membership = await prisma.membership.findUnique({
+    where: { id: req.params.membershipId },
+    select: { id: true, organizationId: true, membershipNo: true },
+  });
+  if (!membership) return res.status(404).json({ error: "Membership not found" });
+  if (req.auth!.organizationId && membership.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const [dues, adjustments, payments, creditEntries] = await Promise.all([
+    prisma.paymentDue.findMany({
+      where: { membershipId: membership.id },
+      orderBy: [{ createdAt: "asc" }, { dueDate: "asc" }],
+      select: {
+        id: true,
+        period: true,
+        reason: true,
+        isManual: true,
+        amountDue: true,
+        createdAt: true,
+      },
+    }),
+    prisma.paymentDueAdjustment.findMany({
+      where: { membershipId: membership.id },
+      orderBy: { createdAt: "asc" },
+      include: {
+        paymentDue: { select: { id: true, period: true } },
+        createdBy: { select: { email: true } },
+      },
+    }),
+    prisma.payment.findMany({
+      where: { membershipId: membership.id },
+      orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
+      include: {
+        paymentDue: { select: { id: true, period: true } },
+        collectedBy: { select: { email: true } },
+        reversedBy: { select: { email: true } },
+      },
+    }),
+    prisma.membershipCreditLedger.findMany({
+      where: { membershipId: membership.id },
+      orderBy: { createdAt: "asc" },
+      include: {
+        paymentDue: { select: { id: true, period: true } },
+        createdBy: { select: { email: true } },
+      },
+    }),
+  ]);
+
+  const rawEntries: Array<{
+    id: string;
+    occurredAt: Date;
+    createdAt: Date;
+    sortOrder: number;
+    entryType:
+      | "due"
+      | "due_adjustment"
+      | "payment"
+      | "payment_reversal"
+      | "credit_overpayment"
+      | "debit_auto_apply"
+      | "credit_adjustment"
+      | "debit_adjustment";
+    description: string;
+    reference: string | null;
+    note: string | null;
+    debit: Decimal;
+    credit: Decimal;
+    actor: string | null;
+    paymentId: string | null;
+    paymentDueId: string | null;
+    receiptAvailable: boolean;
+    reversible: boolean;
+  }> = [];
+
+  for (const due of dues) {
+    rawEntries.push({
+      id: `due-${due.id}`,
+      occurredAt: due.createdAt,
+      createdAt: due.createdAt,
+      sortOrder: 0,
+      entryType: "due",
+      description: describeDueEntry(due.isManual),
+      reference: due.period,
+      note: due.reason ?? null,
+      debit: due.amountDue,
+      credit: new Decimal(0),
+      actor: null,
+      paymentId: null,
+      paymentDueId: due.id,
+      receiptAvailable: false,
+      reversible: false,
+    });
+  }
+
+  for (const adjustment of adjustments) {
+    const debit = adjustment.amountDelta.gte(new Decimal(0)) ? adjustment.amountDelta : new Decimal(0);
+    const credit = adjustment.amountDelta.lt(new Decimal(0))
+      ? adjustment.amountDelta.abs()
+      : new Decimal(0);
+    rawEntries.push({
+      id: `adjustment-${adjustment.id}`,
+      occurredAt: adjustment.createdAt,
+      createdAt: adjustment.createdAt,
+      sortOrder: 1,
+      entryType: "due_adjustment",
+      description: describeDueAdjustment(adjustment.adjustmentType, adjustment.amountDelta),
+      reference: adjustment.paymentDue.period,
+      note: adjustment.reason ?? null,
+      debit,
+      credit,
+      actor: adjustment.createdBy?.email ?? "System",
+      paymentId: null,
+      paymentDueId: adjustment.paymentDueId,
+      receiptAvailable: false,
+      reversible: false,
+    });
+  }
+
+  for (const payment of payments) {
+    rawEntries.push({
+      id: `payment-${payment.id}`,
+      occurredAt: payment.paymentDate,
+      createdAt: payment.createdAt,
+      sortOrder: 2,
+      entryType: "payment",
+      description: "Payment Received",
+      reference: payment.paymentDue?.period ?? null,
+      note: payment.note ?? null,
+      debit: new Decimal(0),
+      credit: payment.amount,
+      actor: payment.collectedBy?.email ?? null,
+      paymentId: payment.id,
+      paymentDueId: payment.paymentDueId,
+      receiptAvailable: true,
+      reversible: !payment.isReversed,
+    });
+
+    if (payment.isReversed && payment.reversedAt) {
+      rawEntries.push({
+        id: `payment-reversal-${payment.id}`,
+        occurredAt: payment.reversedAt,
+        createdAt: payment.createdAt,
+        sortOrder: 3,
+        entryType: "payment_reversal",
+        description: "Payment Reversed",
+        reference: payment.paymentDue?.period ?? null,
+        note: payment.reversalReason ?? null,
+        debit: payment.amount,
+        credit: new Decimal(0),
+        actor: payment.reversedBy?.email ?? "System",
+        paymentId: payment.id,
+        paymentDueId: payment.paymentDueId,
+        receiptAvailable: false,
+        reversible: false,
+      });
+    }
+  }
+
+  for (const creditEntry of creditEntries) {
+    const affectsBalance = shouldCreditLedgerEntryAffectBalance(
+      creditEntry.entryType,
+      creditEntry.paymentId
+    );
+    const amount = creditEntry.amountDelta.abs();
+    rawEntries.push({
+      id: `credit-${creditEntry.id}`,
+      occurredAt: creditEntry.createdAt,
+      createdAt: creditEntry.createdAt,
+      sortOrder:
+        creditEntry.entryType === "debit_auto_apply"
+          ? 1
+          : creditEntry.entryType === "credit_overpayment"
+            ? 4
+            : 5,
+      entryType: creditEntry.entryType,
+      description: describeCreditLedgerEntry(
+        creditEntry.entryType,
+        creditEntry.amountDelta,
+        creditEntry.paymentId
+      ),
+      reference: creditEntry.paymentDue?.period ?? null,
+      note: describeCreditLedgerNote({
+        entryType: creditEntry.entryType,
+        amountDelta: creditEntry.amountDelta,
+        note: creditEntry.note ?? null,
+        affectsBalance,
+      }),
+      debit:
+        affectsBalance && creditEntry.amountDelta.lt(new Decimal(0))
+          ? amount
+          : new Decimal(0),
+      credit:
+        affectsBalance && creditEntry.amountDelta.gt(new Decimal(0))
+          ? amount
+          : new Decimal(0),
+      actor: creditEntry.createdBy?.email ?? "System",
+      paymentId: creditEntry.paymentId,
+      paymentDueId: creditEntry.paymentDueId,
+      receiptAvailable: false,
+      reversible: false,
+    });
+  }
+
+  rawEntries.sort((a, b) => {
+    const at = a.occurredAt.getTime() - b.occurredAt.getTime();
+    if (at !== 0) return at;
+    const ct = a.createdAt.getTime() - b.createdAt.getTime();
+    if (ct !== 0) return ct;
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+    return a.id.localeCompare(b.id);
+  });
+
+  let runningBalance = new Decimal(0);
+  const items = rawEntries.map((entry) => {
+    runningBalance = runningBalance.add(entry.debit).sub(entry.credit);
+    return {
+      id: entry.id,
+      entryType: entry.entryType,
+      occurredAt: entry.occurredAt.toISOString(),
+      description: entry.description,
+      reference: entry.reference,
+      note: entry.note,
+      debit: entry.debit.toNumber(),
+      credit: entry.credit.toNumber(),
+      balance: runningBalance.toNumber(),
+      actor: entry.actor,
+      paymentId: entry.paymentId,
+      paymentDueId: entry.paymentDueId,
+      receiptAvailable: entry.receiptAvailable,
+      reversible: entry.reversible,
+    };
+  });
+
+  return res.json({
+    membershipId: membership.id,
+    membershipNo: membership.membershipNo,
+    items,
+    total: items.length,
+  });
+});
+
 // List credit ledger entries for a membership
 paymentsRouter.get("/credit/:membershipId", async (req, res) => {
   const membership = await prisma.membership.findUnique({
@@ -686,24 +1003,43 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
   }
 
   const newAmountDue = toDecimal(parsed.data.amountDue);
+  const amountDelta = newAmountDue.sub(due.amountDue);
   let newStatus: DueStatus = "pending";
   if (due.amountPaid.gt(new Decimal(0))) newStatus = "partial";
   if (due.amountPaid.gte(newAmountDue)) newStatus = "paid";
 
-  const updated = await prisma.paymentDue.update({
-    where: { id: due.id },
-    data: {
-      amountDue: newAmountDue,
-      status: newStatus,
-    },
-    include: {
-      membership: {
-        select: {
-          membershipNo: true,
-          hod: { select: { fullName: true, nameWithInitials: true } },
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextDue = await tx.paymentDue.update({
+      where: { id: due.id },
+      data: {
+        amountDue: newAmountDue,
+        status: newStatus,
+      },
+      include: {
+        membership: {
+          select: {
+            membershipNo: true,
+            hod: { select: { fullName: true, nameWithInitials: true } },
+          },
         },
       },
-    },
+    });
+
+    if (!amountDelta.equals(new Decimal(0))) {
+      await tx.paymentDueAdjustment.create({
+        data: {
+          paymentDueId: due.id,
+          membershipId: due.membershipId,
+          organizationId: due.organizationId,
+          amountDelta,
+          adjustmentType: "due_edit",
+          reason: parsed.data.reason,
+          createdByUserId: req.auth!.userId,
+        },
+      });
+    }
+
+    return nextDue;
   });
 
   return res.json(updated);

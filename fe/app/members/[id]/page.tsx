@@ -9,11 +9,12 @@ import {
   type Membership,
   type Person,
   type MembershipBalance,
-  type MembershipCreditEntry,
-  type Payment,
-  type PaymentReceipt,
-  type PaymentDue,
-  type Zone,
+    type MembershipCreditEntry,
+    type Payment,
+    type PaymentReceipt,
+    type PaymentDue,
+    type PaymentStatementItem,
+    type Zone,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,6 +104,13 @@ const statusIcons: Record<string, typeof CheckCircle2> = {
   overdue: AlertTriangle,
 };
 
+const hiddenStatementEntryTypes: PaymentStatementItem["entryType"][] = [
+  "credit_overpayment",
+  "debit_auto_apply",
+  "credit_adjustment",
+  "debit_adjustment",
+];
+
 function PersonAvatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
   const initials = name
     .split(" ")
@@ -161,10 +169,8 @@ export default function MembershipDetailPage() {
   const [membership, setMembership] = useState<Membership | null>(null);
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<MembershipBalance | null>(null);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [paymentsTotal, setPaymentsTotal] = useState(0);
-  const [paymentsPage, setPaymentsPage] = useState(1);
-  const paymentsLimit = 20;
+  const [statementItems, setStatementItems] = useState<PaymentStatementItem[]>([]);
+  const [statementLoading, setStatementLoading] = useState(true);
   const [creditEntries, setCreditEntries] = useState<MembershipCreditEntry[]>([]);
   const [creditTotal, setCreditTotal] = useState(0);
   const [creditBalance, setCreditBalance] = useState(0);
@@ -201,6 +207,9 @@ export default function MembershipDetailPage() {
   const [manualDueTo, setManualDueTo] = useState("");
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const visibleStatementItems = statementItems.filter(
+    (entry) => !hiddenStatementEntryTypes.includes(entry.entryType)
+  );
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -221,17 +230,16 @@ export default function MembershipDetailPage() {
       .catch(() => {});
   }, [user, id]);
 
-  const loadPayments = useCallback(() => {
+  const loadStatement = useCallback(() => {
     if (!user || !id) return;
-    api<{ items: Payment[]; total: number }>(`/payments/history/${id}`, {
-      params: { page: String(paymentsPage), limit: String(paymentsLimit) },
-    })
+    setStatementLoading(true);
+    api<{ items: PaymentStatementItem[] }>(`/payments/statement/${id}`)
       .then((r) => {
-        setPayments(r.items);
-        setPaymentsTotal(r.total);
+        setStatementItems(r.items);
       })
-      .catch(() => {});
-  }, [user, id, paymentsPage]);
+      .catch(() => setStatementItems([]))
+      .finally(() => setStatementLoading(false));
+  }, [user, id]);
 
   const loadCreditLedger = useCallback(() => {
     if (!user || !id) return;
@@ -255,8 +263,8 @@ export default function MembershipDetailPage() {
   }, [loadBalance]);
 
   useEffect(() => {
-    loadPayments();
-  }, [loadPayments]);
+    loadStatement();
+  }, [loadStatement]);
 
   useEffect(() => {
     loadCreditLedger();
@@ -343,7 +351,7 @@ export default function MembershipDetailPage() {
       setReverseTarget(null);
       setReverseReason("");
       loadBalance();
-      loadPayments();
+      loadStatement();
       loadCreditLedger();
     } catch (err) {
       toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Failed" });
@@ -365,6 +373,7 @@ export default function MembershipDetailPage() {
       toast({ title: "Due updated" });
       setEditDueTarget(null);
       loadBalance();
+      loadStatement();
     } catch (err) {
       toast({ variant: "destructive", title: "Failed", description: err instanceof Error ? err.message : "Failed" });
     } finally {
@@ -427,6 +436,7 @@ export default function MembershipDetailPage() {
       setManualDueOpen(false);
       resetManualDueForm();
       loadBalance();
+      loadStatement();
       loadCreditLedger();
     } catch (err) {
       toast({
@@ -507,7 +517,7 @@ export default function MembershipDetailPage() {
         description: "Payment has been saved successfully.",
       });
       loadBalance();
-      loadPayments();
+      loadStatement();
       loadCreditLedger();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to record payment";
@@ -605,7 +615,6 @@ export default function MembershipDetailPage() {
   }
 
   const yesNo = (v: boolean) => (v ? "Yes" : "No");
-  const totalPaymentPages = Math.ceil(paymentsTotal / paymentsLimit) || 1;
   const totalCreditPages = Math.ceil(creditTotal / creditLimit) || 1;
 
   function creditEntryLabel(type: MembershipCreditEntry["entryType"]) {
@@ -1359,143 +1368,189 @@ export default function MembershipDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {payments.length === 0 ? (
+                {statementLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading statement…</p>
+                ) : visibleStatementItems.length === 0 ? (
                   <div className="text-center py-10">
                     <CreditCard className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
                     <p className="text-sm text-muted-foreground">
-                      No payments recorded yet.
+                      No transactions recorded yet.
                     </p>
                   </div>
                 ) : (
                   <>
                     <div className="space-y-3 md:hidden print:hidden">
-                      {payments.map((p) => (
-                        <div key={p.id} className="rounded-md border p-3 bg-card">
+                      {visibleStatementItems.map((entry) => {
+                        const isCreditRow = entry.credit > 0 && entry.debit === 0;
+                        const isMemoRow = entry.credit === 0 && entry.debit === 0;
+                        return (
+                        <div
+                          key={entry.id}
+                          className={`rounded-md border p-3 ${
+                            isMemoRow
+                              ? "border-sky-200 bg-sky-50/70"
+                              : isCreditRow
+                                ? "border-slate-200 bg-slate-50/80"
+                                : "bg-card"
+                          }`}
+                        >
                           <div className="flex items-start justify-between gap-3">
-                            <p className="font-medium">
-                              {p.paymentDue?.period ?? "—"}
-                            </p>
+                            <div className="min-w-0">
+                              <p className="font-medium">{entry.description}</p>
+                              {entry.reference && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{entry.reference}</p>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground">
-                              {new Date(p.paymentDate).toLocaleDateString()}
+                              {new Date(entry.occurredAt).toLocaleDateString()}
                             </p>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                             <div>
-                              <p className="text-muted-foreground">Amount</p>
-                              <p className="font-medium tabular-nums text-emerald-600">
-                                +{Number(p.amount).toFixed(2)}
+                              <p className="text-muted-foreground">Debit</p>
+                              <p className={`font-medium tabular-nums ${entry.debit > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                                {entry.debit > 0 ? entry.debit.toFixed(2) : "—"}
                               </p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground">Collected by</p>
-                              <p className="font-medium">{p.collectedBy?.email ?? "—"}</p>
+                              <p className="text-muted-foreground">Credit</p>
+                              <p className={`font-medium tabular-nums ${entry.credit > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                                {entry.credit > 0 ? entry.credit.toFixed(2) : "—"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Balance</p>
+                              <p className="font-medium tabular-nums">{entry.balance.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">By</p>
+                              <p className="font-medium">{entry.actor || "System"}</p>
                             </div>
                             <div className="col-span-2">
                               <p className="text-muted-foreground">Note</p>
-                              <p className="font-medium">{p.note || "—"}</p>
+                              <p className="font-medium">{entry.note || "—"}</p>
                             </div>
                           </div>
-                          {(p as any).isReversed && (
-                            <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
-                              <RotateCcw className="h-3 w-3" />
-                              Reversed{(p as any).reversalReason ? `: ${(p as any).reversalReason}` : ""}
-                            </div>
-                          )}
                           <div className="mt-3 flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={loadingReceiptPaymentId === p.id}
-                              onClick={() => openReceiptForPayment(p.id)}
-                            >
-                              {loadingReceiptPaymentId === p.id ? "Loading…" : "View Receipt"}
-                            </Button>
-                            {canManage && !(p as any).isReversed && (
-                              <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
+                            {entry.receiptAvailable && entry.paymentId && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={loadingReceiptPaymentId === entry.paymentId}
+                                onClick={() => openReceiptForPayment(entry.paymentId!)}
+                              >
+                                {loadingReceiptPaymentId === entry.paymentId ? "Loading…" : "View Receipt"}
+                              </Button>
+                            )}
+                            {canManage && entry.reversible && entry.paymentId && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600"
+                                onClick={() => {
+                                  setReverseTarget({
+                                    id: entry.paymentId!,
+                                    amount: entry.credit,
+                                    paymentDue: entry.reference ? { period: entry.reference } : undefined,
+                                  } as Payment);
+                                  setReverseReason("");
+                                }}
+                              >
                                 <RotateCcw className="h-3.5 w-3.5 mr-1" />
                                 Reverse
                               </Button>
                             )}
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
 
                     <div className="hidden md:block print:block rounded-lg border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[540px]">
+                      <table className="w-full text-sm min-w-[860px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
                             <th className="text-left p-3 font-medium text-muted-foreground">
                               Date
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
-                              Period
-                            </th>
-                            <th className="text-right p-3 font-medium text-muted-foreground">
-                              Amount
+                              Description
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
-                              Collected by
+                              Reference
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
                               Note
                             </th>
-                            <th className="text-center p-3 font-medium text-muted-foreground">
-                              Status
+                            <th className="text-right p-3 font-medium text-muted-foreground">
+                              Debit
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">
+                              Credit
                             </th>
+                            <th className="text-right p-3 font-medium text-muted-foreground">Balance</th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">By</th>
+                            <th className="text-right p-3 font-medium text-muted-foreground"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {payments.map((p, i) => (
+                          {visibleStatementItems.map((entry, i) => (
                             <tr
-                              key={p.id}
+                              key={entry.id}
                               className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
-                                i % 2 === 0 ? "" : "bg-muted/10"
-                              } ${(p as any).isReversed ? "opacity-50" : ""}`}
+                                entry.credit === 0 && entry.debit === 0
+                                  ? "bg-sky-50/60"
+                                  : entry.credit > 0 && entry.debit === 0
+                                  ? "bg-slate-50/80"
+                                  : i % 2 === 0
+                                    ? ""
+                                    : "bg-muted/10"
+                              }`}
                             >
                               <td className="p-3">
-                                {new Date(p.paymentDate).toLocaleDateString()}
+                                {new Date(entry.occurredAt).toLocaleDateString()}
                               </td>
                               <td className="p-3 font-medium">
-                                {p.paymentDue?.period ?? "—"}
-                              </td>
-                              <td className={`p-3 text-right tabular-nums font-semibold ${(p as any).isReversed ? "line-through text-muted-foreground" : "text-emerald-600"}`}>
-                                +{Number(p.amount).toFixed(2)}
+                                {entry.description}
                               </td>
                               <td className="p-3 text-muted-foreground">
-                                {p.collectedBy?.email ?? "—"}
+                                {entry.reference ?? "—"}
                               </td>
-                              <td className="p-3 text-muted-foreground max-w-[200px] truncate">
-                                {p.note || "—"}
+                              <td className="p-3 text-muted-foreground max-w-[220px] truncate">
+                                {entry.note || "—"}
                               </td>
-                              <td className="p-3 text-center">
-                                {(p as any).isReversed ? (
-                                  <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                                    <RotateCcw className="h-3 w-3" />
-                                    Reversed
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-emerald-600">Active</span>
-                                )}
+                              <td className={`p-3 text-right tabular-nums font-semibold ${entry.debit > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                                {entry.debit > 0 ? entry.debit.toFixed(2) : "—"}
                               </td>
+                              <td className={`p-3 text-right tabular-nums font-semibold ${entry.credit > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                                {entry.credit > 0 ? entry.credit.toFixed(2) : "—"}
+                              </td>
+                              <td className="p-3 text-right tabular-nums font-semibold">{entry.balance.toFixed(2)}</td>
+                              <td className="p-3 text-muted-foreground">{entry.actor || "System"}</td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={loadingReceiptPaymentId === p.id}
-                                    onClick={() => openReceiptForPayment(p.id)}
-                                  >
-                                    {loadingReceiptPaymentId === p.id ? "Loading…" : "Receipt"}
-                                  </Button>
-                                  {canManage && !(p as any).isReversed && (
+                                  {entry.receiptAvailable && entry.paymentId && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={loadingReceiptPaymentId === entry.paymentId}
+                                      onClick={() => openReceiptForPayment(entry.paymentId!)}
+                                    >
+                                      {loadingReceiptPaymentId === entry.paymentId ? "Loading…" : "Receipt"}
+                                    </Button>
+                                  )}
+                                  {canManage && entry.reversible && entry.paymentId && (
                                     <Button
                                       size="sm"
                                       variant="ghost"
                                       className="text-red-600 h-8 w-8 p-0"
-                                      onClick={() => { setReverseTarget(p); setReverseReason(""); }}
+                                      onClick={() => {
+                                        setReverseTarget({
+                                          id: entry.paymentId!,
+                                          amount: entry.credit,
+                                          paymentDue: entry.reference ? { period: entry.reference } : undefined,
+                                        } as Payment);
+                                        setReverseReason("");
+                                      }}
                                       title="Reverse Payment"
                                     >
                                       <RotateCcw className="h-3.5 w-3.5" />
@@ -1511,33 +1566,9 @@ export default function MembershipDetailPage() {
 
                     <div className="flex items-center justify-between text-sm text-muted-foreground mt-4 pt-4 border-t print:hidden">
                       <span className="font-medium">
-                        {paymentsTotal} transaction{paymentsTotal !== 1 ? "s" : ""}
+                        {visibleStatementItems.length} transaction{visibleStatementItems.length !== 1 ? "s" : ""}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          disabled={paymentsPage <= 1}
-                          onClick={() => setPaymentsPage((p) => Math.max(1, p - 1))}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <span className="tabular-nums min-w-[100px] text-center">
-                          Page {paymentsPage} of {totalPaymentPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          disabled={paymentsPage >= totalPaymentPages}
-                          onClick={() =>
-                            setPaymentsPage((p) => Math.min(totalPaymentPages, p + 1))
-                          }
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <span>Oldest to newest</span>
                     </div>
                   </>
                 )}
