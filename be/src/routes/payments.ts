@@ -13,6 +13,7 @@ import {
   addOverpaymentCreditEntry,
   applyAvailableCreditToDue,
   getMembershipCreditBalance,
+  moveNegativeCreditBalanceToDue,
 } from "../lib/membership-credit.js";
 
 export const paymentsRouter = Router();
@@ -751,6 +752,43 @@ paymentsRouter.get("/credit/:membershipId", async (req, res) => {
   });
 });
 
+paymentsRouter.post("/credit/:membershipId/rebalance-negative", async (req, res) => {
+  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Only admins can rebalance negative credit" });
+  }
+
+  const membership = await prisma.membership.findUnique({
+    where: { id: req.params.membershipId },
+    select: { id: true, organizationId: true, membershipNo: true },
+  });
+  if (!membership) return res.status(404).json({ error: "Membership not found" });
+  if (
+    req.auth!.organizationId &&
+    membership.organizationId !== req.auth!.organizationId &&
+    req.auth!.role !== "super_user"
+  ) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const transferred = await prisma.$transaction((tx) =>
+    moveNegativeCreditBalanceToDue(tx, {
+      membershipId: membership.id,
+      organizationId: membership.organizationId,
+      createdByUserId: req.auth!.userId,
+      dueDate: new Date(),
+      dueReason: "Credit Balance Transfer",
+      ledgerNote: "Negative credit balance moved to due by manual reconciliation",
+    })
+  );
+
+  return res.json({
+    membershipId: membership.id,
+    membershipNo: membership.membershipNo,
+    transferred: transferred.toNumber(),
+    changed: transferred.gt(new Decimal(0)),
+  });
+});
+
 // Record a payment against a due
 const recordPaymentSchema = z.object({
   paymentDueId: z.string(),
@@ -993,6 +1031,16 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
         },
       });
     }
+
+    await moveNegativeCreditBalanceToDue(tx, {
+      membershipId: payment.membershipId,
+      organizationId: payment.organizationId,
+      createdByUserId: req.auth!.userId,
+      dueDate: new Date(),
+      period: due.period,
+      dueReason: "Credit Balance Transfer",
+      ledgerNote: `Negative credit balance moved to due after payment reversal: ${parsed.data.reason}`,
+    });
   });
 
   return res.json({ success: true, message: "Payment reversed" });

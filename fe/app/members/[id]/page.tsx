@@ -621,12 +621,18 @@ export default function MembershipDetailPage() {
   const yesNo = (v: boolean) => (v ? "Yes" : "No");
   const totalCreditPages = Math.ceil(creditTotal / creditLimit) || 1;
 
-  function creditEntryLabel(type: MembershipCreditEntry["entryType"]) {
-    if (type === "credit_overpayment") return "Overpayment";
-    if (type === "debit_auto_apply") return "Auto-applied";
-    if (type === "credit_adjustment") return "Adjustment (credit)";
-    if (type === "debit_adjustment") return "Adjustment (debit)";
-    return type;
+  function creditEntryLabel(entry: MembershipCreditEntry) {
+    if (
+      entry.entryType === "credit_adjustment" &&
+      entry.note?.toLowerCase().includes("moved to due")
+    ) {
+      return "Moved to Due";
+    }
+    if (entry.entryType === "credit_overpayment") return "Overpayment";
+    if (entry.entryType === "debit_auto_apply") return "Auto-applied";
+    if (entry.entryType === "credit_adjustment") return "Adjustment (credit)";
+    if (entry.entryType === "debit_adjustment") return "Adjustment (debit)";
+    return entry.entryType;
   }
 
   function getAge(dob: string | null | undefined): number | null {
@@ -1658,7 +1664,7 @@ export default function MembershipDetailPage() {
                                   {new Date(entry.createdAt).toLocaleDateString()}
                                 </td>
                                 <td className="p-3 font-medium">
-                                  {creditEntryLabel(entry.entryType)}
+                                  {creditEntryLabel(entry)}
                                 </td>
                                 <td className="p-3">
                                   {entry.paymentDue?.period ?? "—"}

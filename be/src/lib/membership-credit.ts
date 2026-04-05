@@ -19,6 +19,10 @@ function dueStatusForAmounts(amountDue: Decimal, amountPaid: Decimal): DueStatus
   return "pending";
 }
 
+function isoDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export async function getMembershipCreditBalance(tx: CreditLedgerTx, membershipId: string): Promise<Decimal> {
   const aggregate = await tx.membershipCreditLedger.aggregate({
     where: { membershipId },
@@ -107,4 +111,53 @@ export async function applyAvailableCreditToDue(
   });
 
   return applyAmount;
+}
+
+export async function moveNegativeCreditBalanceToDue(
+  tx: CreditLedgerTx,
+  input: {
+    membershipId: string;
+    organizationId: string;
+    createdByUserId?: string | null;
+    dueDate?: Date;
+    period?: string | null;
+    dueReason?: string | null;
+    ledgerNote?: string | null;
+  }
+): Promise<Decimal> {
+  const creditBalance = await getMembershipCreditBalance(tx, input.membershipId);
+  if (!creditBalance.lt(ZERO)) return ZERO;
+
+  const transferAmount = creditBalance.abs();
+  const dueDate = input.dueDate ?? new Date();
+
+  const due = await tx.paymentDue.create({
+    data: {
+      membershipId: input.membershipId,
+      organizationId: input.organizationId,
+      dueDate,
+      period: input.period?.trim() || `Credit transfer ${isoDateOnly(dueDate)}`,
+      isManual: true,
+      reason: input.dueReason?.trim() || "Credit Balance Transfer",
+      amountDue: transferAmount,
+      amountPaid: ZERO,
+      status: "pending",
+    },
+  });
+
+  await tx.membershipCreditLedger.create({
+    data: {
+      membershipId: input.membershipId,
+      organizationId: input.organizationId,
+      paymentDueId: due.id,
+      amountDelta: transferAmount,
+      entryType: "credit_adjustment",
+      note:
+        input.ledgerNote?.trim() ||
+        `Negative credit balance moved to due ${due.period}`,
+      createdByUserId: input.createdByUserId ?? null,
+    },
+  });
+
+  return transferAmount;
 }
