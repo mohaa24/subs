@@ -207,9 +207,13 @@ export default function MembershipDetailPage() {
   const [manualDueTo, setManualDueTo] = useState("");
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
-  const visibleStatementItems = statementItems.filter(
-    (entry) => !hiddenStatementEntryTypes.includes(entry.entryType)
-  );
+  let visibleRunningBalance = 0;
+  const visibleStatementItems = statementItems
+    .filter((entry) => !hiddenStatementEntryTypes.includes(entry.entryType))
+    .map((entry) => {
+      visibleRunningBalance += entry.debit - entry.credit;
+      return { ...entry, balance: visibleRunningBalance };
+    });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -1166,7 +1170,7 @@ export default function MembershipDetailPage() {
                           <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />
                         </div>
                         <div>
-                          <p className="text-xs font-medium text-muted-foreground">Total Paid</p>
+                          <p className="text-xs font-medium text-muted-foreground">Total Received</p>
                           <p className="text-2xl font-bold tabular-nums text-emerald-600">{balance.totalPaid.toFixed(2)}</p>
                         </div>
                       </div>
@@ -1179,7 +1183,7 @@ export default function MembershipDetailPage() {
                           {balance.outstanding > 0 ? <AlertTriangle className="h-4.5 w-4.5 text-red-600" /> : <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />}
                         </div>
                         <div>
-                          <p className="text-xs font-medium text-muted-foreground">Total Outstanding</p>
+                          <p className="text-xs font-medium text-muted-foreground">Outstanding Dues</p>
                           <p className={`text-2xl font-bold tabular-nums ${balance.outstanding > 0 ? "text-red-600" : "text-emerald-600"}`}>{balance.outstanding.toFixed(2)}</p>
                         </div>
                       </div>
@@ -1381,18 +1385,17 @@ export default function MembershipDetailPage() {
                   <>
                     <div className="space-y-3 md:hidden print:hidden">
                       {visibleStatementItems.map((entry) => {
-                        const isCreditRow = entry.credit > 0 && entry.debit === 0;
-                        const isMemoRow = entry.credit === 0 && entry.debit === 0;
+                        const signedAmount = entry.debit - entry.credit;
+                        const amountTone =
+                          signedAmount > 0
+                            ? "text-red-600"
+                            : signedAmount < 0
+                              ? "text-emerald-600"
+                              : "text-muted-foreground";
                         return (
                         <div
                           key={entry.id}
-                          className={`rounded-md border p-3 ${
-                            isMemoRow
-                              ? "border-sky-200 bg-sky-50/70"
-                              : isCreditRow
-                                ? "border-slate-200 bg-slate-50/80"
-                                : "bg-card"
-                          }`}
+                          className="rounded-md border bg-card p-3"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -1407,15 +1410,10 @@ export default function MembershipDetailPage() {
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                             <div>
-                              <p className="text-muted-foreground">Debit</p>
-                              <p className={`font-medium tabular-nums ${entry.debit > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                                {entry.debit > 0 ? entry.debit.toFixed(2) : "—"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Credit</p>
-                              <p className={`font-medium tabular-nums ${entry.credit > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
-                                {entry.credit > 0 ? entry.credit.toFixed(2) : "—"}
+                              <p className="text-muted-foreground">Amount</p>
+                              <p className={`font-medium tabular-nums ${amountTone}`}>
+                                {signedAmount > 0 ? "+" : signedAmount < 0 ? "" : ""}
+                                {signedAmount !== 0 ? signedAmount.toFixed(2) : "0.00"}
                               </p>
                             </div>
                             <div>
@@ -1476,16 +1474,10 @@ export default function MembershipDetailPage() {
                               Description
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
-                              Reference
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
                               Note
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">
-                              Debit
-                            </th>
-                            <th className="text-right p-3 font-medium text-muted-foreground">
-                              Credit
+                              Amount
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">Balance</th>
                             <th className="text-left p-3 font-medium text-muted-foreground">By</th>
@@ -1497,32 +1489,32 @@ export default function MembershipDetailPage() {
                             <tr
                               key={entry.id}
                               className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
-                                entry.credit === 0 && entry.debit === 0
-                                  ? "bg-sky-50/60"
-                                  : entry.credit > 0 && entry.debit === 0
-                                  ? "bg-slate-50/80"
-                                  : i % 2 === 0
-                                    ? ""
-                                    : "bg-muted/10"
+                                i % 2 === 0 ? "" : "bg-muted/10"
                               }`}
                             >
                               <td className="p-3">
                                 {new Date(entry.occurredAt).toLocaleDateString()}
                               </td>
-                              <td className="p-3 font-medium">
-                                {entry.description}
+                              <td className="p-3">
+                                <div className="font-medium">{entry.description}</div>
+                                {entry.reference ? (
+                                  <div className="mt-0.5 text-xs text-muted-foreground">{entry.reference}</div>
+                                ) : null}
                               </td>
-                              <td className="p-3 text-muted-foreground">
-                                {entry.reference ?? "—"}
-                              </td>
-                              <td className="p-3 text-muted-foreground max-w-[220px] truncate">
+                              <td className="p-3 text-muted-foreground max-w-[260px] truncate">
                                 {entry.note || "—"}
                               </td>
-                              <td className={`p-3 text-right tabular-nums font-semibold ${entry.debit > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                                {entry.debit > 0 ? entry.debit.toFixed(2) : "—"}
-                              </td>
-                              <td className={`p-3 text-right tabular-nums font-semibold ${entry.credit > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
-                                {entry.credit > 0 ? entry.credit.toFixed(2) : "—"}
+                              <td
+                                className={`p-3 text-right tabular-nums font-semibold ${
+                                  entry.debit - entry.credit > 0
+                                    ? "text-red-600"
+                                    : entry.debit - entry.credit < 0
+                                      ? "text-emerald-600"
+                                      : "text-muted-foreground"
+                                }`}
+                              >
+                                {entry.debit - entry.credit > 0 ? "+" : entry.debit - entry.credit < 0 ? "" : ""}
+                                {(entry.debit - entry.credit).toFixed(2)}
                               </td>
                               <td className="p-3 text-right tabular-nums font-semibold">{entry.balance.toFixed(2)}</td>
                               <td className="p-3 text-muted-foreground">{entry.actor || "System"}</td>

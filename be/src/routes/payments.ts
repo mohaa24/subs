@@ -418,18 +418,24 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const [dues, creditBalance] = await Promise.all([
+  const [dues, creditBalance, paymentTotals] = await Promise.all([
     prisma.paymentDue.findMany({
       where: { membershipId: membership.id },
       orderBy: { dueDate: "desc" },
     }),
     prisma.$transaction((tx) => getMembershipCreditBalance(tx, membership.id)),
+    prisma.payment.aggregate({
+      where: { membershipId: membership.id, isReversed: false },
+      _sum: { amount: true },
+    }),
   ]);
 
   const totalDue = dues.reduce((sum, d) => sum.add(d.amountDue), new Decimal(0));
-  const totalPaid = dues.reduce((sum, d) => sum.add(d.amountPaid), new Decimal(0));
-  const outstanding = totalDue.sub(totalPaid);
-  const netOutstanding = outstanding.sub(creditBalance);
+  const totalPaid = paymentTotals._sum.amount ?? new Decimal(0);
+  const settledAgainstDues = dues.reduce((sum, d) => sum.add(d.amountPaid), new Decimal(0));
+  const currentDueOutstanding = totalDue.sub(settledAgainstDues);
+  const availableCredit = creditBalance.gt(new Decimal(0)) ? creditBalance : new Decimal(0);
+  const netOutstanding = currentDueOutstanding.sub(creditBalance);
   const overdueCount = dues.filter(
     (d) => d.status === "pending" || d.status === "partial" || d.status === "overdue"
   ).length;
@@ -439,8 +445,8 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
     membershipNo: membership.membershipNo,
     totalDue: totalDue.toNumber(),
     totalPaid: totalPaid.toNumber(),
-    outstanding: outstanding.toNumber(),
-    creditBalance: creditBalance.toNumber(),
+    outstanding: currentDueOutstanding.toNumber(),
+    creditBalance: availableCredit.toNumber(),
     netOutstanding: netOutstanding.toNumber(),
     overdueCount,
     dues,
@@ -497,6 +503,16 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
     }),
   ]);
 
+  const adjustmentTotalsByDueId = new Map<string, Decimal>();
+  for (const adjustment of adjustments) {
+    adjustmentTotalsByDueId.set(
+      adjustment.paymentDueId,
+      (adjustmentTotalsByDueId.get(adjustment.paymentDueId) ?? new Decimal(0)).add(
+        adjustment.amountDelta
+      )
+    );
+  }
+
   const rawEntries: Array<{
     id: string;
     occurredAt: Date;
@@ -524,6 +540,7 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
   }> = [];
 
   for (const due of dues) {
+    const originalAmountDue = due.amountDue.sub(adjustmentTotalsByDueId.get(due.id) ?? new Decimal(0));
     rawEntries.push({
       id: `due-${due.id}`,
       occurredAt: due.createdAt,
@@ -533,7 +550,7 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       description: describeDueEntry(due.isManual),
       reference: due.period,
       note: due.reason ?? null,
-      debit: due.amountDue,
+      debit: originalAmountDue.gt(new Decimal(0)) ? originalAmountDue : new Decimal(0),
       credit: new Decimal(0),
       actor: null,
       paymentId: null,
