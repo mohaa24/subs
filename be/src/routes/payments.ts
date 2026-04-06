@@ -2,7 +2,6 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   DueStatus,
-  MembershipCreditEntryType,
   PaymentDueAdjustmentType,
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -11,7 +10,7 @@ import { requireAuth, withOrgScope } from "../middleware/auth.js";
 import { queuePaymentReceived } from "../lib/message-queue.js";
 import {
   addOverpaymentCreditEntry,
-  applyAvailableCreditToDue,
+  applyAvailableCreditAcrossOutstandingDues,
   getMembershipCreditBalance,
   moveNegativeCreditBalanceToDue,
   restoreAutoAppliedCreditForPaymentReversal,
@@ -68,67 +67,6 @@ function describeDueEntry(isManual: boolean) {
 function describeDueAdjustment(type: PaymentDueAdjustmentType, amountDelta: Decimal) {
   if (type === "late_fee") return "Late Fee Applied";
   return amountDelta.gte(new Decimal(0)) ? "Due Increased" : "Due Reduced";
-}
-
-function formatMoney(amount: Decimal) {
-  return `Rs. ${amount.abs().toFixed(2)}`;
-}
-
-function joinNoteParts(parts: Array<string | null | undefined>) {
-  return parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(" ");
-}
-
-function describeCreditLedgerEntry(
-  entryType: MembershipCreditEntryType,
-  amountDelta: Decimal,
-  paymentId: string | null
-) {
-  if (entryType === "credit_overpayment") return "Overpayment Moved to Credit";
-  if (entryType === "debit_auto_apply") return "Member Credit Applied";
-  if (entryType === "credit_adjustment") return "Credit Added";
-  if (paymentId) return "Credit Clawback";
-  return amountDelta.lt(new Decimal(0)) ? "Credit Removed" : "Credit Adjusted";
-}
-
-function shouldCreditLedgerEntryAffectBalance(
-  entryType: MembershipCreditEntryType,
-  paymentId: string | null
-) {
-  if (entryType === "credit_overpayment" || entryType === "debit_auto_apply") return false;
-  if (paymentId) return false;
-  return true;
-}
-
-function describeCreditLedgerNote(input: {
-  entryType: MembershipCreditEntryType;
-  amountDelta: Decimal;
-  note: string | null;
-  affectsBalance: boolean;
-}) {
-  const amountLabel = formatMoney(input.amountDelta);
-  const note = input.note?.trim() ?? "";
-  if (input.entryType === "credit_overpayment") {
-    return joinNoteParts([
-      `${amountLabel} moved into member credit.`,
-      note.toLowerCase() === "overpayment moved to member credit" ? null : note,
-    ]);
-  }
-  if (input.entryType === "debit_auto_apply") {
-    return joinNoteParts([
-      `${amountLabel} auto-applied from member credit.`,
-      note.toLowerCase().startsWith("auto-applied credit to due") ? null : note,
-    ]);
-  }
-  if (!input.affectsBalance) {
-    return joinNoteParts([`${amountLabel} reclassified within member credit.`, note]);
-  }
-  if (input.entryType === "credit_adjustment") {
-    return joinNoteParts([`${amountLabel} added to member credit.`, note]);
-  }
-  return joinNoteParts([`${amountLabel} removed from member credit.`, note]);
 }
 
 async function buildReceiptForPayment(paymentId: string) {
@@ -265,10 +203,9 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
           status: "pending",
         },
       });
-      return applyAvailableCreditToDue(tx, {
-        dueId: due.id,
+      return applyAvailableCreditAcrossOutstandingDues(tx, {
+        membershipId: m.id,
         createdByUserId: req.auth!.userId,
-        note: `Auto-applied member credit to ${period} due`,
       });
     });
     created++;
@@ -346,12 +283,9 @@ paymentsRouter.post("/dues", async (req, res) => {
         },
       },
     });
-    const autoAppliedCredit = await applyAvailableCreditToDue(tx, {
-      dueId: due.id,
+    const autoAppliedCredit = await applyAvailableCreditAcrossOutstandingDues(tx, {
+      membershipId: membership.id,
       createdByUserId: req.auth!.userId,
-      note: normalizedReason
-        ? `Auto-applied member credit to manual due: ${normalizedReason}`
-        : "Auto-applied member credit to manual due",
     });
     return { due, autoAppliedCredit };
   });
@@ -377,6 +311,7 @@ paymentsRouter.get("/dues", async (req, res) => {
   const where: any = {};
   if (orgId) where.organizationId = orgId;
   if (membershipId) where.membershipId = membershipId;
+  where.isSystemAdjustment = false;
   if (status) where.status = status;
   if (q) {
     where.membership = {
@@ -422,12 +357,16 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
 
   const [dues, creditBalance, paymentTotals] = await Promise.all([
     prisma.paymentDue.findMany({
-      where: { membershipId: membership.id },
+      where: { membershipId: membership.id, isSystemAdjustment: false },
       orderBy: { dueDate: "desc" },
     }),
     prisma.$transaction((tx) => getMembershipCreditBalance(tx, membership.id)),
     prisma.payment.aggregate({
-      where: { membershipId: membership.id, isReversed: false },
+      where: {
+        membershipId: membership.id,
+        isReversed: false,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
       _sum: { amount: true },
     }),
   ]);
@@ -437,7 +376,7 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
   const settledAgainstDues = dues.reduce((sum, d) => sum.add(d.amountPaid), new Decimal(0));
   const currentDueOutstanding = totalDue.sub(settledAgainstDues);
   const availableCredit = creditBalance.gt(new Decimal(0)) ? creditBalance : new Decimal(0);
-  const netOutstanding = currentDueOutstanding.sub(creditBalance);
+  const netOutstanding = currentDueOutstanding.sub(availableCredit);
   const overdueCount = dues.filter(
     (d) => d.status === "pending" || d.status === "partial" || d.status === "overdue"
   ).length;
@@ -465,9 +404,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const [dues, adjustments, payments, creditEntries] = await Promise.all([
+  const [dues, adjustments, payments] = await Promise.all([
     prisma.paymentDue.findMany({
-      where: { membershipId: membership.id },
+      where: { membershipId: membership.id, isSystemAdjustment: false },
       orderBy: [{ createdAt: "asc" }, { dueDate: "asc" }],
       select: {
         id: true,
@@ -479,7 +418,10 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       },
     }),
     prisma.paymentDueAdjustment.findMany({
-      where: { membershipId: membership.id },
+      where: {
+        membershipId: membership.id,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
       orderBy: { createdAt: "asc" },
       include: {
         paymentDue: { select: { id: true, period: true } },
@@ -487,20 +429,15 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       },
     }),
     prisma.payment.findMany({
-      where: { membershipId: membership.id },
+      where: {
+        membershipId: membership.id,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
       orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
       include: {
         paymentDue: { select: { id: true, period: true } },
         collectedBy: { select: { email: true } },
         reversedBy: { select: { email: true } },
-      },
-    }),
-    prisma.membershipCreditLedger.findMany({
-      where: { membershipId: membership.id },
-      orderBy: { createdAt: "asc" },
-      include: {
-        paymentDue: { select: { id: true, period: true } },
-        createdBy: { select: { email: true } },
       },
     }),
   ]);
@@ -630,51 +567,6 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
         reversible: false,
       });
     }
-  }
-
-  for (const creditEntry of creditEntries) {
-    const affectsBalance = shouldCreditLedgerEntryAffectBalance(
-      creditEntry.entryType,
-      creditEntry.paymentId
-    );
-    const amount = creditEntry.amountDelta.abs();
-    rawEntries.push({
-      id: `credit-${creditEntry.id}`,
-      occurredAt: creditEntry.createdAt,
-      createdAt: creditEntry.createdAt,
-      sortOrder:
-        creditEntry.entryType === "debit_auto_apply"
-          ? 1
-          : creditEntry.entryType === "credit_overpayment"
-            ? 4
-            : 5,
-      entryType: creditEntry.entryType,
-      description: describeCreditLedgerEntry(
-        creditEntry.entryType,
-        creditEntry.amountDelta,
-        creditEntry.paymentId
-      ),
-      reference: creditEntry.paymentDue?.period ?? null,
-      note: describeCreditLedgerNote({
-        entryType: creditEntry.entryType,
-        amountDelta: creditEntry.amountDelta,
-        note: creditEntry.note ?? null,
-        affectsBalance,
-      }),
-      debit:
-        affectsBalance && creditEntry.amountDelta.lt(new Decimal(0))
-          ? amount
-          : new Decimal(0),
-      credit:
-        affectsBalance && creditEntry.amountDelta.gt(new Decimal(0))
-          ? amount
-          : new Decimal(0),
-      actor: creditEntry.createdBy?.email ?? "System",
-      paymentId: creditEntry.paymentId,
-      paymentDueId: creditEntry.paymentDueId,
-      receiptAvailable: false,
-      reversible: false,
-    });
   }
 
   rawEntries.sort((a, b) => {
@@ -816,6 +708,9 @@ paymentsRouter.post("/", async (req, res) => {
     include: { membership: true },
   });
   if (!due) return res.status(404).json({ error: "Payment due not found" });
+  if (due.isSystemAdjustment) {
+    return res.status(409).json({ error: "System adjustment dues cannot be paid manually" });
+  }
   if (req.auth!.organizationId && due.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -860,6 +755,11 @@ paymentsRouter.post("/", async (req, res) => {
         createdByUserId: req.auth!.userId,
         note: "Excess amount moved to member credit",
       });
+
+      await applyAvailableCreditAcrossOutstandingDues(tx, {
+        membershipId: due.membershipId,
+        createdByUserId: req.auth!.userId,
+      });
     }
 
     return createdPayment;
@@ -897,7 +797,10 @@ paymentsRouter.get("/history", async (req, res) => {
 
   const [items, total] = await Promise.all([
     prisma.payment.findMany({
-      where,
+      where: {
+        ...where,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
@@ -913,7 +816,12 @@ paymentsRouter.get("/history", async (req, res) => {
         collectedBy: { select: { id: true, email: true } },
       },
     }),
-    prisma.payment.count({ where }),
+    prisma.payment.count({
+      where: {
+        ...where,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
+    }),
   ]);
 
   return res.json({ items, total, page, limit });
@@ -951,7 +859,10 @@ paymentsRouter.get("/history/:membershipId", async (req, res) => {
 
   const [items, total] = await Promise.all([
     prisma.payment.findMany({
-      where: { membershipId: membership.id },
+      where: {
+        membershipId: membership.id,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { paymentDate: "desc" },
@@ -960,7 +871,12 @@ paymentsRouter.get("/history/:membershipId", async (req, res) => {
         collectedBy: { select: { id: true, email: true } },
       },
     }),
-    prisma.payment.count({ where: { membershipId: membership.id } }),
+    prisma.payment.count({
+      where: {
+        membershipId: membership.id,
+        paymentDue: { is: { isSystemAdjustment: false } },
+      },
+    }),
   ]);
 
   return res.json({ items, total, page, limit });
@@ -1051,15 +967,6 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
       });
     }
 
-    await moveNegativeCreditBalanceToDue(tx, {
-      membershipId: payment.membershipId,
-      organizationId: payment.organizationId,
-      createdByUserId: req.auth!.userId,
-      dueDate: new Date(),
-      period: due.period,
-      dueReason: "Credit Balance Transfer",
-      ledgerNote: `Negative credit balance moved to due after payment reversal: ${parsed.data.reason}`,
-    });
   });
 
   return res.json({ success: true, message: "Payment reversed" });
@@ -1082,21 +989,29 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
 
   const due = await prisma.paymentDue.findUnique({ where: { id: req.params.id } });
   if (!due) return res.status(404).json({ error: "Due not found" });
+  if (due.isSystemAdjustment) {
+    return res.status(409).json({ error: "System adjustment dues cannot be edited" });
+  }
   if (req.auth!.organizationId && due.organizationId !== req.auth!.organizationId && req.auth!.role !== "super_user") {
     return res.status(403).json({ error: "Forbidden" });
   }
 
   const newAmountDue = toDecimal(parsed.data.amountDue);
   const amountDelta = newAmountDue.sub(due.amountDue);
-  let newStatus: DueStatus = "pending";
-  if (due.amountPaid.gt(new Decimal(0))) newStatus = "partial";
-  if (due.amountPaid.gte(newAmountDue)) newStatus = "paid";
 
   const updated = await prisma.$transaction(async (tx) => {
+    const normalizedAmountPaid = minDecimal(due.amountPaid, newAmountDue);
+    const excessSettledAmount = maxDecimal(due.amountPaid.sub(normalizedAmountPaid), new Decimal(0));
+    let newStatus: DueStatus = "pending";
+    if (normalizedAmountPaid.gt(new Decimal(0))) newStatus = "partial";
+    if (normalizedAmountPaid.gte(newAmountDue)) newStatus = "paid";
+    if (due.status === "overdue" && newStatus !== "paid") newStatus = "overdue";
+
     const nextDue = await tx.paymentDue.update({
       where: { id: due.id },
       data: {
         amountDue: newAmountDue,
+        amountPaid: normalizedAmountPaid,
         status: newStatus,
       },
       include: {
@@ -1123,7 +1038,29 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
       });
     }
 
-    return nextDue;
+    if (excessSettledAmount.gt(new Decimal(0))) {
+      await tx.membershipCreditLedger.create({
+        data: {
+          membershipId: due.membershipId,
+          organizationId: due.organizationId,
+          paymentDueId: due.id,
+          amountDelta: excessSettledAmount,
+          entryType: "credit_adjustment",
+          note: `Excess settled amount moved to member credit after due reduction: ${parsed.data.reason}`,
+          createdByUserId: req.auth!.userId,
+        },
+      });
+    }
+
+    const autoAppliedCredit = await applyAvailableCreditAcrossOutstandingDues(tx, {
+      membershipId: due.membershipId,
+      createdByUserId: req.auth!.userId,
+    });
+
+    return {
+      ...nextDue,
+      autoAppliedCredit: autoAppliedCredit.toNumber(),
+    };
   });
 
   return res.json(updated);
@@ -1145,6 +1082,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
 
   const where: any = {
     paymentDate: { gte: from, lte: to },
+    paymentDue: { is: { isSystemAdjustment: false } },
   };
   if (orgId) where.organizationId = orgId;
 
@@ -1224,6 +1162,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
 paymentsRouter.post("/mark-overdue", async (req, res) => {
   const orgId = getOrgId(req);
   const where: any = {
+    isSystemAdjustment: false,
     status: { in: ["pending", "partial"] },
     dueDate: { lt: new Date() },
     OR: [

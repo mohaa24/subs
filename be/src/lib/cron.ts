@@ -1,6 +1,6 @@
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "./prisma.js";
-import { applyAvailableCreditToDue } from "./membership-credit.js";
+import { applyAvailableCreditAcrossOutstandingDues } from "./membership-credit.js";
 import {
   queuePaymentDueGenerated,
   queuePaymentOverdue,
@@ -56,9 +56,8 @@ export async function generateMonthlyDues() {
           status: "pending",
         },
       });
-      return applyAvailableCreditToDue(tx, {
-        dueId: due.id,
-        note: `Auto-applied member credit to ${period} due`,
+      return applyAvailableCreditAcrossOutstandingDues(tx, {
+        membershipId: m.id,
       });
     });
     created++;
@@ -93,6 +92,7 @@ export async function applyLateFees() {
 
   const overdueDues = await prisma.paymentDue.findMany({
     where: {
+      isSystemAdjustment: false,
       status: { in: ["pending", "partial", "overdue"] },
       dueDate: { lt: now },
       lateFeeApplied: { equals: new Decimal(0) },
@@ -168,6 +168,7 @@ export async function markOverdueDues() {
   const now = new Date();
   const dues = await prisma.paymentDue.findMany({
     where: {
+      isSystemAdjustment: false,
       status: { in: ["pending", "partial"] },
       dueDate: { lt: now },
       OR: [

@@ -4,6 +4,7 @@ import { Decimal } from "@prisma/client/runtime/library";
 const ZERO = new Decimal(0);
 
 export type CreditLedgerTx = Prisma.TransactionClient;
+type CreditLot = { paymentId: string | null; remaining: Decimal };
 
 function maxDecimal(a: Decimal, b: Decimal): Decimal {
   return a.gte(b) ? a : b;
@@ -21,6 +22,45 @@ function dueStatusForAmounts(amountDue: Decimal, amountPaid: Decimal): DueStatus
 
 function isoDateOnly(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+async function getAvailableCreditLots(
+  tx: CreditLedgerTx,
+  membershipId: string
+): Promise<CreditLot[]> {
+  const creditEntries = await tx.membershipCreditLedger.findMany({
+    where: { membershipId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      paymentId: true,
+      amountDelta: true,
+    },
+  });
+
+  const availableLots: CreditLot[] = [];
+  for (const entry of creditEntries) {
+    if (entry.amountDelta.gt(ZERO)) {
+      availableLots.push({
+        paymentId: entry.paymentId ?? null,
+        remaining: entry.amountDelta,
+      });
+      continue;
+    }
+
+    if (!entry.amountDelta.lt(ZERO)) continue;
+
+    let remainingToConsume = entry.amountDelta.abs();
+    for (const lot of availableLots) {
+      if (!remainingToConsume.gt(ZERO)) break;
+      if (!lot.remaining.gt(ZERO)) continue;
+
+      const consumed = minDecimal(lot.remaining, remainingToConsume);
+      lot.remaining = lot.remaining.sub(consumed);
+      remainingToConsume = remainingToConsume.sub(consumed);
+    }
+  }
+
+  return availableLots;
 }
 
 export async function getMembershipCreditBalance(tx: CreditLedgerTx, membershipId: string): Promise<Decimal> {
@@ -88,38 +128,7 @@ export async function applyAvailableCreditToDue(
   const applyAmount = minDecimal(remaining, creditBalance);
   if (!applyAmount.gt(ZERO)) return ZERO;
 
-  const creditEntries = await tx.membershipCreditLedger.findMany({
-    where: { membershipId: due.membershipId },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: {
-      id: true,
-      paymentId: true,
-      amountDelta: true,
-    },
-  });
-
-  const availableLots: Array<{ paymentId: string | null; remaining: Decimal }> = [];
-  for (const entry of creditEntries) {
-    if (entry.amountDelta.gt(ZERO)) {
-      availableLots.push({
-        paymentId: entry.paymentId ?? null,
-        remaining: entry.amountDelta,
-      });
-      continue;
-    }
-
-    if (!entry.amountDelta.lt(ZERO)) continue;
-
-    let remainingToConsume = entry.amountDelta.abs();
-    for (const lot of availableLots) {
-      if (!remainingToConsume.gt(ZERO)) break;
-      if (!lot.remaining.gt(ZERO)) continue;
-
-      const consumed = minDecimal(lot.remaining, remainingToConsume);
-      lot.remaining = lot.remaining.sub(consumed);
-      remainingToConsume = remainingToConsume.sub(consumed);
-    }
-  }
+  const availableLots = await getAvailableCreditLots(tx, due.membershipId);
 
   const nextPaid = due.amountPaid.add(applyAmount);
 
@@ -152,6 +161,17 @@ export async function applyAvailableCreditToDue(
       },
     });
 
+    await tx.membershipCreditAllocation.create({
+      data: {
+        membershipId: due.membershipId,
+        organizationId: due.organizationId,
+        paymentDueId: due.id,
+        sourcePaymentId: lot.paymentId,
+        amount: consumed,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
+
     lot.remaining = lot.remaining.sub(consumed);
     remainingToApply = remainingToApply.sub(consumed);
   }
@@ -168,9 +188,68 @@ export async function applyAvailableCreditToDue(
         createdByUserId: input.createdByUserId ?? null,
       },
     });
+
+    await tx.membershipCreditAllocation.create({
+      data: {
+        membershipId: due.membershipId,
+        organizationId: due.organizationId,
+        paymentDueId: due.id,
+        amount: remainingToApply,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
   }
 
   return applyAmount;
+}
+
+export async function applyAvailableCreditAcrossOutstandingDues(
+  tx: CreditLedgerTx,
+  input: {
+    membershipId: string;
+    createdByUserId?: string | null;
+  }
+): Promise<Decimal> {
+  // Credit settles the oldest outstanding dues first; UI sort order is only
+  // presentation and should not change payment allocation behavior.
+  const openDues = await tx.paymentDue.findMany({
+    where: {
+      membershipId: input.membershipId,
+      isSystemAdjustment: false,
+      status: { in: ["pending", "partial", "overdue"] },
+    },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      period: true,
+      reason: true,
+      isManual: true,
+      amountDue: true,
+      amountPaid: true,
+    },
+  });
+
+  let totalApplied = ZERO;
+
+  for (const due of openDues) {
+    const remaining = maxDecimal(due.amountDue.sub(due.amountPaid), ZERO);
+    if (!remaining.gt(ZERO)) continue;
+
+    const applied = await applyAvailableCreditToDue(tx, {
+      dueId: due.id,
+      createdByUserId: input.createdByUserId ?? null,
+      note: due.isManual
+        ? due.reason?.trim()
+          ? `Auto-applied member credit to manual due: ${due.reason.trim()}`
+          : "Auto-applied member credit to manual due"
+        : `Auto-applied member credit to ${due.period} due`,
+    });
+
+    totalApplied = totalApplied.add(applied);
+    if (!applied.gt(ZERO)) break;
+  }
+
+  return totalApplied;
 }
 
 export async function moveNegativeCreditBalanceToDue(
@@ -198,6 +277,7 @@ export async function moveNegativeCreditBalanceToDue(
       dueDate,
       period: input.period?.trim() || `Credit transfer ${isoDateOnly(dueDate)}`,
       isManual: true,
+      isSystemAdjustment: true,
       reason: input.dueReason?.trim() || "Credit Balance Transfer",
       amountDue: transferAmount,
       amountPaid: ZERO,
@@ -232,6 +312,39 @@ export async function restoreAutoAppliedCreditForPaymentReversal(
     reason: string;
   }
 ): Promise<Decimal> {
+  const directAllocations = await tx.membershipCreditAllocation.findMany({
+    where: {
+      membershipId: input.membershipId,
+      sourcePaymentId: input.paymentId,
+      reversedAt: null,
+    },
+    select: {
+      id: true,
+      paymentDueId: true,
+      amount: true,
+    },
+  });
+
+  if (directAllocations.length > 0) {
+    const restoredByDueId = new Map<string, Decimal>();
+    for (const allocation of directAllocations) {
+      restoredByDueId.set(
+        allocation.paymentDueId,
+        (restoredByDueId.get(allocation.paymentDueId) ?? ZERO).add(allocation.amount)
+      );
+    }
+
+    return restoreCreditIntoDues(tx, {
+      membershipId: input.membershipId,
+      organizationId: input.organizationId,
+      paymentId: input.paymentId,
+      createdByUserId: input.createdByUserId,
+      reason: input.reason,
+      restoredByDueId,
+      allocationIds: directAllocations.map((allocation) => allocation.id),
+    });
+  }
+
   const directAutoApplyEntries = await tx.membershipCreditLedger.findMany({
     where: {
       membershipId: input.membershipId,
@@ -334,6 +447,7 @@ async function restoreCreditIntoDues(
     createdByUserId?: string | null;
     reason: string;
     restoredByDueId: Map<string, Decimal>;
+    allocationIds?: string[];
   }
 ): Promise<Decimal> {
   const affectedDueIds = Array.from(input.restoredByDueId.keys());
@@ -350,6 +464,7 @@ async function restoreCreditIntoDues(
   const dueById = new Map(affectedDues.map((due) => [due.id, due]));
 
   let totalRestored = ZERO;
+  const reversedAt = new Date();
 
   for (const dueId of affectedDueIds) {
     const due = dueById.get(dueId);
@@ -387,6 +502,17 @@ async function restoreCreditIntoDues(
     });
 
     totalRestored = totalRestored.add(actualRestore);
+  }
+
+  if (input.allocationIds?.length) {
+    await tx.membershipCreditAllocation.updateMany({
+      where: { id: { in: input.allocationIds } },
+      data: {
+        reversedAt,
+        reversedByUserId: input.createdByUserId ?? null,
+        reversalReason: input.reason,
+      },
+    });
   }
 
   return totalRestored;

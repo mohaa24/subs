@@ -35,6 +35,7 @@ model Organization {
   paymentDues        PaymentDue[]
   payments           Payment[]
   membershipCreditEntries MembershipCreditLedger[]
+  membershipCreditAllocations MembershipCreditAllocation[]
   billing            OrganizationBilling[]
   formFieldConfigs   FormFieldConfig[]
   announcementGroups AnnouncementGroup[]
@@ -87,6 +88,8 @@ model User {
   billingMarks        OrganizationBilling[] @relation("BillingMarkedBy")
   distributionRecords DistributionRecord[]  @relation("DistributedByUser")
   createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
+  createdCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationCreatedBy")
+  reversedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationReversedBy")
   createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
   createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
 }
@@ -349,6 +352,7 @@ model Membership {
   dues         PaymentDue[]
   payments     Payment[]
   creditLedgerEntries MembershipCreditLedger[]
+  creditAllocations MembershipCreditAllocation[]
   activityFeedItems    ActivityFeedItem[]
   dueAdjustments       PaymentDueAdjustment[]
 }
@@ -405,6 +409,7 @@ model PaymentDue {
   dueDate        DateTime
   period         String
   isManual       Boolean   @default(false)
+  isSystemAdjustment Boolean   @default(false)
   reason         String?   @db.Text
   periodStart    DateTime?
   periodEnd      DateTime?
@@ -420,6 +425,7 @@ model PaymentDue {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payments     Payment[]
   creditEntries MembershipCreditLedger[]
+  creditAllocations MembershipCreditAllocation[]
   adjustments  PaymentDueAdjustment[]
 
   @@index([membershipId, period])
@@ -467,6 +473,7 @@ model Payment {
   collectedBy  User         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
   reversedBy   User?        @relation("ReversedByUser", fields: [reversedByUserId], references: [id])
   creditEntries MembershipCreditLedger[]
+  sourcedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationSourcePayment")
 }
 
 enum MembershipCreditEntryType {
@@ -530,6 +537,31 @@ model MembershipCreditLedger {
 
   @@index([membershipId, createdAt])
   @@index([organizationId, createdAt])
+}
+
+model MembershipCreditAllocation {
+  id               String    @id @default(cuid())
+  membershipId     String
+  organizationId   String
+  paymentDueId     String
+  sourcePaymentId  String?
+  amount           Decimal   @db.Decimal(12, 2)
+  createdByUserId  String?
+  createdAt        DateTime  @default(now())
+  reversedAt       DateTime?
+  reversedByUserId String?
+  reversalReason   String?   @db.Text
+
+  membership    Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentDue    PaymentDue   @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  sourcePayment Payment?     @relation("CreditAllocationSourcePayment", fields: [sourcePaymentId], references: [id], onDelete: SetNull)
+  createdBy     User?        @relation("CreditAllocationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  reversedBy    User?        @relation("CreditAllocationReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([membershipId, createdAt])
+  @@index([paymentDueId, createdAt])
+  @@index([sourcePaymentId, createdAt])
 }
 
 // ─── Announcements ───────────────────────────────────────────────
