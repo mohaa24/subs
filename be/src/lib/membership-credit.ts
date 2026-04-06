@@ -5,6 +5,17 @@ const ZERO = new Decimal(0);
 
 export type CreditLedgerTx = Prisma.TransactionClient;
 type CreditLot = { paymentId: string | null; remaining: Decimal };
+type CreditSweepDue = {
+  id: string;
+  membershipId: string;
+  organizationId: string;
+  period: string;
+  reason: string | null;
+  isManual: boolean;
+  amountDue: Decimal;
+  amountPaid: Decimal;
+  status: DueStatus;
+};
 
 function maxDecimal(a: Decimal, b: Decimal): Decimal {
   return a.gte(b) ? a : b;
@@ -22,6 +33,117 @@ function dueStatusForAmounts(amountDue: Decimal, amountPaid: Decimal): DueStatus
 
 function isoDateOnly(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+function buildAutoApplyCreditNote(due: Pick<CreditSweepDue, "isManual" | "reason" | "period">) {
+  if (due.isManual) {
+    return due.reason?.trim()
+      ? `Auto-applied member credit to manual due: ${due.reason.trim()}`
+      : "Auto-applied member credit to manual due";
+  }
+
+  return `Auto-applied member credit to ${due.period} due`;
+}
+
+async function applyCreditLotsToDue(
+  tx: CreditLedgerTx,
+  input: {
+    due: CreditSweepDue;
+    availableLots: CreditLot[];
+    createdByUserId?: string | null;
+    note?: string | null;
+  }
+): Promise<Decimal> {
+  const remainingDue = maxDecimal(input.due.amountDue.sub(input.due.amountPaid), ZERO);
+  if (!remainingDue.gt(ZERO)) return ZERO;
+
+  const availableCredit = input.availableLots.reduce(
+    (sum, lot) => sum.add(lot.remaining),
+    ZERO
+  );
+  const applyAmount = minDecimal(remainingDue, availableCredit);
+  if (!applyAmount.gt(ZERO)) return ZERO;
+
+  const nextPaid = input.due.amountPaid.add(applyAmount);
+  let nextStatus = dueStatusForAmounts(input.due.amountDue, nextPaid);
+  if (input.due.status === "overdue" && nextStatus !== "paid") {
+    nextStatus = "overdue";
+  }
+
+  await tx.paymentDue.update({
+    where: { id: input.due.id },
+    data: {
+      amountPaid: nextPaid,
+      status: nextStatus,
+    },
+  });
+
+  const ledgerRows: Prisma.MembershipCreditLedgerCreateManyInput[] = [];
+  const allocationRows: Prisma.MembershipCreditAllocationCreateManyInput[] = [];
+  let remainingToApply = applyAmount;
+  for (const lot of input.availableLots) {
+    if (!remainingToApply.gt(ZERO)) break;
+    if (!lot.remaining.gt(ZERO)) continue;
+
+    const consumed = minDecimal(lot.remaining, remainingToApply);
+    if (!consumed.gt(ZERO)) continue;
+
+    ledgerRows.push({
+      membershipId: input.due.membershipId,
+      organizationId: input.due.organizationId,
+      paymentId: lot.paymentId,
+      paymentDueId: input.due.id,
+      amountDelta: consumed.neg(),
+      entryType: "debit_auto_apply",
+      note: input.note ?? `Auto-applied credit to due ${input.due.period}`,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+    allocationRows.push({
+      membershipId: input.due.membershipId,
+      organizationId: input.due.organizationId,
+      paymentDueId: input.due.id,
+      sourcePaymentId: lot.paymentId,
+      amount: consumed,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+
+    lot.remaining = lot.remaining.sub(consumed);
+    remainingToApply = remainingToApply.sub(consumed);
+  }
+
+  if (remainingToApply.gt(ZERO)) {
+    ledgerRows.push({
+      membershipId: input.due.membershipId,
+      organizationId: input.due.organizationId,
+      paymentDueId: input.due.id,
+      amountDelta: remainingToApply.neg(),
+      entryType: "debit_auto_apply",
+      note: input.note ?? `Auto-applied credit to due ${input.due.period}`,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+    allocationRows.push({
+      membershipId: input.due.membershipId,
+      organizationId: input.due.organizationId,
+      paymentDueId: input.due.id,
+      amount: remainingToApply,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+  }
+
+  // Reversal and due-creation flows can fan one payment out into several lots.
+  // Batching those audit inserts cuts many round-trips out of the interactive
+  // transaction and helps avoid "transaction already closed" timeouts on prod.
+  if (ledgerRows.length > 0) {
+    await tx.membershipCreditLedger.createMany({ data: ledgerRows });
+  }
+  if (allocationRows.length > 0) {
+    await tx.membershipCreditAllocation.createMany({ data: allocationRows });
+  }
+
+  input.due.amountPaid = nextPaid;
+  input.due.status = nextStatus;
+
+  return applyAmount;
 }
 
 async function getAvailableCreditLots(
@@ -114,93 +236,23 @@ export async function applyAvailableCreditToDue(
       membershipId: true,
       organizationId: true,
       period: true,
+      reason: true,
+      isManual: true,
       amountDue: true,
       amountPaid: true,
+      status: true,
     },
   });
 
   if (!due) throw new Error("Due not found while applying member credit");
 
-  const remaining = maxDecimal(due.amountDue.sub(due.amountPaid), ZERO);
-  if (!remaining.gt(ZERO)) return ZERO;
-
-  const creditBalance = await getMembershipCreditBalance(tx, due.membershipId);
-  const applyAmount = minDecimal(remaining, creditBalance);
-  if (!applyAmount.gt(ZERO)) return ZERO;
-
   const availableLots = await getAvailableCreditLots(tx, due.membershipId);
-
-  const nextPaid = due.amountPaid.add(applyAmount);
-
-  await tx.paymentDue.update({
-    where: { id: due.id },
-    data: {
-      amountPaid: nextPaid,
-      status: dueStatusForAmounts(due.amountDue, nextPaid),
-    },
+  return applyCreditLotsToDue(tx, {
+    due,
+    availableLots,
+    createdByUserId: input.createdByUserId ?? null,
+    note: input.note ?? buildAutoApplyCreditNote(due),
   });
-
-  let remainingToApply = applyAmount;
-  for (const lot of availableLots) {
-    if (!remainingToApply.gt(ZERO)) break;
-    if (!lot.remaining.gt(ZERO)) continue;
-
-    const consumed = minDecimal(lot.remaining, remainingToApply);
-    if (!consumed.gt(ZERO)) continue;
-
-    await tx.membershipCreditLedger.create({
-      data: {
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentId: lot.paymentId,
-        paymentDueId: due.id,
-        amountDelta: consumed.neg(),
-        entryType: "debit_auto_apply",
-        note: input.note ?? `Auto-applied credit to due ${due.period}`,
-        createdByUserId: input.createdByUserId ?? null,
-      },
-    });
-
-    await tx.membershipCreditAllocation.create({
-      data: {
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentDueId: due.id,
-        sourcePaymentId: lot.paymentId,
-        amount: consumed,
-        createdByUserId: input.createdByUserId ?? null,
-      },
-    });
-
-    lot.remaining = lot.remaining.sub(consumed);
-    remainingToApply = remainingToApply.sub(consumed);
-  }
-
-  if (remainingToApply.gt(ZERO)) {
-    await tx.membershipCreditLedger.create({
-      data: {
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentDueId: due.id,
-        amountDelta: remainingToApply.neg(),
-        entryType: "debit_auto_apply",
-        note: input.note ?? `Auto-applied credit to due ${due.period}`,
-        createdByUserId: input.createdByUserId ?? null,
-      },
-    });
-
-    await tx.membershipCreditAllocation.create({
-      data: {
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentDueId: due.id,
-        amount: remainingToApply,
-        createdByUserId: input.createdByUserId ?? null,
-      },
-    });
-  }
-
-  return applyAmount;
 }
 
 export async function applyAvailableCreditAcrossOutstandingDues(
@@ -210,8 +262,16 @@ export async function applyAvailableCreditAcrossOutstandingDues(
     createdByUserId?: string | null;
   }
 ): Promise<Decimal> {
+  // Reversal often ends with no usable credit left after clawback. Bail out
+  // before loading dues/ledger details when there is nothing positive to apply.
+  const creditBalance = await getMembershipCreditBalance(tx, input.membershipId);
+  if (!creditBalance.gt(ZERO)) return ZERO;
+
   // Credit settles the oldest outstanding dues first; UI sort order is only
   // presentation and should not change payment allocation behavior.
+  // We also build the remaining credit lots once and reuse them across the
+  // whole sweep so the server does not replay the full credit ledger for every
+  // single due inside one interactive transaction.
   const openDues = await tx.paymentDue.findMany({
     where: {
       membershipId: input.membershipId,
@@ -220,33 +280,40 @@ export async function applyAvailableCreditAcrossOutstandingDues(
     },
     orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     select: {
+      membershipId: true,
+      organizationId: true,
       id: true,
       period: true,
       reason: true,
       isManual: true,
       amountDue: true,
       amountPaid: true,
+      status: true,
     },
   });
+  if (openDues.length === 0) return ZERO;
+
+  const availableLots = await getAvailableCreditLots(tx, input.membershipId);
+  let remainingCredit = availableLots.reduce((sum, lot) => sum.add(lot.remaining), ZERO);
+  if (!remainingCredit.gt(ZERO)) return ZERO;
 
   let totalApplied = ZERO;
 
   for (const due of openDues) {
+    if (!remainingCredit.gt(ZERO)) break;
+
     const remaining = maxDecimal(due.amountDue.sub(due.amountPaid), ZERO);
     if (!remaining.gt(ZERO)) continue;
 
-    const applied = await applyAvailableCreditToDue(tx, {
-      dueId: due.id,
+    const applied = await applyCreditLotsToDue(tx, {
+      due,
+      availableLots,
       createdByUserId: input.createdByUserId ?? null,
-      note: due.isManual
-        ? due.reason?.trim()
-          ? `Auto-applied member credit to manual due: ${due.reason.trim()}`
-          : "Auto-applied member credit to manual due"
-        : `Auto-applied member credit to ${due.period} due`,
+      note: buildAutoApplyCreditNote(due),
     });
 
     totalApplied = totalApplied.add(applied);
-    if (!applied.gt(ZERO)) break;
+    remainingCredit = maxDecimal(remainingCredit.sub(applied), ZERO);
   }
 
   return totalApplied;

@@ -8,6 +8,13 @@ import {
   queueOrgBillingDue,
 } from "./message-queue.js";
 
+// Monthly due generation can auto-apply credit across several older dues, so
+// the cron path uses the same relaxed timeout as the interactive payment flows.
+const CREDIT_SWEEP_TRANSACTION_OPTIONS = {
+  maxWait: 10000,
+  timeout: 10000,
+} as const;
+
 function periodString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -59,7 +66,7 @@ export async function generateMonthlyDues() {
       return applyAvailableCreditAcrossOutstandingDues(tx, {
         membershipId: m.id,
       });
-    });
+    }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
     created++;
     autoAppliedCredit = autoAppliedCredit.add(applied);
 

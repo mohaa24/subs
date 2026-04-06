@@ -21,6 +21,14 @@ export const paymentsRouter = Router();
 paymentsRouter.use(requireAuth);
 paymentsRouter.use(withOrgScope);
 
+// Prisma interactive transactions default to 5 seconds. The payment flows below
+// can now touch several dues plus credit-ledger/allocation rows in one request,
+// so we give the optimized sweep a little headroom for real server/DB latency.
+const CREDIT_SWEEP_TRANSACTION_OPTIONS = {
+  maxWait: 10000,
+  timeout: 10000,
+} as const;
+
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
@@ -207,7 +215,7 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
         membershipId: m.id,
         createdByUserId: req.auth!.userId,
       });
-    });
+    }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
     created++;
     autoAppliedCredit = autoAppliedCredit.add(applied);
   }
@@ -288,7 +296,7 @@ paymentsRouter.post("/dues", async (req, res) => {
       createdByUserId: req.auth!.userId,
     });
     return { due, autoAppliedCredit };
-  });
+  }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
   return res.status(201).json({
     ...created.due,
@@ -763,7 +771,7 @@ paymentsRouter.post("/", async (req, res) => {
     }
 
     return createdPayment;
-  });
+  }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
   const membership = await prisma.membership.findUnique({
     where: { id: due.membershipId },
@@ -967,12 +975,18 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
       });
     }
 
-    await applyAvailableCreditAcrossOutstandingDues(tx, {
-      membershipId: payment.membershipId,
-      createdByUserId: req.auth!.userId,
-    });
+    // A reversal can finish with zero usable credit after restored allocations
+    // and the clawback cancel each other out. Skipping the final sweep in that
+    // case avoids the most expensive part of the transaction for no benefit.
+    const remainingCredit = await getMembershipCreditBalance(tx, payment.membershipId);
+    if (remainingCredit.gt(new Decimal(0))) {
+      await applyAvailableCreditAcrossOutstandingDues(tx, {
+        membershipId: payment.membershipId,
+        createdByUserId: req.auth!.userId,
+      });
+    }
 
-  });
+  }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
   return res.json({ success: true, message: "Payment reversed" });
 });
@@ -1066,7 +1080,7 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
       ...nextDue,
       autoAppliedCredit: autoAppliedCredit.toNumber(),
     };
-  });
+  }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
   return res.json(updated);
 });
