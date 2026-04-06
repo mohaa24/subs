@@ -626,7 +626,7 @@ export default function PaymentsPage() {
                           <p className="font-medium tabular-nums">{Number(p.amount).toFixed(2)}</p>
                         </div>
                         <div className="col-span-2">
-                          <p className="text-muted-foreground">Collected By</p>
+                          <p className="text-muted-foreground">User ID</p>
                           <p className="font-medium">{p.collectedBy?.email ?? "—"}</p>
                         </div>
                       </div>
@@ -659,7 +659,7 @@ export default function PaymentsPage() {
                         <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
                         <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.amount")}</th>
-                        <th className="text-left p-2.5 font-medium">Collected By</th>
+                        <th className="text-left p-2.5 font-medium">User ID</th>
                         <th className="text-center p-2.5 font-medium">Status</th>
                         <th className="text-right p-2.5 font-medium"></th>
                       </tr>

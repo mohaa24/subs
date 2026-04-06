@@ -124,6 +124,7 @@ export async function applyLateFees() {
 
     const feePercentage = orgFeeMap.get(due.organizationId) ?? new Decimal(5);
     const lateFee = due.amountDue.mul(feePercentage).div(100);
+    if (lateFee.lte(new Decimal(0))) continue;
 
     await prisma.$transaction(async (tx) => {
       await tx.paymentDue.update({

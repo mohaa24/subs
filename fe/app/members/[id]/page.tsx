@@ -39,6 +39,8 @@ import {
 import {
   ChevronLeft,
   ChevronRight,
+  ArrowDownWideNarrow,
+  ArrowUpWideNarrow,
   QrCode,
   Download,
   Edit,
@@ -75,6 +77,7 @@ import {
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
 import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
+import { downloadCsv } from "@/lib/export-csv";
 import {
   PaymentReceiptDialog,
   type PaymentReceiptData,
@@ -110,6 +113,43 @@ const hiddenStatementEntryTypes: PaymentStatementItem["entryType"][] = [
   "credit_adjustment",
   "debit_adjustment",
 ];
+
+function shouldHideStatementEntry(entry: PaymentStatementItem) {
+  if (hiddenStatementEntryTypes.includes(entry.entryType)) return true;
+
+  const normalizedNote = entry.note?.trim().toLowerCase();
+  if (
+    entry.entryType === "due" &&
+    normalizedNote === "credit balance transfer"
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+type SortOrder = "asc" | "desc";
+
+function formatAmountCell(value: number | string | null | undefined) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function SortToggleButton({
+  order,
+  onToggle,
+}: {
+  order: SortOrder;
+  onToggle: () => void;
+}) {
+  const Icon = order === "desc" ? ArrowDownWideNarrow : ArrowUpWideNarrow;
+  return (
+    <Button size="sm" variant="outline" className="gap-1.5" onClick={onToggle}>
+      <Icon className="h-4 w-4" />
+      {order === "desc" ? "Newest First" : "Oldest First"}
+    </Button>
+  );
+}
 
 function PersonAvatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
   const initials = name
@@ -176,6 +216,9 @@ export default function MembershipDetailPage() {
   const [creditBalance, setCreditBalance] = useState(0);
   const [creditPage, setCreditPage] = useState(1);
   const creditLimit = 20;
+  const [duesSortOrder, setDuesSortOrder] = useState<SortOrder>("desc");
+  const [statementSortOrder, setStatementSortOrder] = useState<SortOrder>("desc");
+  const [creditSortOrder, setCreditSortOrder] = useState<SortOrder>("desc");
 
   const [zones, setZones] = useState<Zone[]>([]);
 
@@ -208,8 +251,8 @@ export default function MembershipDetailPage() {
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   let visibleRunningBalance = 0;
-  const visibleStatementItems = statementItems
-    .filter((entry) => !hiddenStatementEntryTypes.includes(entry.entryType))
+  const chronologicalStatementItems = statementItems
+    .filter((entry) => !shouldHideStatementEntry(entry))
     .map((entry) => {
       visibleRunningBalance += entry.debit - entry.credit;
       return { ...entry, balance: visibleRunningBalance };
@@ -248,7 +291,7 @@ export default function MembershipDetailPage() {
   const loadCreditLedger = useCallback(() => {
     if (!user || !id) return;
     api<{ entries: MembershipCreditEntry[]; total: number; balance: number }>(`/payments/credit/${id}`, {
-      params: { page: String(creditPage), limit: String(creditLimit) },
+      params: { page: String(creditPage), limit: String(creditLimit), order: creditSortOrder },
     })
       .then((r) => {
         setCreditEntries(r.entries);
@@ -260,7 +303,7 @@ export default function MembershipDetailPage() {
         setCreditTotal(0);
         setCreditBalance(0);
       });
-  }, [user, id, creditPage]);
+  }, [user, id, creditPage, creditSortOrder]);
 
   useEffect(() => {
     loadBalance();
@@ -633,6 +676,66 @@ export default function MembershipDetailPage() {
     if (entry.entryType === "credit_adjustment") return "Adjustment (credit)";
     if (entry.entryType === "debit_adjustment") return "Adjustment (debit)";
     return entry.entryType;
+  }
+
+  const duesItems = balance
+    ? [...balance.dues].sort((a, b) => {
+        const dueDateDiff = new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        if (dueDateDiff !== 0) {
+          return duesSortOrder === "desc" ? -dueDateDiff : dueDateDiff;
+        }
+        const createdAtDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        return duesSortOrder === "desc" ? -createdAtDiff : createdAtDiff;
+      })
+    : [];
+
+  const visibleStatementItems =
+    statementSortOrder === "desc"
+      ? [...chronologicalStatementItems].reverse()
+      : chronologicalStatementItems;
+
+  const csvBaseName =
+    membership.membershipNo
+      .trim()
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "membership";
+
+  function toggleSortOrder(current: SortOrder, setter: (value: SortOrder) => void) {
+    setter(current === "desc" ? "asc" : "desc");
+  }
+
+  function exportDuesCsv() {
+    downloadCsv(
+      `${csvBaseName}-dues.csv`,
+      ["Period", "Due", "Paid", "Remaining", "Status"],
+      duesItems.map((due) => {
+        const remaining = Number(due.amountDue) - Number(due.amountPaid);
+        return [
+          [getPaymentDueTitle(due), getPaymentDueSubtitle(due)].filter(Boolean).join(" · "),
+          formatAmountCell(due.amountDue),
+          formatAmountCell(due.amountPaid),
+          formatAmountCell(remaining),
+          due.status,
+        ];
+      })
+    );
+  }
+
+  function exportStatementCsv() {
+    downloadCsv(
+      `${csvBaseName}-transaction-history.csv`,
+      ["Date", "Description", "Reference", "Note", "Amount", "Balance", "User ID"],
+      visibleStatementItems.map((entry) => [
+        new Date(entry.occurredAt).toLocaleDateString(),
+        entry.description,
+        entry.reference ?? "",
+        entry.note ?? "",
+        formatAmountCell(entry.debit - entry.credit),
+        formatAmountCell(entry.balance),
+        entry.actor || "System",
+      ])
+    );
   }
 
   function getAge(dob: string | null | undefined): number | null {
@@ -1247,18 +1350,32 @@ export default function MembershipDetailPage() {
                     <DollarSign className="h-5 w-5 text-primary" />
                     Dues & Payments
                   </CardTitle>
-                  {canManage && (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={openManualDueDialog}>
-                      <Plus className="h-4 w-4" />
-                      Add Manual Due
-                    </Button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {balance && balance.dues.length > 0 && (
+                      <>
+                        <SortToggleButton
+                          order={duesSortOrder}
+                          onToggle={() => toggleSortOrder(duesSortOrder, setDuesSortOrder)}
+                        />
+                        <Button size="sm" variant="outline" className="gap-1.5" onClick={exportDuesCsv}>
+                          <Download className="h-4 w-4" />
+                          Export CSV
+                        </Button>
+                      </>
+                    )}
+                    {canManage && (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={openManualDueDialog}>
+                        <Plus className="h-4 w-4" />
+                        Add Manual Due
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {balance && balance.dues.length > 0 ? (
                     <>
                       <div className="space-y-3 md:hidden print:hidden">
-                        {balance.dues.map((d) => {
+                        {duesItems.map((d) => {
                           const remaining = Number(d.amountDue) - Number(d.amountPaid);
                           const StatusIcon = statusIcons[d.status] ?? Clock;
                           return (
@@ -1319,7 +1436,7 @@ export default function MembershipDetailPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {balance.dues.map((d, i) => {
+                            {duesItems.map((d, i) => {
                               const remaining = Number(d.amountDue) - Number(d.amountPaid);
                               const StatusIcon = statusIcons[d.status] ?? Clock;
                               return (
@@ -1371,11 +1488,23 @@ export default function MembershipDetailPage() {
 
               {/* Transaction History */}
             <Card>
-              <CardHeader className="pb-4">
+              <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
                   Transaction History
                 </CardTitle>
+                {visibleStatementItems.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SortToggleButton
+                      order={statementSortOrder}
+                      onToggle={() => toggleSortOrder(statementSortOrder, setStatementSortOrder)}
+                    />
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={exportStatementCsv}>
+                      <Download className="h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {statementLoading ? (
@@ -1419,15 +1548,15 @@ export default function MembershipDetailPage() {
                               <p className="text-muted-foreground">Amount</p>
                               <p className={`font-medium tabular-nums ${amountTone}`}>
                                 {signedAmount > 0 ? "+" : signedAmount < 0 ? "" : ""}
-                                {signedAmount !== 0 ? signedAmount.toFixed(2) : "0.00"}
+                                {formatAmountCell(signedAmount)}
                               </p>
                             </div>
                             <div>
                               <p className="text-muted-foreground">Balance</p>
-                              <p className="font-medium tabular-nums">{entry.balance.toFixed(2)}</p>
+                              <p className="font-medium tabular-nums">{formatAmountCell(entry.balance)}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground">By</p>
+                              <p className="text-muted-foreground">User ID</p>
                               <p className="font-medium">{entry.actor || "System"}</p>
                             </div>
                             <div className="col-span-2">
@@ -1486,7 +1615,7 @@ export default function MembershipDetailPage() {
                               Amount
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">Balance</th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">By</th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">User ID</th>
                             <th className="text-right p-3 font-medium text-muted-foreground"></th>
                           </tr>
                         </thead>
@@ -1520,9 +1649,9 @@ export default function MembershipDetailPage() {
                                 }`}
                               >
                                 {entry.debit - entry.credit > 0 ? "+" : entry.debit - entry.credit < 0 ? "" : ""}
-                                {(entry.debit - entry.credit).toFixed(2)}
+                                {formatAmountCell(entry.debit - entry.credit)}
                               </td>
-                              <td className="p-3 text-right tabular-nums font-semibold">{entry.balance.toFixed(2)}</td>
+                              <td className="p-3 text-right tabular-nums font-semibold">{formatAmountCell(entry.balance)}</td>
                               <td className="p-3 text-muted-foreground">{entry.actor || "System"}</td>
                               <td className="p-3 text-right">
                                 <div className="flex items-center justify-end gap-1">
@@ -1566,7 +1695,7 @@ export default function MembershipDetailPage() {
                       <span className="font-medium">
                         {visibleStatementItems.length} transaction{visibleStatementItems.length !== 1 ? "s" : ""}
                       </span>
-                      <span>Oldest to newest</span>
+                      <span>{statementSortOrder === "desc" ? "Newest first" : "Oldest first"}</span>
                     </div>
                   </>
                 )}
@@ -1597,11 +1726,20 @@ export default function MembershipDetailPage() {
           {/* ── Tab 3: Credit Ledger ───────────────────────────── */}
           <TabsContent value="credit-ledger" forceMount className="data-[state=inactive]:hidden print:hidden">
             <Card>
-              <CardHeader className="pb-4">
+              <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Landmark className="h-5 w-5 text-primary" />
                   Credit Ledger
                 </CardTitle>
+                {creditEntries.length > 0 && (
+                  <SortToggleButton
+                    order={creditSortOrder}
+                    onToggle={() => {
+                      setCreditPage(1);
+                      toggleSortOrder(creditSortOrder, setCreditSortOrder);
+                    }}
+                  />
+                )}
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between mb-4">
@@ -1611,7 +1749,7 @@ export default function MembershipDetailPage() {
                   <div className="text-sm rounded-md bg-muted px-3 py-1.5">
                     Current Balance:{" "}
                     <span className="font-semibold tabular-nums text-indigo-700">
-                      {creditBalance.toFixed(2)}
+                      {formatAmountCell(creditBalance)}
                     </span>
                   </div>
                 </div>
@@ -1645,7 +1783,7 @@ export default function MembershipDetailPage() {
                               Delta
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
-                              By
+                              User ID
                             </th>
                           </tr>
                         </thead>
@@ -1678,7 +1816,7 @@ export default function MembershipDetailPage() {
                                   }`}
                                 >
                                   {isCredit ? "+" : ""}
-                                  {delta.toFixed(2)}
+                                  {formatAmountCell(delta)}
                                 </td>
                                 <td className="p-3 text-muted-foreground">
                                   {entry.createdBy?.email ?? "System"}
@@ -1695,6 +1833,7 @@ export default function MembershipDetailPage() {
                         {creditTotal} entr{creditTotal === 1 ? "y" : "ies"}
                       </span>
                       <div className="flex items-center gap-2">
+                        <span className="hidden sm:inline">{creditSortOrder === "desc" ? "Newest first" : "Oldest first"}</span>
                         <Button
                           variant="outline"
                           size="sm"

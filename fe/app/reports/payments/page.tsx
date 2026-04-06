@@ -201,7 +201,7 @@ export default function PeriodicPaymentReportPage() {
                           <th className="text-left p-2.5 font-medium">Period</th>
                           <th className="text-right p-2.5 font-medium">Amount</th>
                           <th className="text-left p-2.5 font-medium">Note</th>
-                          <th className="text-left p-2.5 font-medium">Collected By</th>
+                          <th className="text-left p-2.5 font-medium">User ID</th>
                           <th className="text-center p-2.5 font-medium">Status</th>
                         </tr>
                       </thead>

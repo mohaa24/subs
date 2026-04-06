@@ -14,6 +14,7 @@ import {
   applyAvailableCreditToDue,
   getMembershipCreditBalance,
   moveNegativeCreditBalanceToDue,
+  restoreAutoAppliedCreditForPaymentReversal,
 } from "../lib/membership-credit.js";
 
 export const paymentsRouter = Router();
@@ -562,6 +563,12 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
   }
 
   for (const adjustment of adjustments) {
+    if (
+      adjustment.adjustmentType === "late_fee" &&
+      adjustment.amountDelta.equals(new Decimal(0))
+    ) {
+      continue;
+    }
     const debit = adjustment.amountDelta.gte(new Decimal(0)) ? adjustment.amountDelta : new Decimal(0);
     const credit = adjustment.amountDelta.lt(new Decimal(0))
       ? adjustment.amountDelta.abs()
@@ -721,6 +728,7 @@ paymentsRouter.get("/credit/:membershipId", async (req, res) => {
 
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
+  const order = req.query.order === "asc" ? "asc" : "desc";
 
   const [entries, total, balance] = await prisma.$transaction(async (tx) => {
     const [items, count, credit] = await Promise.all([
@@ -728,7 +736,7 @@ paymentsRouter.get("/credit/:membershipId", async (req, res) => {
         where: { membershipId: membership.id },
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: order }, { id: order }],
         include: {
           paymentDue: { select: { id: true, period: true } },
           payment: { select: { id: true, amount: true, paymentDate: true } },
@@ -749,6 +757,7 @@ paymentsRouter.get("/credit/:membershipId", async (req, res) => {
     total,
     page,
     limit,
+    order,
   });
 });
 
@@ -1018,6 +1027,16 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
     }
 
     if (overpaymentTotal.gt(new Decimal(0))) {
+      await restoreAutoAppliedCreditForPaymentReversal(tx, {
+        membershipId: payment.membershipId,
+        organizationId: payment.organizationId,
+        paymentId: payment.id,
+        createdByUserId: req.auth!.userId,
+        reason: parsed.data.reason,
+      });
+    }
+
+    if (overpaymentTotal.gt(new Decimal(0))) {
       await tx.membershipCreditLedger.create({
         data: {
           membershipId: payment.membershipId,
@@ -1154,7 +1173,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
 
   const format = req.query.format as string | undefined;
   if (format === "csv") {
-    const headers = ["Date", "Member", "Membership No", "Period", "Amount", "Method/Note", "Collected By", "Status", "Reversal Reason"];
+    const headers = ["Date", "Member", "Membership No", "Period", "Amount", "Method/Note", "User ID", "Status", "Reversal Reason"];
     const csvRows = payments.map((p) => {
       const row = [
         p.paymentDate.toISOString().slice(0, 10),

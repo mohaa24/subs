@@ -88,6 +88,39 @@ export async function applyAvailableCreditToDue(
   const applyAmount = minDecimal(remaining, creditBalance);
   if (!applyAmount.gt(ZERO)) return ZERO;
 
+  const creditEntries = await tx.membershipCreditLedger.findMany({
+    where: { membershipId: due.membershipId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      paymentId: true,
+      amountDelta: true,
+    },
+  });
+
+  const availableLots: Array<{ paymentId: string | null; remaining: Decimal }> = [];
+  for (const entry of creditEntries) {
+    if (entry.amountDelta.gt(ZERO)) {
+      availableLots.push({
+        paymentId: entry.paymentId ?? null,
+        remaining: entry.amountDelta,
+      });
+      continue;
+    }
+
+    if (!entry.amountDelta.lt(ZERO)) continue;
+
+    let remainingToConsume = entry.amountDelta.abs();
+    for (const lot of availableLots) {
+      if (!remainingToConsume.gt(ZERO)) break;
+      if (!lot.remaining.gt(ZERO)) continue;
+
+      const consumed = minDecimal(lot.remaining, remainingToConsume);
+      lot.remaining = lot.remaining.sub(consumed);
+      remainingToConsume = remainingToConsume.sub(consumed);
+    }
+  }
+
   const nextPaid = due.amountPaid.add(applyAmount);
 
   await tx.paymentDue.update({
@@ -98,17 +131,44 @@ export async function applyAvailableCreditToDue(
     },
   });
 
-  await tx.membershipCreditLedger.create({
-    data: {
-      membershipId: due.membershipId,
-      organizationId: due.organizationId,
-      paymentDueId: due.id,
-      amountDelta: applyAmount.neg(),
-      entryType: "debit_auto_apply",
-      note: input.note ?? `Auto-applied credit to due ${due.period}`,
-      createdByUserId: input.createdByUserId ?? null,
-    },
-  });
+  let remainingToApply = applyAmount;
+  for (const lot of availableLots) {
+    if (!remainingToApply.gt(ZERO)) break;
+    if (!lot.remaining.gt(ZERO)) continue;
+
+    const consumed = minDecimal(lot.remaining, remainingToApply);
+    if (!consumed.gt(ZERO)) continue;
+
+    await tx.membershipCreditLedger.create({
+      data: {
+        membershipId: due.membershipId,
+        organizationId: due.organizationId,
+        paymentId: lot.paymentId,
+        paymentDueId: due.id,
+        amountDelta: consumed.neg(),
+        entryType: "debit_auto_apply",
+        note: input.note ?? `Auto-applied credit to due ${due.period}`,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
+
+    lot.remaining = lot.remaining.sub(consumed);
+    remainingToApply = remainingToApply.sub(consumed);
+  }
+
+  if (remainingToApply.gt(ZERO)) {
+    await tx.membershipCreditLedger.create({
+      data: {
+        membershipId: due.membershipId,
+        organizationId: due.organizationId,
+        paymentDueId: due.id,
+        amountDelta: remainingToApply.neg(),
+        entryType: "debit_auto_apply",
+        note: input.note ?? `Auto-applied credit to due ${due.period}`,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
+  }
 
   return applyAmount;
 }
@@ -160,4 +220,174 @@ export async function moveNegativeCreditBalanceToDue(
   });
 
   return transferAmount;
+}
+
+export async function restoreAutoAppliedCreditForPaymentReversal(
+  tx: CreditLedgerTx,
+  input: {
+    membershipId: string;
+    organizationId: string;
+    paymentId: string;
+    createdByUserId?: string | null;
+    reason: string;
+  }
+): Promise<Decimal> {
+  const directAutoApplyEntries = await tx.membershipCreditLedger.findMany({
+    where: {
+      membershipId: input.membershipId,
+      paymentId: input.paymentId,
+      entryType: "debit_auto_apply",
+      paymentDueId: { not: null },
+    },
+    select: {
+      paymentDueId: true,
+      amountDelta: true,
+    },
+  });
+
+  const directRestoredByDueId = new Map<string, Decimal>();
+  for (const entry of directAutoApplyEntries) {
+    if (!entry.paymentDueId) continue;
+    directRestoredByDueId.set(
+      entry.paymentDueId,
+      (directRestoredByDueId.get(entry.paymentDueId) ?? ZERO).add(entry.amountDelta.abs())
+    );
+  }
+
+  if (directRestoredByDueId.size > 0) {
+    return restoreCreditIntoDues(tx, {
+      membershipId: input.membershipId,
+      organizationId: input.organizationId,
+      paymentId: input.paymentId,
+      createdByUserId: input.createdByUserId,
+      reason: input.reason,
+      restoredByDueId: directRestoredByDueId,
+    });
+  }
+
+  const ledgerEntries = await tx.membershipCreditLedger.findMany({
+    where: { membershipId: input.membershipId },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      paymentId: true,
+      paymentDueId: true,
+      amountDelta: true,
+      entryType: true,
+    },
+  });
+
+  const availableLots: Array<{ paymentId: string | null; remaining: Decimal }> = [];
+  const restoredByDueId = new Map<string, Decimal>();
+
+  for (const entry of ledgerEntries) {
+    if (entry.amountDelta.gt(ZERO)) {
+      availableLots.push({
+        paymentId: entry.paymentId ?? null,
+        remaining: entry.amountDelta,
+      });
+      continue;
+    }
+
+    if (!entry.amountDelta.lt(ZERO)) continue;
+
+    let remainingToConsume = entry.amountDelta.abs();
+    for (const lot of availableLots) {
+      if (!remainingToConsume.gt(ZERO)) break;
+      if (!lot.remaining.gt(ZERO)) continue;
+
+      const consumed = minDecimal(lot.remaining, remainingToConsume);
+      if (
+        entry.entryType === "debit_auto_apply" &&
+        entry.paymentDueId &&
+        lot.paymentId === input.paymentId
+      ) {
+        restoredByDueId.set(
+          entry.paymentDueId,
+          (restoredByDueId.get(entry.paymentDueId) ?? ZERO).add(consumed)
+        );
+      }
+
+      lot.remaining = lot.remaining.sub(consumed);
+      remainingToConsume = remainingToConsume.sub(consumed);
+    }
+  }
+
+  if (restoredByDueId.size === 0) return ZERO;
+
+  return restoreCreditIntoDues(tx, {
+    membershipId: input.membershipId,
+    organizationId: input.organizationId,
+    paymentId: input.paymentId,
+    createdByUserId: input.createdByUserId,
+    reason: input.reason,
+    restoredByDueId,
+  });
+}
+
+async function restoreCreditIntoDues(
+  tx: CreditLedgerTx,
+  input: {
+    membershipId: string;
+    organizationId: string;
+    paymentId: string;
+    createdByUserId?: string | null;
+    reason: string;
+    restoredByDueId: Map<string, Decimal>;
+  }
+): Promise<Decimal> {
+  const affectedDueIds = Array.from(input.restoredByDueId.keys());
+  const affectedDues = await tx.paymentDue.findMany({
+    where: { id: { in: affectedDueIds } },
+    select: {
+      id: true,
+      period: true,
+      amountDue: true,
+      amountPaid: true,
+      status: true,
+    },
+  });
+  const dueById = new Map(affectedDues.map((due) => [due.id, due]));
+
+  let totalRestored = ZERO;
+
+  for (const dueId of affectedDueIds) {
+    const due = dueById.get(dueId);
+    const requestedRestore = input.restoredByDueId.get(dueId) ?? ZERO;
+    if (!due || !requestedRestore.gt(ZERO)) continue;
+
+    const actualRestore = minDecimal(due.amountPaid, requestedRestore);
+    if (!actualRestore.gt(ZERO)) continue;
+
+    const nextPaid = maxDecimal(due.amountPaid.sub(actualRestore), ZERO);
+    let nextStatus = dueStatusForAmounts(due.amountDue, nextPaid);
+    if (due.status === "overdue" && nextStatus !== "paid") {
+      nextStatus = "overdue";
+    }
+
+    await tx.paymentDue.update({
+      where: { id: due.id },
+      data: {
+        amountPaid: nextPaid,
+        status: nextStatus,
+      },
+    });
+
+    await tx.membershipCreditLedger.create({
+      data: {
+        membershipId: input.membershipId,
+        organizationId: input.organizationId,
+        paymentId: input.paymentId,
+        paymentDueId: due.id,
+        amountDelta: actualRestore,
+        entryType: "credit_adjustment",
+        note: `Restored auto-applied credit while reversing payment: ${input.reason}`,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
+
+    totalRestored = totalRestored.add(actualRestore);
+  }
+
+  return totalRestored;
 }
