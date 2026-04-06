@@ -967,6 +967,11 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
       });
     }
 
+    await applyAvailableCreditAcrossOutstandingDues(tx, {
+      membershipId: payment.membershipId,
+      createdByUserId: req.auth!.userId,
+    });
+
   });
 
   return res.json({ success: true, message: "Payment reversed" });
