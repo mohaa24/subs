@@ -10,6 +10,13 @@ export const membershipsRouter = Router();
 membershipsRouter.use(requireAuth);
 membershipsRouter.use(withOrgScope);
 
+// Membership writes touch the membership row plus several linked people, so we
+// give those interactive transactions the same headroom as payment writes.
+const MEMBERSHIP_WRITE_TRANSACTION_OPTIONS = {
+  maxWait: 10000,
+  timeout: 10000,
+} as const;
+
 const paymentPeriods: PaymentPeriod[] = ["Monthly", "Quarterly", "Annually"];
 const membershipStatuses: MembershipStatus[] = ["Active", "Inactive"];
 const maxZoneCode = 9;
@@ -236,12 +243,32 @@ async function applyPersonLinks(
     });
   }
 
+  if (newIds.length === 0) return;
+
+  // Most people in the household receive the same membership link, so write
+  // that shared state once and then apply the smaller set of relation changes.
+  // This avoids one person.update call per member, which was timing out on prod.
+  await tx.person.updateMany({
+    where: { id: { in: newIds } },
+    data: {
+      membershipId,
+      relationToHOH: null,
+    },
+  });
+
+  const personIdsByRelation = new Map<RelationToHOH, string[]>();
   for (const assignment of assignments) {
-    await tx.person.update({
-      where: { id: assignment.personId },
+    if (!assignment.relationToHOH) continue;
+    const ids = personIdsByRelation.get(assignment.relationToHOH) ?? [];
+    ids.push(assignment.personId);
+    personIdsByRelation.set(assignment.relationToHOH, ids);
+  }
+
+  for (const [relationToHOH, personIds] of personIdsByRelation) {
+    await tx.person.updateMany({
+      where: { id: { in: personIds } },
       data: {
-        membershipId,
-        relationToHOH: assignment.relationToHOH,
+        relationToHOH,
       },
     });
   }
@@ -424,7 +451,7 @@ membershipsRouter.post("/", async (req, res) => {
     });
     await applyPersonLinks(tx, created.id, [], assignments);
     return created;
-  });
+  }, MEMBERSHIP_WRITE_TRANSACTION_OPTIONS);
 
   return res.status(201).json(membership);
 });
@@ -526,7 +553,7 @@ membershipsRouter.patch("/:id", async (req, res) => {
     });
     await applyPersonLinks(tx, updated.id, oldPersonIds, assignments);
     return updated;
-  });
+  }, MEMBERSHIP_WRITE_TRANSACTION_OPTIONS);
 
   return res.json(membership);
 });
