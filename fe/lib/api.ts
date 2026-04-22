@@ -228,17 +228,20 @@ export interface PaymentDue {
   };
 }
 
+export type PaymentKind = "due" | "credit";
+
 export interface Payment {
   id: string;
-  paymentDueId: string;
+  paymentDueId: string | null;
   membershipId: string;
   organizationId: string;
+  paymentKind: PaymentKind;
   amount: number;
   paymentDate: string;
   collectedByUserId: string;
   note?: string | null;
   createdAt: string;
-  paymentDue?: { id?: string; period: string; amountDue: number };
+  paymentDue?: { id?: string; period: string; amountDue: number } | null;
   collectedBy?: { id: string; email: string };
   membership?: {
     id?: string;
@@ -248,6 +251,7 @@ export interface Payment {
 }
 
 export interface PaymentReceipt {
+  paymentKind: PaymentKind;
   paymentId: string;
   paymentDate: string;
   note?: string | null;

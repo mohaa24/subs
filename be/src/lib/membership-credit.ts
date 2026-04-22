@@ -199,7 +199,7 @@ export async function addOverpaymentCreditEntry(
     membershipId: string;
     organizationId: string;
     paymentId: string;
-    paymentDueId: string;
+    paymentDueId?: string | null;
     amount: Decimal;
     createdByUserId?: string | null;
     note?: string | null;
@@ -212,7 +212,7 @@ export async function addOverpaymentCreditEntry(
       membershipId: input.membershipId,
       organizationId: input.organizationId,
       paymentId: input.paymentId,
-      paymentDueId: input.paymentDueId,
+      paymentDueId: input.paymentDueId ?? null,
       amountDelta: input.amount,
       entryType: "credit_overpayment",
       note: input.note ?? "Overpayment moved to member credit",

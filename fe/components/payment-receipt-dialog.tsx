@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 
 export interface PaymentReceiptData {
+  paymentKind: "due" | "credit";
   organizationName: string;
   membershipNo: string;
   membershipId: string;
@@ -100,9 +101,13 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       ${rowHtml("Period", receipt.period)}
       <div class="sep"></div>
       ${rowHtml("Paid", `Rs ${money(receipt.paidAmount)}`)}
-      ${rowHtml("Applied To Due", `Rs ${money(receipt.appliedToDue)}`)}
+      ${
+        receipt.paymentKind === "credit"
+          ? rowHtml("Added To Credit", `Rs ${money(receipt.overpaymentToCredit)}`)
+          : `${rowHtml("Applied To Due", `Rs ${money(receipt.appliedToDue)}`)}
       ${rowHtml("To Credit", `Rs ${money(receipt.overpaymentToCredit)}`)}
-      ${rowHtml("Outstanding", `Rs ${money(receipt.remainingAfter)}`)}
+      ${rowHtml("Outstanding", `Rs ${money(receipt.remainingAfter)}`)}`
+      }
       ${noteHtml}
       <div class="sep"></div>
       ${rowHtml("Collected By", receipt.collectedBy || "-")}
@@ -210,18 +215,27 @@ export function PaymentReceiptDialog({
                 <span>Paid</span>
                 <span>Rs {money(receipt.paidAmount)}</span>
               </div>
-              <div className="flex justify-between gap-2">
-                <span>Applied To Due</span>
-                <span>Rs {money(receipt.appliedToDue)}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span>To Credit</span>
-                <span>Rs {money(receipt.overpaymentToCredit)}</span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span>Outstanding</span>
-                <span>Rs {money(receipt.remainingAfter)}</span>
-              </div>
+              {receipt.paymentKind === "credit" ? (
+                <div className="flex justify-between gap-2">
+                  <span>Added To Credit</span>
+                  <span>Rs {money(receipt.overpaymentToCredit)}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <span>Applied To Due</span>
+                    <span>Rs {money(receipt.appliedToDue)}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span>To Credit</span>
+                    <span>Rs {money(receipt.overpaymentToCredit)}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span>Outstanding</span>
+                    <span>Rs {money(receipt.remainingAfter)}</span>
+                  </div>
+                </>
+              )}
               {receipt.note ? (
                 <div className="flex justify-between gap-2">
                   <span>Note</span>
@@ -263,4 +277,3 @@ export function PaymentReceiptDialog({
     </Dialog>
   );
 }
-

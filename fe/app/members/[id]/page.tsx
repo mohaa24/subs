@@ -135,6 +135,12 @@ function formatAmountCell(value: number | string | null | undefined) {
   return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
 }
 
+function hasOpenPaymentDues(dues: PaymentDue[] | undefined) {
+  return !!dues?.some(
+    (due) => due.status === "pending" || due.status === "partial" || due.status === "overdue"
+  );
+}
+
 function SortToggleButton({
   order,
   onToggle,
@@ -385,6 +391,7 @@ export default function MembershipDetailPage() {
   }
 
   const canManage = user?.role === "admin" || user?.role === "super_user";
+  const canRecordCreditPayment = !!membership && !!balance && !hasOpenPaymentDues(balance.dues);
 
   async function handleReversePayment() {
     if (!reverseTarget || !reverseReason.trim()) return;
@@ -439,6 +446,15 @@ export default function MembershipDetailPage() {
   function openManualDueDialog() {
     resetManualDueForm();
     setManualDueOpen(true);
+  }
+
+  function openCreditPaymentDialog() {
+    setPayDue(null);
+    setPayAmount("");
+    setPayMethod("cash");
+    setPayNote("");
+    setPayError("");
+    setPayDialogOpen(true);
   }
 
   async function handleCreateManualDue() {
@@ -508,7 +524,7 @@ export default function MembershipDetailPage() {
 
   async function handleRecordPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!payDue || !membership) return;
+    if (!membership) return;
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
@@ -527,26 +543,36 @@ export default function MembershipDetailPage() {
       const combinedNote = [methodLabel, payNote].filter(Boolean).join(" — ");
       const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
-        body: JSON.stringify({
-          paymentDueId: payDue.id,
-          amount: amt,
-          note: combinedNote || undefined,
-        }),
+        body: JSON.stringify(
+          payDue
+            ? {
+                paymentDueId: payDue.id,
+                amount: amt,
+                note: combinedNote || undefined,
+              }
+            : {
+                paymentKind: "credit",
+                membershipId: membership.id,
+                amount: amt,
+                note: combinedNote || undefined,
+              }
+        ),
       });
-      const amountDue = Number(payDue.amountDue);
-      const amountPaidBefore = Number(payDue.amountPaid);
+      const amountDue = Number(payDue?.amountDue ?? 0);
+      const amountPaidBefore = Number(payDue?.amountPaid ?? 0);
       const remainingBefore = Math.max(0, amountDue - amountPaidBefore);
-      const appliedToDue = Math.min(amt, remainingBefore);
-      const overpaymentToCredit = Math.max(0, amt - appliedToDue);
-      const remainingAfter = Math.max(0, remainingBefore - appliedToDue);
+      const appliedToDue = payDue ? Math.min(amt, remainingBefore) : 0;
+      const overpaymentToCredit = payDue ? Math.max(0, amt - appliedToDue) : amt;
+      const remainingAfter = payDue ? Math.max(0, remainingBefore - appliedToDue) : 0;
       setReceiptData({
+        paymentKind: payDue ? "due" : "credit",
         organizationName:
           user?.organization?.name || membership.organization?.name || "Organization",
         membershipNo: membership.membershipNo,
         membershipId: membership.id,
         memberName:
           membership.hod?.fullName || membership.hod?.nameWithInitials || "",
-        period: payDue.period,
+        period: payDue?.period ?? "Credit Payment",
         paymentId: payment.id,
         paymentDate: payment.paymentDate,
         paidAmount: amt,
@@ -560,8 +586,10 @@ export default function MembershipDetailPage() {
       setReceiptOpen(true);
       setPayDialogOpen(false);
       toast({
-        title: "Payment recorded",
-        description: "Payment has been saved successfully.",
+        title: payDue ? "Payment recorded" : "Credit payment recorded",
+        description: payDue
+          ? "Payment has been saved successfully."
+          : "Payment has been added to member credit.",
       });
       loadBalance();
       loadStatement();
@@ -584,6 +612,7 @@ export default function MembershipDetailPage() {
     try {
       const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
       setReceiptData({
+        paymentKind: receipt.paymentKind,
         organizationName: receipt.organizationName,
         membershipNo: receipt.membershipNo,
         membershipId: receipt.membershipId,
@@ -1363,6 +1392,12 @@ export default function MembershipDetailPage() {
                         </Button>
                       </>
                     )}
+                    {canRecordCreditPayment && (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={openCreditPaymentDialog}>
+                        <CreditCard className="h-4 w-4" />
+                        Record Credit Payment
+                      </Button>
+                    )}
                     {canManage && (
                       <Button size="sm" variant="outline" className="gap-1.5" onClick={openManualDueDialog}>
                         <Plus className="h-4 w-4" />
@@ -1880,8 +1915,13 @@ export default function MembershipDetailPage() {
         onSubmit={handleRecordPayment}
         memberName={membership?.hod?.fullName || membership?.hod?.nameWithInitials || ""}
         membershipNo={membership?.membershipNo || ""}
-        title="Record Payment"
-        submitLabel="Record Payment"
+        contextDescription={
+          payDue
+            ? undefined
+            : "No open dues exist for this member. This payment will be added directly to available credit."
+        }
+        title={payDue ? "Record Payment" : "Record Credit Payment"}
+        submitLabel={payDue ? "Record Payment" : "Add to Credit"}
         submittingLabel="Recording…"
         cancelLabel="Cancel"
       />

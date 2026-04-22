@@ -51,6 +51,7 @@ type RecordPaymentDialogProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   memberName?: string;
   membershipNo?: string;
+  contextDescription?: string;
   title?: string;
   submitLabel?: string;
   submittingLabel?: string;
@@ -72,6 +73,7 @@ export function RecordPaymentDialog({
   onSubmit,
   memberName,
   membershipNo,
+  contextDescription,
   title = "Record Payment",
   submitLabel = "Record Payment",
   submittingLabel = "Recording…",
@@ -85,6 +87,7 @@ export function RecordPaymentDialog({
   const displayMembershipNo = membershipNo || due?.membership?.membershipNo || "";
   const displayTitle = due ? getPaymentDueTitle(due) : "";
   const displaySubtitle = due ? getPaymentDueSubtitle(due) : null;
+  const displayMeta = [displayMembershipNo, displayTitle].filter(Boolean).join(" · ");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,27 +102,33 @@ export function RecordPaymentDialog({
           <div className="rounded-lg bg-muted/50 border p-4 space-y-2">
             <p className="text-sm font-semibold">{displayName}</p>
             <div className="text-xs text-muted-foreground">
-              <p>{displayMembershipNo ? `${displayMembershipNo} · ${displayTitle}` : displayTitle}</p>
+              {displayMeta ? <p>{displayMeta}</p> : null}
               {displaySubtitle && <p className="mt-0.5">{displaySubtitle}</p>}
             </div>
-            <div className="grid grid-cols-3 gap-3 pt-1 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">Due</p>
-                <p className="font-semibold tabular-nums">{due ? Number(due.amountDue).toFixed(2) : ""}</p>
+            {due ? (
+              <div className="grid grid-cols-3 gap-3 pt-1 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Due</p>
+                  <p className="font-semibold tabular-nums">{Number(due.amountDue).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paid</p>
+                  <p className="font-semibold tabular-nums text-emerald-600">
+                    {Number(due.amountPaid).toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Remaining</p>
+                  <p className="font-semibold tabular-nums text-red-600">
+                    {(Number(due.amountDue) - Number(due.amountPaid)).toFixed(2)}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Paid</p>
-                <p className="font-semibold tabular-nums text-emerald-600">
-                  {due ? Number(due.amountPaid).toFixed(2) : ""}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Remaining</p>
-                <p className="font-semibold tabular-nums text-red-600">
-                  {due ? (Number(due.amountDue) - Number(due.amountPaid)).toFixed(2) : ""}
-                </p>
-              </div>
-            </div>
+            ) : contextDescription ? (
+              <p className="pt-1 text-xs text-muted-foreground">
+                {contextDescription}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-2">

@@ -55,6 +55,20 @@ function dateOnlyString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function nonSystemAdjustmentOrStandaloneCreditFilter() {
+  return {
+    OR: [
+      { paymentDueId: null },
+      { paymentDue: { is: { isSystemAdjustment: false } } },
+    ],
+  };
+}
+
+const CREDIT_PAYMENT_REFERENCE = "Credit Payment";
+const CREDIT_PAYMENT_LEDGER_NOTE = "Direct payment added to member credit";
+const CREDIT_PAYMENT_OPEN_DUE_ERROR =
+  "Standalone credit payments are only allowed when the member has no open dues.";
+
 function parseOptionalDate(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -95,6 +109,29 @@ async function buildReceiptForPayment(paymentId: string) {
   });
   if (!payment) return null;
 
+  if (payment.paymentKind === "credit" || !payment.paymentDueId) {
+    return {
+      paymentKind: "credit" as const,
+      paymentId: payment.id,
+      paymentDate: payment.paymentDate.toISOString(),
+      note: payment.note ?? null,
+      period: CREDIT_PAYMENT_REFERENCE,
+      membershipId: payment.membership.id,
+      membershipNo: payment.membership.membershipNo,
+      memberName: payment.membership.hod.fullName || payment.membership.hod.nameWithInitials || "",
+      organizationId: payment.organization.id,
+      organizationName: payment.organization.name,
+      collectedBy: payment.collectedBy.email,
+      paidAmount: payment.amount.toNumber(),
+      appliedToDue: 0,
+      overpaymentToCredit: payment.amount.toNumber(),
+      remainingAfter: 0,
+    };
+  }
+
+  const receiptDue = payment.paymentDue;
+  if (!receiptDue) return null;
+
   const duePayments = await prisma.payment.findMany({
     where: { paymentDueId: payment.paymentDueId },
     select: { id: true, amount: true, paymentDate: true, createdAt: true },
@@ -119,7 +156,7 @@ async function buildReceiptForPayment(paymentId: string) {
   let cumulativeApplied = new Decimal(0);
   let appliedToDue = new Decimal(0);
   let overpaymentToCredit = new Decimal(0);
-  let remainingAfter = payment.paymentDue.amountDue;
+  let remainingAfter = receiptDue.amountDue;
 
   for (const duePayment of duePayments) {
     const overpayment = maxDecimal(
@@ -133,7 +170,7 @@ async function buildReceiptForPayment(paymentId: string) {
       appliedToDue = applied;
       overpaymentToCredit = overpayment;
       remainingAfter = maxDecimal(
-        payment.paymentDue.amountDue.sub(cumulativeApplied),
+        receiptDue.amountDue.sub(cumulativeApplied),
         new Decimal(0)
       );
       break;
@@ -141,10 +178,11 @@ async function buildReceiptForPayment(paymentId: string) {
   }
 
   return {
+    paymentKind: "due" as const,
     paymentId: payment.id,
     paymentDate: payment.paymentDate.toISOString(),
     note: payment.note ?? null,
-    period: payment.paymentDue.period,
+    period: receiptDue.period,
     membershipId: payment.membership.id,
     membershipNo: payment.membership.membershipNo,
     memberName: payment.membership.hod.fullName || payment.membership.hod.nameWithInitials || "",
@@ -373,7 +411,7 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
       where: {
         membershipId: membership.id,
         isReversed: false,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
       _sum: { amount: true },
     }),
@@ -439,7 +477,7 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
     prisma.payment.findMany({
       where: {
         membershipId: membership.id,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
       orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
       include: {
@@ -538,14 +576,15 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
   }
 
   for (const payment of payments) {
+    const isCreditPayment = payment.paymentKind === "credit" || !payment.paymentDueId;
     rawEntries.push({
       id: `payment-${payment.id}`,
       occurredAt: payment.paymentDate,
       createdAt: payment.createdAt,
       sortOrder: 2,
       entryType: "payment",
-      description: "Payment Received",
-      reference: payment.paymentDue?.period ?? null,
+      description: isCreditPayment ? "Credit Payment Received" : "Payment Received",
+      reference: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
       note: payment.note ?? null,
       debit: new Decimal(0),
       credit: payment.amount,
@@ -563,8 +602,8 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
         createdAt: payment.createdAt,
         sortOrder: 3,
         entryType: "payment_reversal",
-        description: "Payment Reversed",
-        reference: payment.paymentDue?.period ?? null,
+        description: isCreditPayment ? "Credit Payment Reversed" : "Payment Reversed",
+        reference: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
         note: payment.reversalReason ?? null,
         debit: payment.amount,
         credit: new Decimal(0),
@@ -698,21 +737,150 @@ paymentsRouter.post("/credit/:membershipId/rebalance-negative", async (req, res)
   });
 });
 
-// Record a payment against a due
-const recordPaymentSchema = z.object({
-  paymentDueId: z.string(),
-  amount: z.number().positive(),
-  paymentDate: z.string().optional(),
-  note: z.string().optional(),
-});
+// Record a payment either against a due or directly into member credit.
+const recordPaymentSchema = z
+  .object({
+    paymentKind: z.enum(["due", "credit"]).default("due"),
+    paymentDueId: z.string().optional(),
+    membershipId: z.string().optional(),
+    amount: z.number().positive(),
+    paymentDate: z.string().optional(),
+    note: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.paymentKind === "credit") {
+      if (!data.membershipId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["membershipId"],
+          message: "membershipId is required for credit payments",
+        });
+      }
+      if (data.paymentDueId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["paymentDueId"],
+          message: "paymentDueId is not allowed for credit payments",
+        });
+      }
+      return;
+    }
+
+    if (!data.paymentDueId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paymentDueId"],
+        message: "paymentDueId is required for due payments",
+      });
+    }
+    if (data.membershipId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["membershipId"],
+        message: "membershipId is not allowed for due payments",
+      });
+    }
+  });
 
 paymentsRouter.post("/", async (req, res) => {
   const parsed = recordPaymentSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
+  const paymentAmount = toDecimal(parsed.data.amount);
+
+  if (parsed.data.paymentKind === "credit") {
+    const membership = await prisma.membership.findUnique({
+      where: { id: parsed.data.membershipId! },
+      select: {
+        id: true,
+        organizationId: true,
+        membershipNo: true,
+        hod: { select: { whatsAppNumber: true } },
+      },
+    });
+    if (!membership) return res.status(404).json({ error: "Membership not found" });
+    if (
+      req.auth!.organizationId &&
+      membership.organizationId !== req.auth!.organizationId &&
+      req.auth!.role !== "super_user"
+    ) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const openDue = await prisma.paymentDue.findFirst({
+      where: {
+        membershipId: membership.id,
+        isSystemAdjustment: false,
+        status: { in: ["pending", "partial", "overdue"] },
+      },
+      select: { id: true },
+    });
+    if (openDue) {
+      return res.status(409).json({ error: CREDIT_PAYMENT_OPEN_DUE_ERROR });
+    }
+
+    try {
+      const payment = await prisma.$transaction(async (tx) => {
+        const openDueInsideTx = await tx.paymentDue.findFirst({
+          where: {
+            membershipId: membership.id,
+            isSystemAdjustment: false,
+            status: { in: ["pending", "partial", "overdue"] },
+          },
+          select: { id: true },
+        });
+        if (openDueInsideTx) {
+          throw new Error(CREDIT_PAYMENT_OPEN_DUE_ERROR);
+        }
+
+        const createdPayment = await tx.payment.create({
+          data: {
+            paymentDueId: null,
+            membershipId: membership.id,
+            organizationId: membership.organizationId,
+            paymentKind: "credit",
+            amount: paymentAmount,
+            paymentDate: parsed.data.paymentDate ? new Date(parsed.data.paymentDate) : new Date(),
+            collectedByUserId: req.auth!.userId,
+            note: parsed.data.note ?? null,
+          },
+        });
+
+        await addOverpaymentCreditEntry(tx, {
+          membershipId: membership.id,
+          organizationId: membership.organizationId,
+          paymentId: createdPayment.id,
+          paymentDueId: null,
+          amount: paymentAmount,
+          createdByUserId: req.auth!.userId,
+          note: CREDIT_PAYMENT_LEDGER_NOTE,
+        });
+
+        return createdPayment;
+      }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
+
+      if (membership.hod?.whatsAppNumber) {
+        queuePaymentReceived(
+          membership.organizationId,
+          membership.hod.whatsAppNumber,
+          membership.membershipNo,
+          paymentAmount.toString()
+        ).catch(() => {});
+      }
+
+      return res.status(201).json(payment);
+    } catch (error) {
+      if (error instanceof Error && error.message === CREDIT_PAYMENT_OPEN_DUE_ERROR) {
+        return res.status(409).json({ error: CREDIT_PAYMENT_OPEN_DUE_ERROR });
+      }
+      console.error("Credit payment record error:", error);
+      return res.status(500).json({ error: "Failed to record credit payment" });
+    }
+  }
+
   const due = await prisma.paymentDue.findUnique({
-    where: { id: parsed.data.paymentDueId },
+    where: { id: parsed.data.paymentDueId! },
     include: { membership: true },
   });
   if (!due) return res.status(404).json({ error: "Payment due not found" });
@@ -723,7 +891,6 @@ paymentsRouter.post("/", async (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const paymentAmount = toDecimal(parsed.data.amount);
   const dueRemaining = due.amountDue.sub(due.amountPaid);
   const remaining = dueRemaining.gt(new Decimal(0)) ? dueRemaining : new Decimal(0);
   const appliedToDue = minDecimal(paymentAmount, remaining);
@@ -736,6 +903,7 @@ paymentsRouter.post("/", async (req, res) => {
         paymentDueId: due.id,
         membershipId: due.membershipId,
         organizationId: due.organizationId,
+        paymentKind: "due",
         amount: paymentAmount,
         paymentDate: parsed.data.paymentDate ? new Date(parsed.data.paymentDate) : new Date(),
         collectedByUserId: req.auth!.userId,
@@ -807,7 +975,7 @@ paymentsRouter.get("/history", async (req, res) => {
     prisma.payment.findMany({
       where: {
         ...where,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -827,7 +995,7 @@ paymentsRouter.get("/history", async (req, res) => {
     prisma.payment.count({
       where: {
         ...where,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
     }),
   ]);
@@ -869,7 +1037,7 @@ paymentsRouter.get("/history/:membershipId", async (req, res) => {
     prisma.payment.findMany({
       where: {
         membershipId: membership.id,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -882,7 +1050,7 @@ paymentsRouter.get("/history/:membershipId", async (req, res) => {
     prisma.payment.count({
       where: {
         membershipId: membership.id,
-        paymentDue: { is: { isSystemAdjustment: false } },
+        ...nonSystemAdjustmentOrStandaloneCreditFilter(),
       },
     }),
   ]);
@@ -937,7 +1105,7 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
     );
     const appliedToDue = paymentAmount.sub(overpaymentTotal);
 
-    if (appliedToDue.gt(new Decimal(0))) {
+    if (due && appliedToDue.gt(new Decimal(0))) {
       const newPaid = maxDecimal(due.amountPaid.sub(appliedToDue), new Decimal(0));
       let newStatus: DueStatus = "pending";
       if (newPaid.gt(new Decimal(0))) newStatus = "partial";
@@ -966,7 +1134,7 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
           membershipId: payment.membershipId,
           organizationId: payment.organizationId,
           paymentId: payment.id,
-          paymentDueId: due.id,
+          paymentDueId: due?.id ?? null,
           amountDelta: overpaymentTotal.neg(),
           entryType: "debit_adjustment",
           note: `Reversal clawback: ${parsed.data.reason}`,
@@ -1136,7 +1304,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
         p.paymentDate.toISOString().slice(0, 10),
         p.membership.hod.fullName || p.membership.hod.nameWithInitials,
         p.membership.membershipNo,
-        p.paymentDue.period,
+        p.paymentDue?.period ?? (p.paymentKind === "credit" ? CREDIT_PAYMENT_REFERENCE : "—"),
         Number(p.amount).toFixed(2),
         (p.note ?? "").replace(/"/g, '""'),
         p.collectedBy.email,
@@ -1165,7 +1333,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
       paymentDate: p.paymentDate.toISOString(),
       memberName: p.membership.hod.fullName || p.membership.hod.nameWithInitials,
       membershipNo: p.membership.membershipNo,
-      period: p.paymentDue.period,
+      period: p.paymentDue?.period ?? (p.paymentKind === "credit" ? CREDIT_PAYMENT_REFERENCE : "—"),
       amount: Number(p.amount),
       note: p.note,
       collectedBy: p.collectedBy.email,

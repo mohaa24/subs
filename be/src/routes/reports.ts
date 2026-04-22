@@ -134,6 +134,11 @@ reportsRouter.post("/query", async (req, res) => {
         } else if (filters.paymentStatus === "overdue") {
           where.paymentDue = { status: "overdue" };
         }
+      } else {
+        where.OR = [
+          { paymentDueId: null },
+          { paymentDue: { is: { isSystemAdjustment: false } } },
+        ];
       }
       const payments = await prisma.payment.findMany({
         where,
@@ -229,6 +234,11 @@ reportsRouter.get("/export", async (req, res) => {
       const where: Prisma.PaymentWhereInput = { organizationId: orgId! };
       if (typeof filters.paymentStatus === "string") {
         where.paymentDue = { status: filters.paymentStatus as any };
+      } else {
+        where.OR = [
+          { paymentDueId: null },
+          { paymentDue: { is: { isSystemAdjustment: false } } },
+        ];
       }
       const payments = await prisma.payment.findMany({
         where,
@@ -239,7 +249,7 @@ reportsRouter.get("/export", async (req, res) => {
       rows = payments.map((p) => ({
         id: p.id,
         membershipNo: p.membership.membershipNo,
-        period: p.paymentDue.period,
+        period: p.paymentDue?.period ?? "Credit Payment",
         amount: Number(p.amount),
         paymentDate: p.paymentDate.toISOString().slice(0, 10),
       }));

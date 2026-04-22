@@ -52,6 +52,7 @@ interface MembershipResult {
 interface PaymentResult {
   id: string;
   membershipId: string;
+  paymentKind: "due" | "credit";
   amount: number;
   paymentDate: string;
   note: string | null;
@@ -541,7 +542,7 @@ export default function ReportsPage() {
                             {r.membership?.membershipNo ?? r.membershipId}
                           </td>
                           <td className="p-3">
-                            {r.paymentDue?.period ?? "—"}
+                            {r.paymentDue?.period ?? (r.paymentKind === "credit" ? "Credit Payment" : "—")}
                           </td>
                           <td className="p-3 text-right tabular-nums">
                             {Number(r.amount).toFixed(2)}

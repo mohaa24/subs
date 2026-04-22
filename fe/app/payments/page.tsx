@@ -45,6 +45,11 @@ const statusColors: Record<string, string> = {
   overdue: "bg-red-100 text-red-800",
 };
 
+function getPaymentPeriodLabel(payment: Payment | null) {
+  if (!payment) return "—";
+  return payment.paymentDue?.period ?? (payment.paymentKind === "credit" ? "Credit Payment" : "—");
+}
+
 export default function PaymentsPage() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
@@ -136,6 +141,7 @@ export default function PaymentsPage() {
     try {
       const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
       setReceiptData({
+        paymentKind: receipt.paymentKind,
         organizationName: receipt.organizationName,
         membershipNo: receipt.membershipNo,
         membershipId: receipt.membershipId,
@@ -256,6 +262,7 @@ export default function PaymentsPage() {
       const overpaymentToCredit = Math.max(0, amt - appliedToDue);
       const remainingAfter = Math.max(0, remainingBefore - appliedToDue);
       setReceiptData({
+        paymentKind: "due",
         organizationName: user?.organization?.name || "Organization",
         membershipNo: payDue.membership?.membershipNo ?? payDue.membershipId,
         membershipId: payDue.membershipId,
@@ -619,7 +626,7 @@ export default function PaymentsPage() {
                       <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                         <div>
                           <p className="text-muted-foreground">{t("payments.period")}</p>
-                          <p className="font-medium">{p.paymentDue?.period ?? "—"}</p>
+                          <p className="font-medium">{getPaymentPeriodLabel(p)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t("payments.amount")}</p>
@@ -681,7 +688,7 @@ export default function PaymentsPage() {
                               {p.membership?.membershipNo}
                             </p>
                           </td>
-                          <td className="p-2.5">{p.paymentDue?.period ?? "—"}</td>
+                          <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>
                           <td className={`p-2.5 text-right tabular-nums ${(p as any).isReversed ? "line-through" : ""}`}>
                             {Number(p.amount).toFixed(2)}
                           </td>
@@ -790,7 +797,7 @@ export default function PaymentsPage() {
                 {reverseTarget?.membership?.hod?.fullName ?? reverseTarget?.membership?.membershipNo ?? "—"}
               </p>
               <p className="text-xs text-muted-foreground">
-                {reverseTarget?.membership?.membershipNo} · {reverseTarget?.paymentDue?.period ?? "—"}
+                {reverseTarget?.membership?.membershipNo} · {getPaymentPeriodLabel(reverseTarget)}
               </p>
               <p className="text-sm font-bold tabular-nums mt-1">
                 Amount: {reverseTarget ? Number(reverseTarget.amount).toFixed(2) : ""}
