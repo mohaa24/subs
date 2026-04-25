@@ -476,12 +476,12 @@ export default function PaymentsPage() {
                         </div>
                         <div className="mt-3 flex gap-2">
                           {d.status !== "paid" && remaining > 0 && (
-                            <Button size="sm" variant="outline" onClick={() => openPayDialog(d)}>
+                            <Button size="sm" onClick={() => openPayDialog(d)}>
                               {t("payments.makePayment")}
                             </Button>
                           )}
                           {canManage && d.status !== "paid" && (
-                            <Button size="sm" variant="ghost" onClick={() => openEditDue(d)}>
+                            <Button size="sm" onClick={() => openEditDue(d)}>
                               <Pencil className="h-3.5 w-3.5 mr-1" />
                               Edit Due
                             </Button>
@@ -546,12 +546,12 @@ export default function PaymentsPage() {
                             <td className="p-2.5 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" variant="outline" onClick={() => openPayDialog(d)}>
+                                  <Button size="sm" onClick={() => openPayDialog(d)}>
                                     {t("payments.makePayment")}
                                   </Button>
                                 )}
                                 {canManage && d.status !== "paid" && (
-                                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
+                                  <Button size="sm" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
                                     <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                 )}
@@ -668,7 +668,8 @@ export default function PaymentsPage() {
                         <th className="text-right p-2.5 font-medium">{t("payments.amount")}</th>
                         <th className="text-left p-2.5 font-medium">User ID</th>
                         <th className="text-center p-2.5 font-medium">Status</th>
-                        <th className="text-right p-2.5 font-medium"></th>
+                        <th className="text-right p-2.5 font-medium">Receipt</th>
+                        <th className="text-center p-2.5 font-medium w-16">Reverse</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -704,22 +705,22 @@ export default function PaymentsPage() {
                             ) : null}
                           </td>
                           <td className="p-2.5 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
-                                Receipt
+                            <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
+                              Receipt
+                            </Button>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            {canManage && !(p as any).isReversed ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 h-8 w-8 p-0"
+                                onClick={() => { setReverseTarget(p); setReverseReason(""); }}
+                                title="Reverse Payment"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
                               </Button>
-                              {canManage && !(p as any).isReversed && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-red-600 h-8 w-8 p-0"
-                                  onClick={() => { setReverseTarget(p); setReverseReason(""); }}
-                                  title="Reverse Payment"
-                                >
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                </Button>
-                              )}
-                            </div>
+                            ) : null}
                           </td>
                         </tr>
                       ))}

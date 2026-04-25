@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
@@ -78,6 +78,7 @@ import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
 import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
 import { downloadCsv } from "@/lib/export-csv";
+import { cn } from "@/lib/utils";
 import {
   PaymentReceiptDialog,
   type PaymentReceiptData,
@@ -129,6 +130,11 @@ function shouldHideStatementEntry(entry: PaymentStatementItem) {
 }
 
 type SortOrder = "asc" | "desc";
+type MembershipDetailTab = "details" | "payments" | "activity";
+
+function isMembershipDetailTab(value: string | null): value is MembershipDetailTab {
+  return value === "details" || value === "payments" || value === "activity";
+}
 
 function formatAmountCell(value: number | string | null | undefined) {
   const amount = Number(value ?? 0);
@@ -207,11 +213,38 @@ function AssetBadge({
   );
 }
 
+function ManualDueDateInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="relative">
+      <Input
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(!value && "text-transparent sm:text-foreground")}
+      />
+      {!value && (
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground sm:hidden">
+          DD/MM/YYYY
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function MembershipDetailPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+  const tabParam = searchParams.get("tab");
+  const activeTab: MembershipDetailTab = isMembershipDetailTab(tabParam) ? tabParam : "details";
   const [membership, setMembership] = useState<Membership | null>(null);
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<MembershipBalance | null>(null);
@@ -350,6 +383,17 @@ export default function MembershipDetailPage() {
     link.download = `${membership.membershipNo}-qr.png`;
     link.href = qrDataUrl;
     link.click();
+  }
+
+  function handleTabChange(nextTab: MembershipDetailTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextTab === "details") {
+      params.delete("tab");
+    } else {
+      params.set("tab", nextTab);
+    }
+    const query = params.toString();
+    router.replace(query ? `/members/${id}?${query}` : `/members/${id}`);
   }
 
   function handlePrint() {
@@ -916,7 +960,7 @@ export default function MembershipDetailPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="details">
+        <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as MembershipDetailTab)}>
           <TabsList className="mb-4 print:hidden">
             <TabsTrigger value="details" className="gap-1.5">
               <Users className="h-4 w-4" />
@@ -929,10 +973,6 @@ export default function MembershipDetailPage() {
             <TabsTrigger value="activity" className="gap-1.5">
               <MessageSquareText className="h-4 w-4" />
               Activity
-            </TabsTrigger>
-            <TabsTrigger value="credit-ledger" className="gap-1.5">
-              <Landmark className="h-4 w-4" />
-              Credit Ledger
             </TabsTrigger>
           </TabsList>
 
@@ -1399,7 +1439,7 @@ export default function MembershipDetailPage() {
                       </Button>
                     )}
                     {canManage && (
-                      <Button size="sm" variant="outline" className="gap-1.5" onClick={openManualDueDialog}>
+                      <Button size="sm" className="gap-1.5" onClick={openManualDueDialog}>
                         <Plus className="h-4 w-4" />
                         Add Manual Due
                       </Button>
@@ -1443,13 +1483,13 @@ export default function MembershipDetailPage() {
                               </div>
                               <div className="mt-3 flex gap-2">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
                                     <DollarSign className="h-3 w-3" />
                                     Pay
                                   </Button>
                                 )}
                                 {canManage && d.status !== "paid" && (
-                                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
+                                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
                                     <Pencil className="h-3 w-3" />
                                     Edit
                                   </Button>
@@ -1493,13 +1533,13 @@ export default function MembershipDetailPage() {
                                   <td className="p-3 text-right print:hidden">
                                     <div className="flex items-center justify-end gap-1">
                                       {d.status !== "paid" && remaining > 0 && (
-                                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
                                           <DollarSign className="h-3 w-3" />
                                           Pay
                                         </Button>
                                       )}
                                       {canManage && d.status !== "paid" && (
-                                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
+                                        <Button size="sm" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
                                           <Pencil className="h-3 w-3" />
                                         </Button>
                                       )}
@@ -1651,7 +1691,8 @@ export default function MembershipDetailPage() {
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">Balance</th>
                             <th className="text-left p-3 font-medium text-muted-foreground">User ID</th>
-                            <th className="text-right p-3 font-medium text-muted-foreground"></th>
+                            <th className="text-right p-3 font-medium text-muted-foreground">Receipt</th>
+                            <th className="text-center p-3 font-medium text-muted-foreground w-16">Reverse</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1689,36 +1730,36 @@ export default function MembershipDetailPage() {
                               <td className="p-3 text-right tabular-nums font-semibold">{formatAmountCell(entry.balance)}</td>
                               <td className="p-3 text-muted-foreground">{entry.actor || "System"}</td>
                               <td className="p-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {entry.receiptAvailable && entry.paymentId && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={loadingReceiptPaymentId === entry.paymentId}
-                                      onClick={() => openReceiptForPayment(entry.paymentId!)}
-                                    >
-                                      {loadingReceiptPaymentId === entry.paymentId ? "Loading…" : "Receipt"}
-                                    </Button>
-                                  )}
-                                  {canManage && entry.reversible && entry.paymentId && (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="text-red-600 h-8 w-8 p-0"
-                                      onClick={() => {
-                                        setReverseTarget({
-                                          id: entry.paymentId!,
-                                          amount: entry.credit,
-                                          paymentDue: entry.reference ? { period: entry.reference } : undefined,
-                                        } as Payment);
-                                        setReverseReason("");
-                                      }}
-                                      title="Reverse Payment"
-                                    >
-                                      <RotateCcw className="h-3.5 w-3.5" />
-                                    </Button>
-                                  )}
-                                </div>
+                                {entry.receiptAvailable && entry.paymentId ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={loadingReceiptPaymentId === entry.paymentId}
+                                    onClick={() => openReceiptForPayment(entry.paymentId!)}
+                                  >
+                                    {loadingReceiptPaymentId === entry.paymentId ? "Loading…" : "Receipt"}
+                                  </Button>
+                                ) : null}
+                              </td>
+                              <td className="p-3 text-center">
+                                {canManage && entry.reversible && entry.paymentId ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-red-600 h-8 w-8 p-0"
+                                    onClick={() => {
+                                      setReverseTarget({
+                                        id: entry.paymentId!,
+                                        amount: entry.credit,
+                                        paymentDue: entry.reference ? { period: entry.reference } : undefined,
+                                      } as Payment);
+                                      setReverseReason("");
+                                    }}
+                                    title="Reverse Payment"
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
                               </td>
                             </tr>
                           ))}
@@ -1758,145 +1799,6 @@ export default function MembershipDetailPage() {
             </Card>
           </TabsContent>
 
-          {/* ── Tab 3: Credit Ledger ───────────────────────────── */}
-          <TabsContent value="credit-ledger" forceMount className="data-[state=inactive]:hidden print:hidden">
-            <Card>
-              <CardHeader className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Landmark className="h-5 w-5 text-primary" />
-                  Credit Ledger
-                </CardTitle>
-                {creditEntries.length > 0 && (
-                  <SortToggleButton
-                    order={creditSortOrder}
-                    onToggle={() => {
-                      setCreditPage(1);
-                      toggleSortOrder(creditSortOrder, setCreditSortOrder);
-                    }}
-                  />
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm text-muted-foreground">
-                    Member-owned balance from overpayments and auto-applications.
-                  </p>
-                  <div className="text-sm rounded-md bg-muted px-3 py-1.5">
-                    Current Balance:{" "}
-                    <span className="font-semibold tabular-nums text-indigo-700">
-                      {formatAmountCell(creditBalance)}
-                    </span>
-                  </div>
-                </div>
-
-                {creditEntries.length === 0 ? (
-                  <div className="text-center py-10">
-                    <Landmark className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">
-                      No credit ledger entries yet.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="rounded-lg border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[720px]">
-                        <thead>
-                          <tr className="bg-muted/50 border-b">
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Date
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Entry
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Due Period
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Note
-                            </th>
-                            <th className="text-right p-3 font-medium text-muted-foreground">
-                              Delta
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              User ID
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {creditEntries.map((entry, i) => {
-                            const delta = Number(entry.amountDelta);
-                            const isCredit = delta >= 0;
-                            return (
-                              <tr
-                                key={entry.id}
-                                className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
-                                  i % 2 === 0 ? "" : "bg-muted/10"
-                                }`}
-                              >
-                                <td className="p-3">
-                                  {new Date(entry.createdAt).toLocaleDateString()}
-                                </td>
-                                <td className="p-3 font-medium">
-                                  {creditEntryLabel(entry)}
-                                </td>
-                                <td className="p-3">
-                                  {entry.paymentDue?.period ?? "—"}
-                                </td>
-                                <td className="p-3 text-muted-foreground max-w-[260px] truncate">
-                                  {entry.note || "—"}
-                                </td>
-                                <td
-                                  className={`p-3 text-right tabular-nums font-semibold ${
-                                    isCredit ? "text-emerald-600" : "text-amber-700"
-                                  }`}
-                                >
-                                  {isCredit ? "+" : ""}
-                                  {formatAmountCell(delta)}
-                                </td>
-                                <td className="p-3 text-muted-foreground">
-                                  {entry.createdBy?.email ?? "System"}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm text-muted-foreground mt-4 pt-4 border-t">
-                      <span className="font-medium">
-                        {creditTotal} entr{creditTotal === 1 ? "y" : "ies"}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="hidden sm:inline">{creditSortOrder === "desc" ? "Newest first" : "Oldest first"}</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          disabled={creditPage <= 1}
-                          onClick={() => setCreditPage((p) => Math.max(1, p - 1))}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <span className="tabular-nums min-w-[100px] text-center">
-                          Page {creditPage} of {totalCreditPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          disabled={creditPage >= totalCreditPages}
-                          onClick={() => setCreditPage((p) => Math.min(totalCreditPages, p + 1))}
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </main>
 
@@ -2108,11 +2010,11 @@ export default function MembershipDetailPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Period From</Label>
-                <Input type="date" value={manualDueFrom} onChange={(e) => setManualDueFrom(e.target.value)} />
+                <ManualDueDateInput value={manualDueFrom} onChange={setManualDueFrom} />
               </div>
               <div className="space-y-2">
                 <Label>Period To</Label>
-                <Input type="date" value={manualDueTo} onChange={(e) => setManualDueTo(e.target.value)} />
+                <ManualDueDateInput value={manualDueTo} onChange={setManualDueTo} />
               </div>
             </div>
             <div className="flex gap-2">

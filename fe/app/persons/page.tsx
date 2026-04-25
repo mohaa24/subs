@@ -132,6 +132,7 @@ function PersonsPageContent() {
   const [error, setError] = useState("");
   const [archiveTarget, setArchiveTarget] = useState<Person | null>(null);
   const filterRef = useRef<HTMLDivElement | null>(null);
+  const addPersonFromQuery = searchParams.get("open") === "new";
 
   function isFilterPortalInteraction(target: EventTarget | null) {
     return target instanceof Element && Boolean(target.closest("[data-radix-popper-content-wrapper]"));
@@ -185,6 +186,12 @@ function PersonsPageContent() {
     setFilters(appliedFilters);
     setDraftShowArchived(showArchived);
   }, [filterOpen, appliedFilters, showArchived]);
+
+  useEffect(() => {
+    if (addPersonFromQuery) {
+      setAddOpen(true);
+    }
+  }, [addPersonFromQuery]);
 
   useEffect(() => {
     if (!user || user.role !== "super_user") return;
@@ -255,6 +262,15 @@ function PersonsPageContent() {
     setAppliedQ(qInput);
     setPage(1);
     router.push(`/persons?${buildQueryString(1, qInput, appliedFilters, showArchived)}`);
+  }
+
+  function closeAddDialog() {
+    setAddOpen(false);
+    if (addPersonFromQuery) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("open");
+      router.replace(params.toString() ? `/persons?${params.toString()}` : "/persons");
+    }
   }
 
   function personToFormData(p: Person): Partial<PersonFormData> {
@@ -331,7 +347,7 @@ function PersonsPageContent() {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      setAddOpen(false);
+      closeAddDialog();
       setPage(1);
       const params: Record<string, string> = {
         page: "1",
@@ -1025,7 +1041,7 @@ function PersonsPageContent() {
       </main>
 
       {/* Add person dialog */}
-      <Dialog open={addOpen} onOpenChange={(o) => !o && setAddOpen(false)}>
+      <Dialog open={addOpen} onOpenChange={(open) => !open && closeAddDialog()}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Person</DialogTitle>
@@ -1033,7 +1049,7 @@ function PersonsPageContent() {
           <PersonForm
             zones={zones}
             onSubmit={handleCreatePerson}
-            onCancel={() => setAddOpen(false)}
+            onCancel={closeAddDialog}
             submitLabel={saving ? "Adding…" : "Add Person"}
             disabled={saving}
           />

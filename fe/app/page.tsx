@@ -86,6 +86,8 @@ type FlowAction = {
   href?: string;
   action?: () => void;
   roles?: string[];
+  disabled?: boolean;
+  badge?: string;
 };
 
 type FlowTab = {
@@ -103,6 +105,7 @@ export default function HomePage() {
   const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
 
@@ -112,6 +115,11 @@ export default function HomePage() {
       try { scannerRef.current.clear(); } catch {}
       scannerRef.current = null;
     }
+  }, []);
+
+  const openScanner = useCallback((targetTab: "details" | "payments") => {
+    setScanTargetTab(targetTab);
+    setScannerOpen(true);
   }, []);
 
   const startScanner = useCallback(async () => {
@@ -130,18 +138,22 @@ export default function HomePage() {
             const url = new URL(decodedText);
             const match = url.pathname.match(/\/members\/(.+)/);
             if (match) {
+              const membershipId = match[1].split("?")[0];
               stopScanner();
               setScannerOpen(false);
-              router.push(`/members/${match[1]}`);
+              const nextPath = scanTargetTab === "payments" ? `/members/${membershipId}?tab=payments` : `/members/${membershipId}`;
+              router.push(nextPath);
             }
           } catch {
             // not a valid URL, try as path
             if (decodedText.includes("/members/")) {
               const match = decodedText.match(/\/members\/(.+)/);
               if (match) {
+                const membershipId = match[1].split("?")[0];
                 stopScanner();
                 setScannerOpen(false);
-                router.push(`/members/${match[1]}`);
+                const nextPath = scanTargetTab === "payments" ? `/members/${membershipId}?tab=payments` : `/members/${membershipId}`;
+                router.push(nextPath);
               }
             }
           }
@@ -151,7 +163,7 @@ export default function HomePage() {
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Could not start camera");
     }
-  }, [router, stopScanner]);
+  }, [router, scanTargetTab, stopScanner]);
 
   useEffect(() => {
     if (scannerOpen) {
@@ -299,7 +311,7 @@ export default function HomePage() {
           title: t("persons.addPerson"),
           description: t("persons.addDesc"),
           icon: UserPlus,
-          href: "/persons",
+          href: "/persons?open=new",
         },
       ],
     },
@@ -326,7 +338,7 @@ export default function HomePage() {
           title: t("memberships.scan"),
           description: t("memberships.scan"),
           icon: ScanLine,
-          action: () => setScannerOpen(true),
+          action: () => openScanner("details"),
         },
       ],
     },
@@ -353,7 +365,7 @@ export default function HomePage() {
           title: t("memberships.scan"),
           description: t("memberships.scan"),
           icon: ScanLine,
-          action: () => setScannerOpen(true),
+          action: () => openScanner("payments"),
         },
       ],
     },
@@ -405,6 +417,8 @@ export default function HomePage() {
           description: t("announcements.sendAnnouncement"),
           icon: MessageSquare,
           href: "/announcements",
+          disabled: true,
+          badge: "Coming Soon",
         },
       ],
     },
@@ -418,6 +432,8 @@ export default function HomePage() {
           description: t("distributions.createDistribution"),
           icon: Package,
           href: "/distributions",
+          disabled: true,
+          badge: "Coming Soon",
         },
       ],
     },
@@ -534,9 +550,14 @@ export default function HomePage() {
                   }
                   if (!found) return null;
                   const { action } = found;
-                  const { title, description, icon: Icon, href, action: act, actionKey } = action;
+                  const { title, description, icon: Icon, href, action: act, actionKey, disabled, badge } = action;
                   const card = (
-                    <Card className="hover:border-primary/30 hover:bg-accent/30 transition-all group cursor-pointer h-full relative">
+                    <Card className={`group h-full relative transition-all ${disabled ? "cursor-not-allowed border-dashed opacity-70" : "cursor-pointer hover:border-primary/30 hover:bg-accent/30"}`}>
+                      {badge ? (
+                        <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                          {badge}
+                        </span>
+                      ) : null}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -544,13 +565,13 @@ export default function HomePage() {
                           e.stopPropagation();
                           toggleBookmark(actionKey);
                         }}
-                        className="absolute top-2 right-2 z-10 p-2 rounded-lg hover:bg-accent/60 transition-colors"
+                        className="absolute top-2 right-2 z-10 rounded-lg p-2 transition-colors hover:bg-accent/60"
                         aria-label="Remove bookmark"
                       >
                         <Star className="h-5 w-5 text-primary fill-primary" />
                       </button>
-                      <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2 pr-12">
-                        <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                      <CardHeader className={`flex flex-row items-center gap-3 space-y-0 pb-2 pr-12 ${badge ? "pt-8" : ""}`}>
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${disabled ? "bg-muted text-muted-foreground" : "bg-primary/10 group-hover:bg-primary/20"}`}>
                           <Icon className="h-4 w-4 text-primary" />
                         </div>
                         <CardTitle className="text-sm font-medium text-foreground">
@@ -562,7 +583,7 @@ export default function HomePage() {
                       </CardContent>
                     </Card>
                   );
-                  if (href) {
+                  if (href && !disabled) {
                     return (
                       <Link key={bm.actionKey} href={href} onClick={(e) => e.stopPropagation()}>
                         {card}
@@ -574,7 +595,8 @@ export default function HomePage() {
                       key={bm.actionKey}
                       type="button"
                       className="text-left"
-                      onClick={act}
+                      onClick={disabled ? undefined : act}
+                      disabled={disabled}
                     >
                       {card}
                     </button>
@@ -618,10 +640,15 @@ export default function HomePage() {
                   </Card>
                 ) : (
                   <div className="grid gap-3 md:grid-cols-2">
-                    {actions.map(({ actionKey, title, description, icon: Icon, href, action }) => {
+                    {actions.map(({ actionKey, title, description, icon: Icon, href, action, disabled, badge }) => {
                       const isBookmarked = bookmarks.some((b) => b.actionKey === actionKey);
                       const card = (
-                        <Card className="hover:border-primary/30 hover:bg-accent/30 transition-all group cursor-pointer h-full relative">
+                        <Card className={`group h-full relative transition-all ${disabled ? "cursor-not-allowed border-dashed opacity-70" : "cursor-pointer hover:border-primary/30 hover:bg-accent/30"}`}>
+                          {badge ? (
+                            <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                              {badge}
+                            </span>
+                          ) : null}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -629,7 +656,7 @@ export default function HomePage() {
                               e.stopPropagation();
                               toggleBookmark(actionKey);
                             }}
-                            className="absolute top-2 right-2 z-10 p-2 rounded-lg hover:bg-accent/60 transition-colors"
+                            className="absolute top-2 right-2 z-10 rounded-lg p-2 transition-colors hover:bg-accent/60"
                             aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
                           >
                             {isBookmarked ? (
@@ -638,8 +665,8 @@ export default function HomePage() {
                               <Star className="h-5 w-5 text-muted-foreground/40" />
                             )}
                           </button>
-                          <CardHeader className="flex flex-row items-center gap-3 space-y-0 pb-2 pr-12">
-                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                          <CardHeader className={`flex flex-row items-center gap-3 space-y-0 pb-2 pr-12 ${badge ? "pt-8" : ""}`}>
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${disabled ? "bg-muted" : "bg-primary/10 group-hover:bg-primary/20"}`}>
                               <Icon className="h-4 w-4 text-primary" />
                             </div>
                             <CardTitle className="text-sm font-medium text-foreground">
@@ -652,7 +679,7 @@ export default function HomePage() {
                         </Card>
                       );
 
-                      if (href) {
+                      if (href && !disabled) {
                         return (
                           <Link key={`${tab.value}-${title}`} href={href}>
                             {card}
@@ -665,7 +692,8 @@ export default function HomePage() {
                           key={`${tab.value}-${title}`}
                           type="button"
                           className="text-left"
-                          onClick={action}
+                          onClick={disabled ? undefined : action}
+                          disabled={disabled}
                         >
                           {card}
                         </button>
