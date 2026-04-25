@@ -19,6 +19,14 @@ function periodString(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function endOfDueMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+function isPastDueGracePeriod(dueDate: Date, now = new Date()): boolean {
+  return now > endOfDueMonth(dueDate);
+}
+
 export async function generateMonthlyDues() {
   const now = new Date();
   const targetDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -118,16 +126,7 @@ export async function applyLateFees() {
 
   let applied = 0;
   for (const due of overdueDues) {
-    const dueDate = new Date(due.dueDate);
-    let gracePeriodEnd: Date;
-
-    if (due.membership.paymentPeriod === "Monthly") {
-      gracePeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0);
-    } else {
-      gracePeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0);
-    }
-
-    if (now <= gracePeriodEnd) continue;
+    if (!isPastDueGracePeriod(due.dueDate, now)) continue;
 
     const feePercentage = orgFeeMap.get(due.organizationId) ?? new Decimal(5);
     const lateFee = due.amountDue.mul(feePercentage).div(100);
@@ -191,6 +190,8 @@ export async function markOverdueDues() {
 
   let updated = 0;
   for (const due of dues) {
+    if (!isPastDueGracePeriod(due.dueDate, now)) continue;
+
     await prisma.paymentDue.update({
       where: { id: due.id },
       data: { status: "overdue" },

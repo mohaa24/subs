@@ -55,6 +55,14 @@ function dateOnlyString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function endOfDueMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+function isPastDueGracePeriod(dueDate: Date, now = new Date()): boolean {
+  return now > endOfDueMonth(dueDate);
+}
+
 function nonSystemAdjustmentOrStandaloneCreditFilter() {
   return {
     OR: [
@@ -1345,13 +1353,14 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
   });
 });
 
-// Mark overdue dues (dues past dueDate still pending/partial)
+// Mark overdue dues after the due month closes.
 paymentsRouter.post("/mark-overdue", async (req, res) => {
+  const now = new Date();
   const orgId = getOrgId(req);
   const where: any = {
     isSystemAdjustment: false,
     status: { in: ["pending", "partial"] },
-    dueDate: { lt: new Date() },
+    dueDate: { lt: now },
     OR: [
       { isManual: false },
       { periodStart: { not: null } },
@@ -1360,10 +1369,21 @@ paymentsRouter.post("/mark-overdue", async (req, res) => {
   };
   if (orgId) where.organizationId = orgId;
 
-  const result = await prisma.paymentDue.updateMany({
+  const dues = await prisma.paymentDue.findMany({
     where,
-    data: { status: "overdue" },
+    select: { id: true, dueDate: true },
   });
 
-  return res.json({ updated: result.count });
+  const overdueIds = dues
+    .filter((due) => isPastDueGracePeriod(due.dueDate, now))
+    .map((due) => due.id);
+
+  if (overdueIds.length > 0) {
+    await prisma.paymentDue.updateMany({
+      where: { id: { in: overdueIds } },
+      data: { status: "overdue" },
+    });
+  }
+
+  return res.json({ updated: overdueIds.length });
 });
