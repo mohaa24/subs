@@ -6,6 +6,7 @@ const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const due_types_js_1 = require("../lib/due-types.js");
 exports.organizationsRouter = (0, express_1.Router)();
 exports.organizationsRouter.use(auth_js_1.requireAuth);
 const createSchema = zod_1.z.object({
@@ -178,23 +179,27 @@ exports.organizationsRouter.post("/", async (req, res) => {
     const existing = await prisma_js_1.prisma.organization.findUnique({ where: { slug: parsed.data.slug } });
     if (existing)
         return res.status(409).json({ error: "Slug already in use" });
-    const org = await prisma_js_1.prisma.organization.create({
-        data: {
-            name: parsed.data.name,
-            slug: parsed.data.slug,
-            defaultMembershipFee: parsed.data.defaultMembershipFee ?? 0,
-            isActive: parsed.data.isActive ?? true,
-            logoUrl: parsed.data.logoUrl ?? null,
-            contactPersonName: parsed.data.contactPersonName ?? null,
-            contactPersonPhone: parsed.data.contactPersonPhone ?? null,
-            whatsAppSenderNumber: parsed.data.whatsAppSenderNumber ?? null,
-            address: parsed.data.address ?? null,
-            joinDate: parsed.data.joinDate ? new Date(parsed.data.joinDate) : null,
-            proRataMonthly: parsed.data.proRataMonthly ?? false,
-            proRataQuarterly: parsed.data.proRataQuarterly ?? false,
-            proRataYearly: parsed.data.proRataYearly ?? false,
-            lateFeePercentage: parsed.data.lateFeePercentage ?? 5,
-        },
+    const org = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const created = await tx.organization.create({
+            data: {
+                name: parsed.data.name,
+                slug: parsed.data.slug,
+                defaultMembershipFee: parsed.data.defaultMembershipFee ?? 0,
+                isActive: parsed.data.isActive ?? true,
+                logoUrl: parsed.data.logoUrl ?? null,
+                contactPersonName: parsed.data.contactPersonName ?? null,
+                contactPersonPhone: parsed.data.contactPersonPhone ?? null,
+                whatsAppSenderNumber: parsed.data.whatsAppSenderNumber ?? null,
+                address: parsed.data.address ?? null,
+                joinDate: parsed.data.joinDate ? new Date(parsed.data.joinDate) : null,
+                proRataMonthly: parsed.data.proRataMonthly ?? false,
+                proRataQuarterly: parsed.data.proRataQuarterly ?? false,
+                proRataYearly: parsed.data.proRataYearly ?? false,
+                lateFeePercentage: parsed.data.lateFeePercentage ?? 5,
+            },
+        });
+        await (0, due_types_js_1.ensureDefaultDueTypes)(tx, created.id);
+        return created;
     });
     return res.status(201).json(toOrgPayload(org));
 });

@@ -1,7 +1,12 @@
 node_modules/
 .next/
 .env
+.env.*.local
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+DS_Store
+.DS_Store
+scripts/db-tunnel.sh
+backups/

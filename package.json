@@ -9,6 +9,9 @@
     "dev": "concurrently -n be,fe -c blue,green \"cd be && npm run dev\" \"cd fe && npm run dev\"",
     "dev:be": "cd be && npm run dev",
     "dev:fe": "cd fe && npm run dev",
+    "db:tunnel": "bash scripts/db-tunnel.sh",
+    "db:use:stg": "bash scripts/use-db-env.sh stg",
+    "db:use:prd": "bash scripts/use-db-env.sh prd",
     "build": "npm run build -w fe",
     "seed": "npx -w be prisma db seed"
   },

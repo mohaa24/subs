@@ -357,6 +357,14 @@ function MembersContent() {
     const zone = zones.find((item) => String(item.code) === areaCode);
     return zone ? `${zone.code} - ${zone.name}` : areaCode;
   };
+  const memberDisplayName = (membership: Membership) =>
+    membership.hod?.nameWithInitials ?? membership.hod?.fullName ?? membership.hodPersonId;
+  const memberFullName = (membership: Membership) =>
+    membership.hod?.fullName ?? membership.hod?.nameWithInitials ?? membership.hodPersonId;
+  const memberZone = (membership: Membership) =>
+    membership.areaCode !== undefined && membership.areaCode !== null
+      ? zoneLabel(String(membership.areaCode))
+      : null;
   const appliedPills: AppliedFilterPill[] = [];
   if (appliedQ) appliedPills.push({ key: "q", label: `Search: ${appliedQ}` });
   if (appliedFilters.membershipType) {
@@ -695,14 +703,11 @@ function MembersContent() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-medium break-words">
-                            {m.hod?.fullName ?? m.hodPersonId}
+                            {memberDisplayName(m)}
                           </p>
-                          <Link
-                            href={`/members/${m.id}`}
-                            className="mt-0.5 inline-block text-xs text-primary hover:underline"
-                          >
-                            {m.membershipNo}
-                          </Link>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {[memberZone(m), m.membershipNo].filter(Boolean).join(" • ")}
+                          </p>
                         </div>
                         <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                           <MembershipActions membership={m} />
@@ -715,7 +720,22 @@ function MembersContent() {
                         </div>
                         <div>
                           <p className="text-muted-foreground">Status</p>
-                          <p className="font-medium">{m.membershipStatus}</p>
+                          <p>
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
+                                m.membershipStatus === "Active"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-red-200 bg-red-50 text-red-700"
+                              }`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full ${
+                                  m.membershipStatus === "Active" ? "bg-emerald-500" : "bg-red-500"
+                                }`}
+                              />
+                              {m.membershipStatus}
+                            </span>
+                          </p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Registered</p>
@@ -733,8 +753,8 @@ function MembersContent() {
                   <table className="w-full text-sm min-w-[640px]">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left p-3 font-medium">Name</th>
-                        <th className="text-left p-3 font-medium">Membership No</th>
+                        <th className="text-left p-3 font-medium">Member</th>
+                        <th className="text-left p-3 font-medium">Full Name</th>
                         <th className="text-left p-3 font-medium">Type</th>
                         <th className="text-left p-3 font-medium">Status</th>
                         <th className="text-left p-3 font-medium">Registered</th>
@@ -749,22 +769,40 @@ function MembersContent() {
                           onClick={() => openMembershipDetails(m.id)}
                         >
                           <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <span className={`${(m as any).isArchived ? "line-through opacity-60" : ""}`}>
-                                {m.hod?.fullName ?? m.hodPersonId}
-                              </span>
-                              {(m as any).isArchived && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
-                              )}
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`${(m as any).isArchived ? "line-through opacity-60" : ""}`}>
+                                  {memberDisplayName(m)}
+                                </span>
+                                {(m as any).isArchived && (
+                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {[memberZone(m), m.membershipNo].filter(Boolean).join(" • ")}
+                              </p>
                             </div>
                           </td>
                           <td className="p-3">
-                            <Link href={`/members/${m.id}`} className="font-medium text-primary hover:underline">
-                              {m.membershipNo}
-                            </Link>
+                            {memberFullName(m)}
                           </td>
                           <td className="p-3">{m.membershipType}</td>
-                          <td className="p-3">{m.membershipStatus}</td>
+                          <td className="p-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                m.membershipStatus === "Active"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-red-200 bg-red-50 text-red-700"
+                              }`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full ${
+                                  m.membershipStatus === "Active" ? "bg-emerald-500" : "bg-red-500"
+                                }`}
+                              />
+                              {m.membershipStatus}
+                            </span>
+                          </td>
                           <td className="p-3">
                             {m.dateOfRegistration
                               ? new Date(m.dateOfRegistration).toLocaleDateString()

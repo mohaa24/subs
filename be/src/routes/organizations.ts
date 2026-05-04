@@ -3,6 +3,7 @@ import { UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
+import { ensureDefaultDueTypes } from "../lib/due-types.js";
 
 export const organizationsRouter = Router();
 
@@ -184,23 +185,27 @@ organizationsRouter.post("/", async (req, res) => {
   const existing = await prisma.organization.findUnique({ where: { slug: parsed.data.slug } });
   if (existing) return res.status(409).json({ error: "Slug already in use" });
 
-  const org = await prisma.organization.create({
-    data: {
-      name: parsed.data.name,
-      slug: parsed.data.slug,
-      defaultMembershipFee: parsed.data.defaultMembershipFee ?? 0,
-      isActive: parsed.data.isActive ?? true,
-      logoUrl: parsed.data.logoUrl ?? null,
-      contactPersonName: parsed.data.contactPersonName ?? null,
-      contactPersonPhone: parsed.data.contactPersonPhone ?? null,
-      whatsAppSenderNumber: parsed.data.whatsAppSenderNumber ?? null,
-      address: parsed.data.address ?? null,
-      joinDate: parsed.data.joinDate ? new Date(parsed.data.joinDate) : null,
-      proRataMonthly: parsed.data.proRataMonthly ?? false,
-      proRataQuarterly: parsed.data.proRataQuarterly ?? false,
-      proRataYearly: parsed.data.proRataYearly ?? false,
-      lateFeePercentage: parsed.data.lateFeePercentage ?? 5,
-    },
+  const org = await prisma.$transaction(async (tx) => {
+    const created = await tx.organization.create({
+      data: {
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        defaultMembershipFee: parsed.data.defaultMembershipFee ?? 0,
+        isActive: parsed.data.isActive ?? true,
+        logoUrl: parsed.data.logoUrl ?? null,
+        contactPersonName: parsed.data.contactPersonName ?? null,
+        contactPersonPhone: parsed.data.contactPersonPhone ?? null,
+        whatsAppSenderNumber: parsed.data.whatsAppSenderNumber ?? null,
+        address: parsed.data.address ?? null,
+        joinDate: parsed.data.joinDate ? new Date(parsed.data.joinDate) : null,
+        proRataMonthly: parsed.data.proRataMonthly ?? false,
+        proRataQuarterly: parsed.data.proRataQuarterly ?? false,
+        proRataYearly: parsed.data.proRataYearly ?? false,
+        lateFeePercentage: parsed.data.lateFeePercentage ?? 5,
+      },
+    });
+    await ensureDefaultDueTypes(tx, created.id);
+    return created;
   });
   return res.status(201).json(toOrgPayload(org));
 });

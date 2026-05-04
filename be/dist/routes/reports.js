@@ -33,6 +33,171 @@ function buildPersonWhere(orgId, filters) {
     }
     return where;
 }
+function formatZoneLabel(areaCode, zoneMap) {
+    if (areaCode === null || areaCode === undefined)
+        return "";
+    const zoneName = zoneMap.get(areaCode);
+    return zoneName ? `${areaCode} - ${zoneName}` : String(areaCode);
+}
+async function getOutstandingBalanceRows(orgId, filters) {
+    const areaCode = typeof filters.areaCode === "number"
+        ? filters.areaCode
+        : typeof filters.areaCode === "string" && filters.areaCode
+            ? Number.parseInt(filters.areaCode, 10)
+            : null;
+    const where = {
+        organizationId: orgId,
+        isSystemAdjustment: false,
+        status: { in: ["pending", "partial", "overdue"] },
+        ...(Number.isInteger(areaCode) ? { membership: { areaCode: areaCode } } : {}),
+    };
+    const [dues, zones] = await Promise.all([
+        prisma_js_1.prisma.paymentDue.findMany({
+            where,
+            select: {
+                membershipId: true,
+                amountDue: true,
+                amountPaid: true,
+                membership: {
+                    select: {
+                        membershipNo: true,
+                        areaCode: true,
+                        hod: { select: { nameWithInitials: true, fullName: true } },
+                    },
+                },
+            },
+        }),
+        prisma_js_1.prisma.zone.findMany({
+            where: { organizationId: orgId },
+            select: { code: true, name: true },
+            orderBy: { code: "asc" },
+        }),
+    ]);
+    const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
+    const rowsByMembership = new Map();
+    for (const due of dues) {
+        const remaining = Number(due.amountDue) - Number(due.amountPaid);
+        if (remaining <= 0)
+            continue;
+        const existing = rowsByMembership.get(due.membershipId);
+        if (existing) {
+            existing.totalOutstanding += remaining;
+            continue;
+        }
+        rowsByMembership.set(due.membershipId, {
+            membershipId: due.membershipId,
+            memberName: due.membership.hod?.nameWithInitials ??
+                due.membership.hod?.fullName ??
+                due.membership.membershipNo,
+            zone: formatZoneLabel(due.membership.areaCode, zoneMap),
+            membershipNo: due.membership.membershipNo,
+            totalOutstanding: remaining,
+        });
+    }
+    return [...rowsByMembership.values()]
+        .filter((row) => row.totalOutstanding > 0)
+        .map((row) => ({
+        ...row,
+        totalOutstanding: Number(row.totalOutstanding.toFixed(2)),
+    }))
+        .sort((a, b) => {
+        if (b.totalOutstanding !== a.totalOutstanding)
+            return b.totalOutstanding - a.totalOutstanding;
+        return a.membershipNo.localeCompare(b.membershipNo);
+    });
+}
+async function getOutstandingBreakdownRows(orgId, filters) {
+    const areaCode = typeof filters.areaCode === "number"
+        ? filters.areaCode
+        : typeof filters.areaCode === "string" && filters.areaCode
+            ? Number.parseInt(filters.areaCode, 10)
+            : null;
+    const dueTypeId = typeof filters.dueTypeId === "string" && filters.dueTypeId ? filters.dueTypeId : null;
+    const dueTypeWhere = {
+        organizationId: orgId,
+        ...(dueTypeId ? { id: dueTypeId } : {}),
+    };
+    const dueTypes = await prisma_js_1.prisma.dueType.findMany({
+        where: dueTypeWhere,
+        select: { id: true, name: true, sortOrder: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+    const dueTypeNameById = new Map(dueTypes.map((dueType) => [dueType.id, dueType.name]));
+    const where = {
+        organizationId: orgId,
+        isSystemAdjustment: false,
+        status: { in: ["pending", "partial", "overdue"] },
+        ...(dueTypeId ? { dueTypeId } : {}),
+        ...(Number.isInteger(areaCode) ? { membership: { areaCode: areaCode } } : {}),
+    };
+    const [dues, zones] = await Promise.all([
+        prisma_js_1.prisma.paymentDue.findMany({
+            where,
+            select: {
+                membershipId: true,
+                dueTypeId: true,
+                amountDue: true,
+                amountPaid: true,
+                membership: {
+                    select: {
+                        membershipNo: true,
+                        areaCode: true,
+                        hod: { select: { nameWithInitials: true, fullName: true } },
+                    },
+                },
+            },
+        }),
+        prisma_js_1.prisma.zone.findMany({
+            where: { organizationId: orgId },
+            select: { code: true, name: true },
+            orderBy: { code: "asc" },
+        }),
+    ]);
+    const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
+    const rowsByMembership = new Map();
+    for (const due of dues) {
+        const remaining = Number(due.amountDue) - Number(due.amountPaid);
+        if (remaining <= 0)
+            continue;
+        const dueTypeName = dueTypeNameById.get(due.dueTypeId);
+        if (!dueTypeName)
+            continue;
+        const existing = rowsByMembership.get(due.membershipId);
+        if (existing) {
+            existing.totalOutstanding += remaining;
+            existing.dueTypeAmounts[dueTypeName] =
+                Number((existing.dueTypeAmounts[dueTypeName] || 0)) + remaining;
+            continue;
+        }
+        rowsByMembership.set(due.membershipId, {
+            membershipId: due.membershipId,
+            memberName: due.membership.hod?.nameWithInitials ??
+                due.membership.hod?.fullName ??
+                due.membership.membershipNo,
+            zone: formatZoneLabel(due.membership.areaCode, zoneMap),
+            membershipNo: due.membership.membershipNo,
+            totalOutstanding: remaining,
+            dueTypeAmounts: {
+                [dueTypeName]: remaining,
+            },
+        });
+    }
+    return {
+        dueTypeColumns: dueTypes.map((dueType) => dueType.name),
+        rows: [...rowsByMembership.values()]
+            .filter((row) => row.totalOutstanding > 0)
+            .map((row) => ({
+            ...row,
+            totalOutstanding: Number(row.totalOutstanding.toFixed(2)),
+            dueTypeAmounts: Object.fromEntries(Object.entries(row.dueTypeAmounts).map(([name, amount]) => [name, Number(amount.toFixed(2))])),
+        }))
+            .sort((a, b) => {
+            if (b.totalOutstanding !== a.totalOutstanding)
+                return b.totalOutstanding - a.totalOutstanding;
+            return a.membershipNo.localeCompare(b.membershipNo);
+        }),
+    };
+}
 async function getMemberCreditLiabilityRows(orgId) {
     const grouped = await prisma_js_1.prisma.membershipCreditLedger.groupBy({
         by: ["membershipId"],
@@ -80,7 +245,15 @@ async function getMemberCreditLiabilityRows(orgId) {
     });
 }
 const querySchema = zod_1.z.object({
-    entity: zod_1.z.enum(["persons", "memberships", "payments", "distributions", "memberCredits"]),
+    entity: zod_1.z.enum([
+        "persons",
+        "memberships",
+        "payments",
+        "distributions",
+        "memberCredits",
+        "outstandingBalances",
+        "outstandingBreakdown",
+    ]),
     filters: zod_1.z.record(zod_1.z.any()).optional(),
 });
 exports.reportsRouter.post("/query", async (req, res) => {
@@ -128,6 +301,12 @@ exports.reportsRouter.post("/query", async (req, res) => {
                     where.paymentDue = { status: "overdue" };
                 }
             }
+            else {
+                where.OR = [
+                    { paymentDueId: null },
+                    { paymentDue: { is: { isSystemAdjustment: false } } },
+                ];
+            }
             const payments = await prisma_js_1.prisma.payment.findMany({
                 where,
                 include: {
@@ -160,6 +339,14 @@ exports.reportsRouter.post("/query", async (req, res) => {
             const rows = await getMemberCreditLiabilityRows(orgId);
             return res.json(rows);
         }
+        case "outstandingBalances": {
+            const rows = await getOutstandingBalanceRows(orgId, filters);
+            return res.json(rows);
+        }
+        case "outstandingBreakdown": {
+            const { rows } = await getOutstandingBreakdownRows(orgId, filters);
+            return res.json(rows);
+        }
         default:
             return res.status(400).json({ error: "Invalid entity" });
     }
@@ -179,7 +366,15 @@ exports.reportsRouter.get("/export", async (req, res) => {
         return res.status(400).json({ error: "Organization scope required" });
     if (req.auth.organizationId && orgId !== req.auth.organizationId && req.auth.role !== "super_user")
         return res.status(403).json({ error: "Forbidden" });
-    const validEntities = ["persons", "memberships", "payments", "distributions", "memberCredits"];
+    const validEntities = [
+        "persons",
+        "memberships",
+        "payments",
+        "distributions",
+        "memberCredits",
+        "outstandingBalances",
+        "outstandingBreakdown",
+    ];
     if (!validEntities.includes(entity))
         return res.status(400).json({ error: "Invalid entity", valid: validEntities });
     let rows = [];
@@ -223,6 +418,12 @@ exports.reportsRouter.get("/export", async (req, res) => {
             if (typeof filters.paymentStatus === "string") {
                 where.paymentDue = { status: filters.paymentStatus };
             }
+            else {
+                where.OR = [
+                    { paymentDueId: null },
+                    { paymentDue: { is: { isSystemAdjustment: false } } },
+                ];
+            }
             const payments = await prisma_js_1.prisma.payment.findMany({
                 where,
                 include: { membership: true, paymentDue: true },
@@ -232,7 +433,7 @@ exports.reportsRouter.get("/export", async (req, res) => {
             rows = payments.map((p) => ({
                 id: p.id,
                 membershipNo: p.membership.membershipNo,
-                period: p.paymentDue.period,
+                period: p.paymentDue?.period ?? "Credit Payment",
                 amount: Number(p.amount),
                 paymentDate: p.paymentDate.toISOString().slice(0, 10),
             }));
@@ -267,6 +468,32 @@ exports.reportsRouter.get("/export", async (req, res) => {
                 membershipStatus: item.membershipStatus,
                 hodName: item.hodName,
                 creditBalance: item.creditBalance.toFixed(2),
+            }));
+            break;
+        }
+        case "outstandingBalances": {
+            const rowsData = await getOutstandingBalanceRows(orgId, filters);
+            headers = ["memberName", "zone", "membershipNo", "totalOutstanding"];
+            rows = rowsData.map((item) => ({
+                memberName: item.memberName,
+                zone: item.zone,
+                membershipNo: item.membershipNo,
+                totalOutstanding: item.totalOutstanding.toFixed(2),
+            }));
+            break;
+        }
+        case "outstandingBreakdown": {
+            const report = await getOutstandingBreakdownRows(orgId, filters);
+            headers = ["memberName", "zone", "membershipNo", ...report.dueTypeColumns, "totalOutstanding"];
+            rows = report.rows.map((item) => ({
+                memberName: item.memberName,
+                zone: item.zone,
+                membershipNo: item.membershipNo,
+                totalOutstanding: item.totalOutstanding.toFixed(2),
+                ...Object.fromEntries(report.dueTypeColumns.map((column) => [
+                    column,
+                    Number(item.dueTypeAmounts[column] || 0).toFixed(2),
+                ])),
             }));
             break;
         }

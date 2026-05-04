@@ -45,6 +45,7 @@ model Organization {
   zones              Zone[]
   activityFeedItems  ActivityFeedItem[]
   paymentDueAdjustments PaymentDueAdjustment[]
+  dueTypes           DueType[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -91,6 +92,7 @@ model User {
   createdCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationCreatedBy")
   reversedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationReversedBy")
   createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
+  createdPaymentDues  PaymentDue[]            @relation("PaymentDueCreatedBy")
   createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
 }
 
@@ -402,15 +404,42 @@ enum PaymentKind {
   credit
 }
 
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card
+  other
+}
+
 enum PaymentDueAdjustmentType {
   due_edit
   late_fee
+}
+
+model DueType {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  systemKey      String?
+  autoAllocate   Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentDues   PaymentDue[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, systemKey])
 }
 
 model PaymentDue {
   id             String    @id @default(cuid())
   membershipId   String
   organizationId String
+  dueTypeId      String
+  createdByUserId String?
   dueDate        DateTime
   period         String
   isManual       Boolean   @default(false)
@@ -428,12 +457,16 @@ model PaymentDue {
 
   membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dueType      DueType      @relation(fields: [dueTypeId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("PaymentDueCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   payments     Payment[]
   creditEntries MembershipCreditLedger[]
   creditAllocations MembershipCreditAllocation[]
   adjustments  PaymentDueAdjustment[]
 
   @@index([membershipId, period])
+  @@index([createdByUserId])
+  @@index([dueTypeId, dueDate])
 }
 
 model PaymentDueAdjustment {
@@ -462,11 +495,15 @@ model Payment {
   paymentDueId      String?
   membershipId      String
   organizationId    String
+  receiptNumber     String?
   paymentKind       PaymentKind @default(due)
+  paymentMethod     PaymentMethod?
   amount            Decimal   @db.Decimal(12, 2)
   paymentDate       DateTime  @default(now())
   collectedByUserId String
   note              String?
+  outstandingAfterPayment Decimal? @db.Decimal(12, 2)
+  creditBalanceAfterPayment Decimal? @db.Decimal(12, 2)
   isReversed        Boolean   @default(false)
   reversedAt        DateTime?
   reversedByUserId  String?
@@ -480,6 +517,8 @@ model Payment {
   reversedBy   User?        @relation("ReversedByUser", fields: [reversedByUserId], references: [id])
   creditEntries MembershipCreditLedger[]
   sourcedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationSourcePayment")
+
+  @@unique([organizationId, receiptNumber])
 }
 
 enum MembershipCreditEntryType {

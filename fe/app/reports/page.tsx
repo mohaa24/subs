@@ -4,7 +4,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, apiUrl } from "@/lib/api";
+import { api, apiUrl, type DueType, type Zone } from "@/lib/api";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,14 @@ import {
 import { FileText, Download, Search, Filter } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 
-type EntityType = "persons" | "memberships" | "payments" | "distributions" | "memberCredits";
+type EntityType =
+  | "persons"
+  | "memberships"
+  | "payments"
+  | "distributions"
+  | "memberCredits"
+  | "outstandingBalances"
+  | "outstandingBreakdown";
 
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
 
@@ -77,12 +84,26 @@ interface MemberCreditLiabilityResult {
   creditBalance: number;
 }
 
+interface OutstandingBalanceResult {
+  membershipId: string;
+  memberName: string;
+  zone: string;
+  membershipNo: string;
+  totalOutstanding: number;
+}
+
+interface OutstandingBreakdownResult extends OutstandingBalanceResult {
+  dueTypeAmounts: Record<string, number>;
+}
+
 type ReportResult =
   | PersonResult[]
   | MembershipResult[]
   | PaymentResult[]
   | DistributionRecordResult[]
-  | MemberCreditLiabilityResult[];
+  | MemberCreditLiabilityResult[]
+  | OutstandingBalanceResult[]
+  | OutstandingBreakdownResult[];
 
 export default function ReportsPage() {
   const { t } = useTranslation();
@@ -101,6 +122,10 @@ export default function ReportsPage() {
   const [isMadarasaFilter, setIsMadarasaFilter] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState("__all__");
   const [distributionId, setDistributionId] = useState("");
+  const [areaCode, setAreaCode] = useState("__all__");
+  const [dueTypeId, setDueTypeId] = useState("__all__");
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [dueTypes, setDueTypes] = useState<DueType[]>([]);
 
   const [results, setResults] = useState<ReportResult>([]);
   const [loading, setLoading] = useState(false);
@@ -110,6 +135,16 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!user?.organizationId) return;
+    api<Zone[]>("/zones", { params: { includeInactive: "true" } })
+      .then(setZones)
+      .catch(() => setZones([]));
+    api<DueType[]>("/due-types", { params: { includeInactive: "true" } })
+      .then(setDueTypes)
+      .catch(() => setDueTypes([]));
+  }, [user?.organizationId]);
 
   function buildFilters(): Record<string, unknown> {
     const f: Record<string, unknown> = {};
@@ -129,6 +164,11 @@ export default function ReportsPage() {
       if (ps) f.paymentStatus = ps;
     } else if (entity === "distributions") {
       if (distributionId.trim()) f.distributionId = distributionId.trim();
+    } else if (entity === "outstandingBalances") {
+      if (areaCode !== "__all__") f.areaCode = areaCode;
+    } else if (entity === "outstandingBreakdown") {
+      if (areaCode !== "__all__") f.areaCode = areaCode;
+      if (dueTypeId !== "__all__") f.dueTypeId = dueTypeId;
     }
     return f;
   }
@@ -203,6 +243,39 @@ export default function ReportsPage() {
     (sum, row) => sum + Number(row.creditBalance || 0),
     0,
   );
+  const outstandingBalanceRows =
+    entity === "outstandingBalances" ? (results as OutstandingBalanceResult[]) : [];
+  const outstandingBreakdownRows =
+    entity === "outstandingBreakdown" ? (results as OutstandingBreakdownResult[]) : [];
+  const selectedDueTypeNames =
+    dueTypeId !== "__all__"
+      ? dueTypes.filter((dueType) => dueType.id === dueTypeId).map((dueType) => dueType.name)
+      : dueTypes.filter((dueType) => dueType.isActive).map((dueType) => dueType.name);
+  const resultDueTypeNames = Array.from(
+    new Set(
+      outstandingBreakdownRows.flatMap((row) =>
+        Object.keys(row.dueTypeAmounts || {}).filter(
+          (name) => Number(row.dueTypeAmounts?.[name] || 0) > 0
+        )
+      )
+    )
+  );
+  const breakdownColumns =
+    entity === "outstandingBreakdown"
+      ? (resultDueTypeNames.length > 0 ? resultDueTypeNames : selectedDueTypeNames).filter(
+          (name) =>
+            outstandingBreakdownRows.some((row) => Number(row.dueTypeAmounts?.[name] || 0) > 0) ||
+            dueTypeId !== "__all__"
+        )
+      : [];
+  const totalOutstandingBalance = outstandingBalanceRows.reduce(
+    (sum, row) => sum + Number(row.totalOutstanding || 0),
+    0,
+  );
+  const totalOutstandingBreakdown = outstandingBreakdownRows.reduce(
+    (sum, row) => sum + Number(row.totalOutstanding || 0),
+    0,
+  );
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -252,6 +325,8 @@ export default function ReportsPage() {
                     <SelectItem value="payments">{t("reports.payments")}</SelectItem>
                     <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
                     <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
+                    <SelectItem value="outstandingBalances">Outstanding Balance Report</SelectItem>
+                    <SelectItem value="outstandingBreakdown">Outstanding Breakdown Report</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -424,6 +499,64 @@ export default function ReportsPage() {
                   />
                 </div>
               )}
+
+              {entity === "outstandingBalances" && (
+                <div>
+                  <label className="text-sm font-medium block mb-2">Member Zone</label>
+                  <Select value={areaCode} onValueChange={setAreaCode}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("reports.any")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                      {zones.map((zone) => (
+                        <SelectItem key={zone.id} value={String(zone.code)}>
+                          {zone.code} - {zone.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {entity === "outstandingBreakdown" && (
+                <>
+                  <div>
+                    <label className="text-sm font-medium block mb-2">Member Zone</label>
+                    <Select value={areaCode} onValueChange={setAreaCode}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("reports.any")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                        {zones.map((zone) => (
+                          <SelectItem key={zone.id} value={String(zone.code)}>
+                            {zone.code} - {zone.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium block mb-2">Due Type</label>
+                    <Select value={dueTypeId} onValueChange={setDueTypeId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("reports.any")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">{t("reports.any")}</SelectItem>
+                        {dueTypes
+                          .filter((dueType) => dueType.isActive)
+                          .map((dueType) => (
+                            <SelectItem key={dueType.id} value={dueType.id}>
+                              {dueType.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -463,6 +596,26 @@ export default function ReportsPage() {
                   </p>
                   <p className="text-2xl font-semibold tabular-nums">
                     {totalLiability.toFixed(2)}
+                  </p>
+                </div>
+              )}
+              {entity === "outstandingBalances" && (
+                <div className="mb-4 rounded-lg border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Total Outstanding
+                  </p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {totalOutstandingBalance.toFixed(2)}
+                  </p>
+                </div>
+              )}
+              {entity === "outstandingBreakdown" && (
+                <div className="mb-4 rounded-lg border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Total Outstanding
+                  </p>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {totalOutstandingBreakdown.toFixed(2)}
                   </p>
                 </div>
               )}
@@ -601,6 +754,64 @@ export default function ReportsPage() {
                           <td className="p-3">{r.membershipStatus || "—"}</td>
                           <td className="p-3 text-right tabular-nums font-medium">
                             {Number(r.creditBalance).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "outstandingBalances" && (
+                  <table className="w-full text-sm min-w-[650px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Member Name</th>
+                        <th className="text-left p-3 font-medium">Zone</th>
+                        <th className="text-left p-3 font-medium">Membership Number</th>
+                        <th className="text-right p-3 font-medium">Total Outstanding</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outstandingBalanceRows.map((r) => (
+                        <tr key={r.membershipId} className="border-t">
+                          <td className="p-3">{r.memberName || "—"}</td>
+                          <td className="p-3 text-muted-foreground">{r.zone || "—"}</td>
+                          <td className="p-3 font-medium">{r.membershipNo || "—"}</td>
+                          <td className="p-3 text-right tabular-nums font-medium">
+                            {Number(r.totalOutstanding).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {entity === "outstandingBreakdown" && (
+                  <table className="w-full text-sm min-w-[900px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-3 font-medium">Member Name</th>
+                        <th className="text-left p-3 font-medium">Zone</th>
+                        <th className="text-left p-3 font-medium">Membership Number</th>
+                        {breakdownColumns.map((column) => (
+                          <th key={column} className="text-right p-3 font-medium">
+                            {column}
+                          </th>
+                        ))}
+                        <th className="text-right p-3 font-medium">Total Outstanding</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outstandingBreakdownRows.map((r) => (
+                        <tr key={r.membershipId} className="border-t">
+                          <td className="p-3">{r.memberName || "—"}</td>
+                          <td className="p-3 text-muted-foreground">{r.zone || "—"}</td>
+                          <td className="p-3 font-medium">{r.membershipNo || "—"}</td>
+                          {breakdownColumns.map((column) => (
+                            <td key={`${r.membershipId}-${column}`} className="p-3 text-right tabular-nums">
+                              {Number(r.dueTypeAmounts?.[column] || 0).toFixed(2)}
+                            </td>
+                          ))}
+                          <td className="p-3 text-right tabular-nums font-medium">
+                            {Number(r.totalOutstanding).toFixed(2)}
                           </td>
                         </tr>
                       ))}

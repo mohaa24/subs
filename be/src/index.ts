@@ -21,6 +21,7 @@ import { distributionsRouter } from "./routes/distributions.js";
 import { reportsRouter } from "./routes/reports.js";
 import { messagesRouter } from "./routes/messages.js";
 import { zonesRouter } from "./routes/zones.js";
+import { dueTypesRouter } from "./routes/due-types.js";
 import { activityFeedRouter } from "./routes/activity-feed.js";
 import { publicMembershipExportRouter } from "./routes/public-membership-export.js";
 import { startCronJobs } from "./lib/cron.js";
@@ -58,6 +59,7 @@ app.use("/distributions", distributionsRouter);
 app.use("/reports", reportsRouter);
 app.use("/messages", messagesRouter);
 app.use("/zones", zonesRouter);
+app.use("/due-types", dueTypesRouter);
 app.use("/", activityFeedRouter);
 
 app.listen(PORT, () => {

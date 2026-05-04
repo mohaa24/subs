@@ -1,5 +1,6 @@
 import type { DueStatus, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { getDueTypeBySystemKey } from "./due-types.js";
 
 const ZERO = new Decimal(0);
 
@@ -12,6 +13,7 @@ type CreditSweepDue = {
   period: string;
   reason: string | null;
   isManual: boolean;
+  dueType?: { name: string } | null;
   amountDue: Decimal;
   amountPaid: Decimal;
   status: DueStatus;
@@ -238,6 +240,7 @@ export async function applyAvailableCreditToDue(
       period: true,
       reason: true,
       isManual: true,
+      dueType: { select: { name: true } },
       amountDue: true,
       amountPaid: true,
       status: true,
@@ -251,7 +254,9 @@ export async function applyAvailableCreditToDue(
     due,
     availableLots,
     createdByUserId: input.createdByUserId ?? null,
-    note: input.note ?? buildAutoApplyCreditNote(due),
+    note:
+      input.note ??
+      `Manually allocated member credit to ${due.dueType.name || due.period}`,
   });
 }
 
@@ -277,6 +282,7 @@ export async function applyAvailableCreditAcrossOutstandingDues(
       membershipId: input.membershipId,
       isSystemAdjustment: false,
       status: { in: ["pending", "partial", "overdue"] },
+      dueType: { is: { autoAllocate: true } },
     },
     orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     select: {
@@ -286,6 +292,7 @@ export async function applyAvailableCreditAcrossOutstandingDues(
       period: true,
       reason: true,
       isManual: true,
+      dueType: { select: { name: true } },
       amountDue: true,
       amountPaid: true,
       status: true,
@@ -336,11 +343,13 @@ export async function moveNegativeCreditBalanceToDue(
 
   const transferAmount = creditBalance.abs();
   const dueDate = input.dueDate ?? new Date();
+  const otherDueType = await getDueTypeBySystemKey(tx, input.organizationId, "other");
 
   const due = await tx.paymentDue.create({
     data: {
       membershipId: input.membershipId,
       organizationId: input.organizationId,
+      dueTypeId: otherDueType.id,
       dueDate,
       period: input.period?.trim() || `Credit transfer ${isoDateOnly(dueDate)}`,
       isManual: true,

@@ -208,10 +208,23 @@ export interface Organization {
 
 export type DueStatus = "pending" | "partial" | "paid" | "overdue";
 
+export interface DueType {
+  id: string;
+  organizationId: string;
+  name: string;
+  systemKey?: string | null;
+  autoAllocate: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PaymentDue {
   id: string;
   membershipId: string;
   organizationId: string;
+  dueTypeId?: string;
   dueDate: string;
   period: string;
   isManual?: boolean;
@@ -222,8 +235,10 @@ export interface PaymentDue {
   amountPaid: number;
   status: DueStatus;
   createdAt: string;
+  dueType?: Pick<DueType, "id" | "name" | "autoAllocate" | "isActive" | "systemKey">;
   membership?: {
     membershipNo: string;
+    areaCode?: number | null;
     hod?: { fullName: string; nameWithInitials: string };
   };
 }
@@ -235,7 +250,9 @@ export interface Payment {
   paymentDueId: string | null;
   membershipId: string;
   organizationId: string;
+  receiptNumber?: string | null;
   paymentKind: PaymentKind;
+  paymentMethod?: "cash" | "bank_transfer" | "card" | "other" | null;
   amount: number;
   paymentDate: string;
   collectedByUserId: string;
@@ -246,6 +263,7 @@ export interface Payment {
   membership?: {
     id?: string;
     membershipNo: string;
+    areaCode?: number | null;
     hod?: { fullName: string; nameWithInitials: string };
   };
 }
@@ -253,6 +271,7 @@ export interface Payment {
 export interface PaymentReceipt {
   paymentKind: PaymentKind;
   paymentId: string;
+  receiptNumber: string;
   paymentDate: string;
   note?: string | null;
   period: string;
@@ -262,10 +281,13 @@ export interface PaymentReceipt {
   organizationId: string;
   organizationName: string;
   collectedBy: string;
+  paymentMethod?: string | null;
   paidAmount: number;
   appliedToDue: number;
   overpaymentToCredit: number;
   remainingAfter: number;
+  outstandingAfterPayment: number;
+  creditBalanceAfterPayment: number;
 }
 
 export interface PaymentStatementItem {
@@ -280,6 +302,9 @@ export interface PaymentStatementItem {
     | "credit_adjustment"
     | "debit_adjustment";
   occurredAt: string;
+  action: string;
+  dueType: string | null;
+  detail: string | null;
   description: string;
   reference: string | null;
   note: string | null;

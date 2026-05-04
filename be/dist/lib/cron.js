@@ -8,9 +8,22 @@ exports.startCronJobs = startCronJobs;
 const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("./prisma.js");
 const membership_credit_js_1 = require("./membership-credit.js");
+const due_types_js_1 = require("./due-types.js");
 const message_queue_js_1 = require("./message-queue.js");
+// Monthly due generation can auto-apply credit across several older dues, so
+// the cron path uses the same relaxed timeout as the interactive payment flows.
+const CREDIT_SWEEP_TRANSACTION_OPTIONS = {
+    maxWait: 10000,
+    timeout: 10000,
+};
 function periodString(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+function endOfDueMonth(date) {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+function isPastDueGracePeriod(dueDate, now = new Date()) {
+    return now > endOfDueMonth(dueDate);
 }
 async function generateMonthlyDues() {
     const now = new Date();
@@ -35,18 +48,20 @@ async function generateMonthlyDues() {
             skipped++;
             continue;
         }
-        const existing = await prisma_js_1.prisma.paymentDue.findUnique({
-            where: { membershipId_period: { membershipId: m.id, period } },
+        const existing = await prisma_js_1.prisma.paymentDue.findFirst({
+            where: { membershipId: m.id, period, isManual: false },
         });
         if (existing) {
             skipped++;
             continue;
         }
         const applied = await prisma_js_1.prisma.$transaction(async (tx) => {
+            const subscriptionDueType = await (0, due_types_js_1.getDueTypeBySystemKey)(tx, m.organizationId, "subscription");
             const due = await tx.paymentDue.create({
                 data: {
                     membershipId: m.id,
                     organizationId: m.organizationId,
+                    dueTypeId: subscriptionDueType.id,
                     dueDate: targetDate,
                     period,
                     amountDue: m.totalContribution,
@@ -54,11 +69,10 @@ async function generateMonthlyDues() {
                     status: "pending",
                 },
             });
-            return (0, membership_credit_js_1.applyAvailableCreditToDue)(tx, {
-                dueId: due.id,
-                note: `Auto-applied member credit to ${period} due`,
+            return (0, membership_credit_js_1.applyAvailableCreditAcrossOutstandingDues)(tx, {
+                membershipId: m.id,
             });
-        });
+        }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
         created++;
         autoAppliedCredit = autoAppliedCredit.add(applied);
         if (m.hod?.whatsAppNumber) {
@@ -78,9 +92,15 @@ async function applyLateFees() {
     const orgFeeMap = new Map(orgs.map((o) => [o.id, o.lateFeePercentage]));
     const overdueDues = await prisma_js_1.prisma.paymentDue.findMany({
         where: {
+            isSystemAdjustment: false,
             status: { in: ["pending", "partial", "overdue"] },
             dueDate: { lt: now },
             lateFeeApplied: { equals: new library_1.Decimal(0) },
+            OR: [
+                { isManual: false },
+                { periodStart: { not: null } },
+                { periodEnd: { not: null } },
+            ],
         },
         include: {
             membership: {
@@ -90,26 +110,32 @@ async function applyLateFees() {
     });
     let applied = 0;
     for (const due of overdueDues) {
-        const dueDate = new Date(due.dueDate);
-        let gracePeriodEnd;
-        if (due.membership.paymentPeriod === "Monthly") {
-            gracePeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0);
-        }
-        else {
-            gracePeriodEnd = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 0);
-        }
-        if (now <= gracePeriodEnd)
+        if (!isPastDueGracePeriod(due.dueDate, now))
             continue;
         const feePercentage = orgFeeMap.get(due.organizationId) ?? new library_1.Decimal(5);
         const lateFee = due.amountDue.mul(feePercentage).div(100);
-        await prisma_js_1.prisma.paymentDue.update({
-            where: { id: due.id },
-            data: {
-                lateFeeApplied: lateFee,
-                lateFeeDate: now,
-                amountDue: due.amountDue.add(lateFee),
-                status: "overdue",
-            },
+        if (lateFee.lte(new library_1.Decimal(0)))
+            continue;
+        await prisma_js_1.prisma.$transaction(async (tx) => {
+            await tx.paymentDue.update({
+                where: { id: due.id },
+                data: {
+                    lateFeeApplied: lateFee,
+                    lateFeeDate: now,
+                    amountDue: due.amountDue.add(lateFee),
+                    status: "overdue",
+                },
+            });
+            await tx.paymentDueAdjustment.create({
+                data: {
+                    paymentDueId: due.id,
+                    membershipId: due.membershipId,
+                    organizationId: due.organizationId,
+                    amountDelta: lateFee,
+                    adjustmentType: "late_fee",
+                    reason: "Late fee applied automatically",
+                },
+            });
         });
         applied++;
         if (due.membership.hod?.whatsAppNumber) {
@@ -123,8 +149,14 @@ async function markOverdueDues() {
     const now = new Date();
     const dues = await prisma_js_1.prisma.paymentDue.findMany({
         where: {
+            isSystemAdjustment: false,
             status: { in: ["pending", "partial"] },
             dueDate: { lt: now },
+            OR: [
+                { isManual: false },
+                { periodStart: { not: null } },
+                { periodEnd: { not: null } },
+            ],
         },
         include: {
             membership: { select: { membershipNo: true, hod: { select: { whatsAppNumber: true } } } },
@@ -132,6 +164,8 @@ async function markOverdueDues() {
     });
     let updated = 0;
     for (const due of dues) {
+        if (!isPastDueGracePeriod(due.dueDate, now))
+            continue;
         await prisma_js_1.prisma.paymentDue.update({
             where: { id: due.id },
             data: { status: "overdue" },

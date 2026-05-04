@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   DueStatus,
+  Prisma,
   PaymentDueAdjustmentType,
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -10,11 +11,13 @@ import { requireAuth, withOrgScope } from "../middleware/auth.js";
 import { queuePaymentReceived } from "../lib/message-queue.js";
 import {
   addOverpaymentCreditEntry,
+  applyAvailableCreditToDue,
   applyAvailableCreditAcrossOutstandingDues,
   getMembershipCreditBalance,
   moveNegativeCreditBalanceToDue,
   restoreAutoAppliedCreditForPaymentReversal,
 } from "../lib/membership-credit.js";
+import { getDueTypeBySystemKey } from "../lib/due-types.js";
 
 export const paymentsRouter = Router();
 
@@ -73,9 +76,15 @@ function nonSystemAdjustmentOrStandaloneCreditFilter() {
 }
 
 const CREDIT_PAYMENT_REFERENCE = "Credit Payment";
-const CREDIT_PAYMENT_LEDGER_NOTE = "Direct payment added to member credit";
-const CREDIT_PAYMENT_OPEN_DUE_ERROR =
-  "Standalone credit payments are only allowed when the member has no open dues.";
+const CREDIT_PAYMENT_LEDGER_NOTE = "Member payment added to credit before due allocation";
+const paymentMethodSchema = z.enum(["cash", "bank_transfer", "card", "other"]);
+type ReceiptPaymentMethod = z.infer<typeof paymentMethodSchema>;
+const PAYMENT_METHOD_LABELS: Record<ReceiptPaymentMethod, string> = {
+  cash: "Cash",
+  bank_transfer: "Bank Transfer",
+  card: "Card",
+  other: "Other",
+};
 
 function parseOptionalDate(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -99,6 +108,145 @@ function describeDueAdjustment(type: PaymentDueAdjustmentType, amountDelta: Deci
   return amountDelta.gte(new Decimal(0)) ? "Due Increased" : "Due Reduced";
 }
 
+function getPaymentMethodLabel(method: ReceiptPaymentMethod | null | undefined) {
+  return method ? PAYMENT_METHOD_LABELS[method] : null;
+}
+
+function extractLegacyPaymentMethod(note: string | null | undefined): ReceiptPaymentMethod | null {
+  const normalized = note?.trim();
+  if (!normalized) return null;
+
+  for (const [method, label] of Object.entries(PAYMENT_METHOD_LABELS) as Array<
+    [ReceiptPaymentMethod, string]
+  >) {
+    if (normalized === label || normalized.startsWith(`${label} — `)) {
+      return method;
+    }
+  }
+
+  return null;
+}
+
+function stripLegacyPaymentMethod(note: string | null | undefined): string | null {
+  const normalized = note?.trim();
+  if (!normalized) return null;
+
+  const method = extractLegacyPaymentMethod(normalized);
+  if (!method) return normalized;
+
+  const label = PAYMENT_METHOD_LABELS[method];
+  if (normalized === label) return null;
+  if (normalized.startsWith(`${label} — `)) {
+    return normalized.slice(label.length + 3).trim() || null;
+  }
+  return normalized;
+}
+
+function receiptNumberPrefix(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}${month}`;
+}
+
+async function generateReceiptNumber(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  paymentDate: Date
+) {
+  const prefix = receiptNumberPrefix(paymentDate);
+  const latest = await tx.payment.findFirst({
+    where: {
+      organizationId,
+      receiptNumber: {
+        startsWith: prefix,
+      },
+    },
+    orderBy: {
+      receiptNumber: "desc",
+    },
+    select: {
+      receiptNumber: true,
+    },
+  });
+
+  const previousSequence = latest?.receiptNumber
+    ? parseInt(latest.receiptNumber.slice(prefix.length), 10) || 0
+    : 0;
+
+  return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
+}
+
+async function loadReceiptBalanceSnapshot(
+  tx: Prisma.TransactionClient,
+  membershipId: string
+) {
+  const [dues, creditBalance] = await Promise.all([
+    tx.paymentDue.findMany({
+      where: {
+        membershipId,
+        isSystemAdjustment: false,
+      },
+      select: {
+        amountDue: true,
+        amountPaid: true,
+      },
+    }),
+    getMembershipCreditBalance(tx, membershipId),
+  ]);
+
+  const outstandingAfterPayment = dues.reduce(
+    (sum, due) => sum.add(maxDecimal(due.amountDue.sub(due.amountPaid), new Decimal(0))),
+    new Decimal(0)
+  );
+  const creditBalanceAfterPayment = creditBalance.gt(new Decimal(0))
+    ? creditBalance
+    : new Decimal(0);
+
+  return {
+    outstandingAfterPayment,
+    creditBalanceAfterPayment,
+  };
+}
+
+async function getCurrentReceiptBalanceSnapshot(membershipId: string) {
+  const snapshot = await prisma.$transaction((tx) =>
+    loadReceiptBalanceSnapshot(tx, membershipId)
+  );
+  return {
+    outstandingAfterPayment: snapshot.outstandingAfterPayment.toNumber(),
+    creditBalanceAfterPayment: snapshot.creditBalanceAfterPayment.toNumber(),
+  };
+}
+
+function isReceiptNumberConflict(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+
+  const target = Array.isArray(error.meta?.target)
+    ? error.meta.target.map(String)
+    : [];
+  return target.includes("receiptNumber");
+}
+
+async function withReceiptNumberRetry<T>(operation: () => Promise<T>) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isReceiptNumberConflict(error)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 async function buildReceiptForPayment(paymentId: string) {
   const payment = await prisma.payment.findUnique({
     where: { id: paymentId },
@@ -117,23 +265,41 @@ async function buildReceiptForPayment(paymentId: string) {
   });
   if (!payment) return null;
 
+  const paymentMethod =
+    payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note);
+  const receiptNote = stripLegacyPaymentMethod(payment.note);
+  const receiptNumber = payment.receiptNumber ?? payment.id.slice(-8).toUpperCase();
+  const balanceSnapshot =
+    payment.outstandingAfterPayment !== null && payment.creditBalanceAfterPayment !== null
+      ? {
+          outstandingAfterPayment: payment.outstandingAfterPayment.toNumber(),
+          creditBalanceAfterPayment: payment.creditBalanceAfterPayment.toNumber(),
+        }
+      : await getCurrentReceiptBalanceSnapshot(payment.membership.id);
+  const memberName =
+    payment.membership.hod.nameWithInitials || payment.membership.hod.fullName || "";
+
   if (payment.paymentKind === "credit" || !payment.paymentDueId) {
     return {
       paymentKind: "credit" as const,
       paymentId: payment.id,
+      receiptNumber,
       paymentDate: payment.paymentDate.toISOString(),
-      note: payment.note ?? null,
+      note: receiptNote,
       period: CREDIT_PAYMENT_REFERENCE,
       membershipId: payment.membership.id,
       membershipNo: payment.membership.membershipNo,
-      memberName: payment.membership.hod.fullName || payment.membership.hod.nameWithInitials || "",
+      memberName,
       organizationId: payment.organization.id,
       organizationName: payment.organization.name,
       collectedBy: payment.collectedBy.email,
+      paymentMethod: getPaymentMethodLabel(paymentMethod),
       paidAmount: payment.amount.toNumber(),
       appliedToDue: 0,
       overpaymentToCredit: payment.amount.toNumber(),
-      remainingAfter: 0,
+      remainingAfter: balanceSnapshot.outstandingAfterPayment,
+      outstandingAfterPayment: balanceSnapshot.outstandingAfterPayment,
+      creditBalanceAfterPayment: balanceSnapshot.creditBalanceAfterPayment,
     };
   }
 
@@ -188,19 +354,23 @@ async function buildReceiptForPayment(paymentId: string) {
   return {
     paymentKind: "due" as const,
     paymentId: payment.id,
+    receiptNumber,
     paymentDate: payment.paymentDate.toISOString(),
-    note: payment.note ?? null,
+    note: receiptNote,
     period: receiptDue.period,
     membershipId: payment.membership.id,
     membershipNo: payment.membership.membershipNo,
-    memberName: payment.membership.hod.fullName || payment.membership.hod.nameWithInitials || "",
+    memberName,
     organizationId: payment.organization.id,
     organizationName: payment.organization.name,
     collectedBy: payment.collectedBy.email,
+    paymentMethod: getPaymentMethodLabel(paymentMethod),
     paidAmount: payment.amount.toNumber(),
     appliedToDue: appliedToDue.toNumber(),
     overpaymentToCredit: overpaymentToCredit.toNumber(),
     remainingAfter: remainingAfter.toNumber(),
+    outstandingAfterPayment: balanceSnapshot.outstandingAfterPayment,
+    creditBalanceAfterPayment: balanceSnapshot.creditBalanceAfterPayment,
   };
 }
 
@@ -246,10 +416,16 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
     }
 
     const applied = await prisma.$transaction(async (tx) => {
+      const subscriptionDueType = await getDueTypeBySystemKey(
+        tx,
+        m.organizationId,
+        "subscription"
+      );
       const due = await tx.paymentDue.create({
         data: {
           membershipId: m.id,
           organizationId: m.organizationId,
+          dueTypeId: subscriptionDueType.id,
           dueDate: targetDate,
           period,
           amountDue: m.totalContribution,
@@ -276,6 +452,7 @@ paymentsRouter.post("/generate-dues", async (req, res) => {
 
 const createManualDueSchema = z.object({
   membershipId: z.string().min(1),
+  dueTypeId: z.string().min(1),
   amountDue: z.number().positive("Amount must be greater than zero"),
   reason: z.string().trim().optional().nullable(),
   periodFrom: z.string().optional().nullable(),
@@ -312,12 +489,29 @@ paymentsRouter.post("/dues", async (req, res) => {
   const period = buildManualDuePeriod(periodStart, periodEnd);
   const dueDate = periodEnd ?? periodStart ?? new Date();
   const normalizedReason = parsed.data.reason?.trim() ? parsed.data.reason.trim() : null;
+  const dueType = await prisma.dueType.findUnique({
+    where: { id: parsed.data.dueTypeId },
+    select: {
+      id: true,
+      organizationId: true,
+      autoAllocate: true,
+      isActive: true,
+    },
+  });
+  if (!dueType || dueType.organizationId !== membership.organizationId) {
+    return res.status(404).json({ error: "Due type not found" });
+  }
+  if (!dueType.isActive) {
+    return res.status(409).json({ error: "Archived due types cannot be used for new dues" });
+  }
 
   const created = await prisma.$transaction(async (tx) => {
     const due = await tx.paymentDue.create({
       data: {
         membershipId: membership.id,
         organizationId: membership.organizationId,
+        dueTypeId: dueType.id,
+        createdByUserId: req.auth!.userId,
         dueDate,
         period,
         isManual: true,
@@ -335,12 +529,23 @@ paymentsRouter.post("/dues", async (req, res) => {
             hod: { select: { fullName: true, nameWithInitials: true } },
           },
         },
+        dueType: {
+          select: {
+            id: true,
+            name: true,
+            autoAllocate: true,
+            isActive: true,
+            systemKey: true,
+          },
+        },
       },
     });
-    const autoAppliedCredit = await applyAvailableCreditAcrossOutstandingDues(tx, {
-      membershipId: membership.id,
-      createdByUserId: req.auth!.userId,
-    });
+    const autoAppliedCredit = dueType.autoAllocate
+      ? await applyAvailableCreditAcrossOutstandingDues(tx, {
+          membershipId: membership.id,
+          createdByUserId: req.auth!.userId,
+        })
+      : new Decimal(0);
     return { due, autoAppliedCredit };
   }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
@@ -358,6 +563,7 @@ paymentsRouter.get("/dues", async (req, res) => {
 
   const membershipId = req.query.membershipId as string | undefined;
   const status = req.query.status as DueStatus | undefined;
+  const dueTypeId = (req.query.dueTypeId as string | undefined)?.trim();
   const q = (req.query.q as string)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
@@ -367,14 +573,20 @@ paymentsRouter.get("/dues", async (req, res) => {
   if (membershipId) where.membershipId = membershipId;
   where.isSystemAdjustment = false;
   if (status) where.status = status;
+  if (dueTypeId) where.dueTypeId = dueTypeId;
   if (q) {
-    where.membership = {
-      OR: [
-        { hod: { fullName: { contains: q, mode: "insensitive" } } },
-        { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
-        { membershipNo: { contains: q, mode: "insensitive" } },
-      ],
-    };
+    where.OR = [
+      {
+        membership: {
+          OR: [
+            { hod: { fullName: { contains: q, mode: "insensitive" } } },
+            { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
+            { membershipNo: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      },
+      { dueType: { name: { contains: q, mode: "insensitive" } } },
+    ];
   }
 
   const [items, total] = await Promise.all([
@@ -387,7 +599,17 @@ paymentsRouter.get("/dues", async (req, res) => {
         membership: {
           select: {
             membershipNo: true,
+            areaCode: true,
             hod: { select: { fullName: true, nameWithInitials: true } },
+          },
+        },
+        dueType: {
+          select: {
+            id: true,
+            name: true,
+            autoAllocate: true,
+            isActive: true,
+            systemKey: true,
           },
         },
       },
@@ -413,6 +635,17 @@ paymentsRouter.get("/balance/:membershipId", async (req, res) => {
     prisma.paymentDue.findMany({
       where: { membershipId: membership.id, isSystemAdjustment: false },
       orderBy: { dueDate: "desc" },
+      include: {
+        dueType: {
+          select: {
+            id: true,
+            name: true,
+            autoAllocate: true,
+            isActive: true,
+            systemKey: true,
+          },
+        },
+      },
     }),
     prisma.$transaction((tx) => getMembershipCreditBalance(tx, membership.id)),
     prisma.payment.aggregate({
@@ -466,6 +699,8 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
         id: true,
         period: true,
         reason: true,
+        dueType: { select: { name: true } },
+        createdBy: { select: { email: true } },
         isManual: true,
         amountDue: true,
         createdAt: true,
@@ -478,7 +713,7 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       },
       orderBy: { createdAt: "asc" },
       include: {
-        paymentDue: { select: { id: true, period: true } },
+        paymentDue: { select: { id: true, period: true, dueType: { select: { name: true } } } },
         createdBy: { select: { email: true } },
       },
     }),
@@ -489,7 +724,7 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       },
       orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
       include: {
-        paymentDue: { select: { id: true, period: true } },
+        paymentDue: { select: { id: true, period: true, dueType: { select: { name: true } } } },
         collectedBy: { select: { email: true } },
         reversedBy: { select: { email: true } },
       },
@@ -520,6 +755,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       | "debit_auto_apply"
       | "credit_adjustment"
       | "debit_adjustment";
+    action: string;
+    dueType: string | null;
+    detail: string | null;
     description: string;
     reference: string | null;
     note: string | null;
@@ -540,12 +778,15 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       createdAt: due.createdAt,
       sortOrder: 0,
       entryType: "due",
+      action: describeDueEntry(due.isManual),
+      dueType: due.dueType?.name ?? null,
+      detail: due.period,
       description: describeDueEntry(due.isManual),
-      reference: due.period,
+      reference: due.dueType?.name ? `${due.dueType.name} · ${due.period}` : due.period,
       note: due.reason ?? null,
       debit: originalAmountDue.gt(new Decimal(0)) ? originalAmountDue : new Decimal(0),
       credit: new Decimal(0),
-      actor: null,
+      actor: due.createdBy?.email ?? null,
       paymentId: null,
       paymentDueId: due.id,
       receiptAvailable: false,
@@ -570,6 +811,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       createdAt: adjustment.createdAt,
       sortOrder: 1,
       entryType: "due_adjustment",
+      action: describeDueAdjustment(adjustment.adjustmentType, adjustment.amountDelta),
+      dueType: adjustment.paymentDue.dueType?.name ?? null,
+      detail: adjustment.paymentDue.period,
       description: describeDueAdjustment(adjustment.adjustmentType, adjustment.amountDelta),
       reference: adjustment.paymentDue.period,
       note: adjustment.reason ?? null,
@@ -591,6 +835,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       createdAt: payment.createdAt,
       sortOrder: 2,
       entryType: "payment",
+      action: isCreditPayment ? "Credit Payment Received" : "Payment Received",
+      dueType: isCreditPayment ? "Credit" : payment.paymentDue?.dueType?.name ?? null,
+      detail: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
       description: isCreditPayment ? "Credit Payment Received" : "Payment Received",
       reference: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
       note: payment.note ?? null,
@@ -610,6 +857,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
         createdAt: payment.createdAt,
         sortOrder: 3,
         entryType: "payment_reversal",
+        action: isCreditPayment ? "Credit Payment Reversed" : "Payment Reversed",
+        dueType: isCreditPayment ? "Credit" : payment.paymentDue?.dueType?.name ?? null,
+        detail: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
         description: isCreditPayment ? "Credit Payment Reversed" : "Payment Reversed",
         reference: isCreditPayment ? CREDIT_PAYMENT_REFERENCE : payment.paymentDue?.period ?? null,
         note: payment.reversalReason ?? null,
@@ -640,6 +890,9 @@ paymentsRouter.get("/statement/:membershipId", async (req, res) => {
       id: entry.id,
       entryType: entry.entryType,
       occurredAt: entry.occurredAt.toISOString(),
+      action: entry.action,
+      dueType: entry.dueType,
+      detail: entry.detail,
       description: entry.description,
       reference: entry.reference,
       note: entry.note,
@@ -753,6 +1006,7 @@ const recordPaymentSchema = z
     membershipId: z.string().optional(),
     amount: z.number().positive(),
     paymentDate: z.string().optional(),
+    paymentMethod: paymentMethodSchema.optional(),
     note: z.string().optional(),
   })
   .superRefine((data, ctx) => {
@@ -796,6 +1050,7 @@ paymentsRouter.post("/", async (req, res) => {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
   const paymentAmount = toDecimal(parsed.data.amount);
+  const paymentMethod = parsed.data.paymentMethod ?? "cash";
 
   if (parsed.data.paymentKind === "credit") {
     const membership = await prisma.membership.findUnique({
@@ -816,57 +1071,57 @@ paymentsRouter.post("/", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const openDue = await prisma.paymentDue.findFirst({
-      where: {
-        membershipId: membership.id,
-        isSystemAdjustment: false,
-        status: { in: ["pending", "partial", "overdue"] },
-      },
-      select: { id: true },
-    });
-    if (openDue) {
-      return res.status(409).json({ error: CREDIT_PAYMENT_OPEN_DUE_ERROR });
-    }
-
     try {
-      const payment = await prisma.$transaction(async (tx) => {
-        const openDueInsideTx = await tx.paymentDue.findFirst({
-          where: {
-            membershipId: membership.id,
-            isSystemAdjustment: false,
-            status: { in: ["pending", "partial", "overdue"] },
-          },
-          select: { id: true },
-        });
-        if (openDueInsideTx) {
-          throw new Error(CREDIT_PAYMENT_OPEN_DUE_ERROR);
-        }
+      const payment = await withReceiptNumberRetry(() =>
+        prisma.$transaction(async (tx) => {
+          const paymentDate = parsed.data.paymentDate
+            ? new Date(parsed.data.paymentDate)
+            : new Date();
+          const receiptNumber = await generateReceiptNumber(
+            tx,
+            membership.organizationId,
+            paymentDate
+          );
+          const createdPayment = await tx.payment.create({
+            data: {
+              paymentDueId: null,
+              membershipId: membership.id,
+              organizationId: membership.organizationId,
+              receiptNumber,
+              paymentKind: "credit",
+              paymentMethod,
+              amount: paymentAmount,
+              paymentDate,
+              collectedByUserId: req.auth!.userId,
+              note: parsed.data.note ?? null,
+            },
+          });
 
-        const createdPayment = await tx.payment.create({
-          data: {
-            paymentDueId: null,
+          await addOverpaymentCreditEntry(tx, {
             membershipId: membership.id,
             organizationId: membership.organizationId,
-            paymentKind: "credit",
+            paymentId: createdPayment.id,
+            paymentDueId: null,
             amount: paymentAmount,
-            paymentDate: parsed.data.paymentDate ? new Date(parsed.data.paymentDate) : new Date(),
-            collectedByUserId: req.auth!.userId,
-            note: parsed.data.note ?? null,
-          },
-        });
+            createdByUserId: req.auth!.userId,
+            note: CREDIT_PAYMENT_LEDGER_NOTE,
+          });
 
-        await addOverpaymentCreditEntry(tx, {
-          membershipId: membership.id,
-          organizationId: membership.organizationId,
-          paymentId: createdPayment.id,
-          paymentDueId: null,
-          amount: paymentAmount,
-          createdByUserId: req.auth!.userId,
-          note: CREDIT_PAYMENT_LEDGER_NOTE,
-        });
+          await applyAvailableCreditAcrossOutstandingDues(tx, {
+            membershipId: membership.id,
+            createdByUserId: req.auth!.userId,
+          });
 
-        return createdPayment;
-      }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
+          const snapshot = await loadReceiptBalanceSnapshot(tx, membership.id);
+          return tx.payment.update({
+            where: { id: createdPayment.id },
+            data: {
+              outstandingAfterPayment: snapshot.outstandingAfterPayment,
+              creditBalanceAfterPayment: snapshot.creditBalanceAfterPayment,
+            },
+          });
+        }, CREDIT_SWEEP_TRANSACTION_OPTIONS)
+      );
 
       if (membership.hod?.whatsAppNumber) {
         queuePaymentReceived(
@@ -879,9 +1134,6 @@ paymentsRouter.post("/", async (req, res) => {
 
       return res.status(201).json(payment);
     } catch (error) {
-      if (error instanceof Error && error.message === CREDIT_PAYMENT_OPEN_DUE_ERROR) {
-        return res.status(409).json({ error: CREDIT_PAYMENT_OPEN_DUE_ERROR });
-      }
       console.error("Credit payment record error:", error);
       return res.status(500).json({ error: "Failed to record credit payment" });
     }
@@ -905,49 +1157,64 @@ paymentsRouter.post("/", async (req, res) => {
   const overpaymentAmount = paymentAmount.sub(appliedToDue);
   const nextPaid = due.amountPaid.add(appliedToDue);
 
-  const payment = await prisma.$transaction(async (tx) => {
-    const createdPayment = await tx.payment.create({
-      data: {
-        paymentDueId: due.id,
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentKind: "due",
-        amount: paymentAmount,
-        paymentDate: parsed.data.paymentDate ? new Date(parsed.data.paymentDate) : new Date(),
-        collectedByUserId: req.auth!.userId,
-        note: parsed.data.note ?? null,
-      },
-    });
-
-    if (appliedToDue.gt(new Decimal(0))) {
-      let newStatus: DueStatus = "partial";
-      if (nextPaid.gte(due.amountDue)) newStatus = "paid";
-
-      await tx.paymentDue.update({
-        where: { id: due.id },
-        data: { amountPaid: nextPaid, status: newStatus },
-      });
-    }
-
-    if (overpaymentAmount.gt(new Decimal(0))) {
-      await addOverpaymentCreditEntry(tx, {
-        membershipId: due.membershipId,
-        organizationId: due.organizationId,
-        paymentId: createdPayment.id,
-        paymentDueId: due.id,
-        amount: overpaymentAmount,
-        createdByUserId: req.auth!.userId,
-        note: "Excess amount moved to member credit",
+  const payment = await withReceiptNumberRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const paymentDate = parsed.data.paymentDate
+        ? new Date(parsed.data.paymentDate)
+        : new Date();
+      const receiptNumber = await generateReceiptNumber(tx, due.organizationId, paymentDate);
+      const createdPayment = await tx.payment.create({
+        data: {
+          paymentDueId: due.id,
+          membershipId: due.membershipId,
+          organizationId: due.organizationId,
+          receiptNumber,
+          paymentKind: "due",
+          paymentMethod,
+          amount: paymentAmount,
+          paymentDate,
+          collectedByUserId: req.auth!.userId,
+          note: parsed.data.note ?? null,
+        },
       });
 
-      await applyAvailableCreditAcrossOutstandingDues(tx, {
-        membershipId: due.membershipId,
-        createdByUserId: req.auth!.userId,
-      });
-    }
+      if (appliedToDue.gt(new Decimal(0))) {
+        let newStatus: DueStatus = "partial";
+        if (nextPaid.gte(due.amountDue)) newStatus = "paid";
 
-    return createdPayment;
-  }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
+        await tx.paymentDue.update({
+          where: { id: due.id },
+          data: { amountPaid: nextPaid, status: newStatus },
+        });
+      }
+
+      if (overpaymentAmount.gt(new Decimal(0))) {
+        await addOverpaymentCreditEntry(tx, {
+          membershipId: due.membershipId,
+          organizationId: due.organizationId,
+          paymentId: createdPayment.id,
+          paymentDueId: due.id,
+          amount: overpaymentAmount,
+          createdByUserId: req.auth!.userId,
+          note: "Excess amount moved to member credit",
+        });
+
+        await applyAvailableCreditAcrossOutstandingDues(tx, {
+          membershipId: due.membershipId,
+          createdByUserId: req.auth!.userId,
+        });
+      }
+
+      const snapshot = await loadReceiptBalanceSnapshot(tx, due.membershipId);
+      return tx.payment.update({
+        where: { id: createdPayment.id },
+        data: {
+          outstandingAfterPayment: snapshot.outstandingAfterPayment,
+          creditBalanceAfterPayment: snapshot.creditBalanceAfterPayment,
+        },
+      });
+    }, CREDIT_SWEEP_TRANSACTION_OPTIONS)
+  );
 
   const membership = await prisma.membership.findUnique({
     where: { id: due.membershipId },
@@ -972,12 +1239,27 @@ paymentsRouter.get("/history", async (req, res) => {
     return res.status(400).json({ error: "Organization scope required" });
 
   const membershipId = req.query.membershipId as string | undefined;
+  const q = (req.query.q as string | undefined)?.trim() || "";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
 
   const where: any = {};
   if (orgId) where.organizationId = orgId;
   if (membershipId) where.membershipId = membershipId;
+  if (q) {
+    where.OR = [
+      {
+        membership: {
+          OR: [
+            { hod: { fullName: { contains: q, mode: "insensitive" } } },
+            { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
+            { membershipNo: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      },
+      { paymentDue: { period: { contains: q, mode: "insensitive" } } },
+    ];
+  }
 
   const [items, total] = await Promise.all([
     prisma.payment.findMany({
@@ -993,6 +1275,7 @@ paymentsRouter.get("/history", async (req, res) => {
           select: {
             id: true,
             membershipNo: true,
+            areaCode: true,
             hod: { select: { fullName: true, nameWithInitials: true } },
           },
         },
@@ -1216,6 +1499,15 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
             hod: { select: { fullName: true, nameWithInitials: true } },
           },
         },
+        dueType: {
+          select: {
+            id: true,
+            name: true,
+            autoAllocate: true,
+            isActive: true,
+            systemKey: true,
+          },
+        },
       },
     });
 
@@ -1259,6 +1551,55 @@ paymentsRouter.patch("/dues/:id", async (req, res) => {
   }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 
   return res.json(updated);
+});
+
+paymentsRouter.post("/dues/:id/apply-credit", async (req, res) => {
+  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
+    return res.status(403).json({ error: "Only admins can allocate credit to dues" });
+  }
+
+  const due = await prisma.paymentDue.findUnique({
+    where: { id: req.params.id },
+    include: {
+      dueType: {
+        select: {
+          id: true,
+          name: true,
+          autoAllocate: true,
+        },
+      },
+    },
+  });
+  if (!due) return res.status(404).json({ error: "Due not found" });
+  if (due.isSystemAdjustment) {
+    return res.status(409).json({ error: "System adjustment dues cannot receive manual credit allocation" });
+  }
+  if (
+    req.auth!.organizationId &&
+    due.organizationId !== req.auth!.organizationId &&
+    req.auth!.role !== "super_user"
+  ) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  if (due.status === "paid" || !maxDecimal(due.amountDue.sub(due.amountPaid), new Decimal(0)).gt(new Decimal(0))) {
+    return res.status(409).json({ error: "This due is already fully paid" });
+  }
+
+  const applied = await prisma.$transaction(
+    (tx) =>
+      applyAvailableCreditToDue(tx, {
+        dueId: due.id,
+        createdByUserId: req.auth!.userId,
+        note: `Manually allocated member credit to ${due.dueType.name}`,
+      }),
+    CREDIT_SWEEP_TRANSACTION_OPTIONS
+  );
+
+  if (!applied.gt(new Decimal(0))) {
+    return res.status(409).json({ error: "No available credit balance to allocate" });
+  }
+
+  return res.json({ success: true, applied: applied.toNumber() });
 });
 
 // Periodic payment report (date range)

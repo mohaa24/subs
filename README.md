@@ -24,6 +24,28 @@ Database name: `membership_db`.
 
 Seed creates super user: **super@example.com** / **admin123**
 
+## Local server database profiles
+
+Local development can use the server PostgreSQL through an SSH tunnel. By default, use
+the staging database so test writes do not touch production data.
+
+1. Open the tunnel in one terminal:
+   ```bash
+   npm run db:tunnel
+   ```
+2. Choose the backend DB profile:
+   ```bash
+   npm run db:use:stg
+   ```
+3. Run the app in another terminal:
+   ```bash
+   npm run dev
+   ```
+
+Use `npm run db:use:prd` only for production debugging where writes are not expected.
+Both profiles connect through `localhost:5433`; the selected database name in
+`be/.env` decides whether the backend uses `subs_stg` or `subs_prod`.
+
 ## Frontend (fe)
 
 1. From repo root or `fe`:

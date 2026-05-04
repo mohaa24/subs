@@ -1,6 +1,7 @@
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "./prisma.js";
 import { applyAvailableCreditAcrossOutstandingDues } from "./membership-credit.js";
+import { getDueTypeBySystemKey } from "./due-types.js";
 import {
   queuePaymentDueGenerated,
   queuePaymentOverdue,
@@ -60,10 +61,16 @@ export async function generateMonthlyDues() {
     if (existing) { skipped++; continue; }
 
     const applied = await prisma.$transaction(async (tx) => {
+      const subscriptionDueType = await getDueTypeBySystemKey(
+        tx,
+        m.organizationId,
+        "subscription"
+      );
       const due = await tx.paymentDue.create({
         data: {
           membershipId: m.id,
           organizationId: m.organizationId,
+          dueTypeId: subscriptionDueType.id,
           dueDate: targetDate,
           period,
           amountDue: m.totalContribution,

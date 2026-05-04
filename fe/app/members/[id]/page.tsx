@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   api,
+  type DueType,
   type Membership,
   type Person,
   type MembershipBalance,
@@ -20,6 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -34,7 +42,6 @@ import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import {
   RecordPaymentDialog,
   type PaymentMethod,
-  getPaymentMethodLabel,
 } from "@/components/record-payment-dialog";
 import {
   ChevronLeft,
@@ -127,6 +134,29 @@ function shouldHideStatementEntry(entry: PaymentStatementItem) {
   }
 
   return false;
+}
+
+function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
+  return {
+    paymentKind: receipt.paymentKind,
+    organizationName: receipt.organizationName,
+    membershipNo: receipt.membershipNo,
+    membershipId: receipt.membershipId,
+    memberName: receipt.memberName,
+    paymentId: receipt.paymentId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.paymentDate,
+    paymentMethod: receipt.paymentMethod || null,
+    paidAmount: receipt.paidAmount,
+    appliedToDue: receipt.appliedToDue,
+    overpaymentToCredit: receipt.overpaymentToCredit,
+    remainingAfter: receipt.remainingAfter,
+    outstandingAfterPayment: receipt.outstandingAfterPayment,
+    creditBalanceAfterPayment: receipt.creditBalanceAfterPayment,
+    note: receipt.note || null,
+    collectedBy: receipt.collectedBy,
+    memberQrValue: "",
+  };
 }
 
 type SortOrder = "asc" | "desc";
@@ -260,6 +290,7 @@ export default function MembershipDetailPage() {
   const [creditSortOrder, setCreditSortOrder] = useState<SortOrder>("desc");
 
   const [zones, setZones] = useState<Zone[]>([]);
+  const [dueTypes, setDueTypes] = useState<DueType[]>([]);
 
   const [qrOpen, setQrOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
@@ -287,7 +318,9 @@ export default function MembershipDetailPage() {
   const [manualDueReason, setManualDueReason] = useState("");
   const [manualDueFrom, setManualDueFrom] = useState("");
   const [manualDueTo, setManualDueTo] = useState("");
+  const [manualDueTypeId, setManualDueTypeId] = useState("");
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
+  const [applyCreditDueId, setApplyCreditDueId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   let visibleRunningBalance = 0;
   const chronologicalStatementItems = statementItems
@@ -366,6 +399,22 @@ export default function MembershipDetailPage() {
       .catch(() => setZones([]));
   }, [membership, user?.role]);
 
+  useEffect(() => {
+    if (!membership) return;
+    const orgId = membership.organizationId;
+    const params: Record<string, string> = {};
+    if (user?.role === "super_user") params.organizationId = orgId;
+    api<DueType[]>("/due-types", { params })
+      .then((items) => {
+        setDueTypes(items);
+        setManualDueTypeId((current) => current || items[0]?.id || "");
+      })
+      .catch(() => {
+        setDueTypes([]);
+        setManualDueTypeId("");
+      });
+  }, [membership, user?.role]);
+
   async function generateQr() {
     const url = `${window.location.origin}/members/${id}`;
     const dataUrl = await QRCode.toDataURL(url, {
@@ -435,7 +484,7 @@ export default function MembershipDetailPage() {
   }
 
   const canManage = user?.role === "admin" || user?.role === "super_user";
-  const canRecordCreditPayment = !!membership && !!balance && !hasOpenPaymentDues(balance.dues);
+  const canRecordCreditPayment = !!membership;
 
   async function handleReversePayment() {
     if (!reverseTarget || !reverseReason.trim()) return;
@@ -484,6 +533,7 @@ export default function MembershipDetailPage() {
     setManualDueReason("");
     setManualDueFrom("");
     setManualDueTo("");
+    setManualDueTypeId(dueTypes[0]?.id || "");
     setManualDueSubmitting(false);
   }
 
@@ -504,6 +554,14 @@ export default function MembershipDetailPage() {
   async function handleCreateManualDue() {
     if (!membership) return;
     const amt = parseFloat(manualDueAmount);
+    if (!manualDueTypeId) {
+      toast({
+        variant: "destructive",
+        title: "Select a due type",
+        description: "Choose a due type before creating the manual due.",
+      });
+      return;
+    }
     if (isNaN(amt) || amt <= 0) {
       toast({
         variant: "destructive",
@@ -527,6 +585,7 @@ export default function MembershipDetailPage() {
         method: "POST",
         body: JSON.stringify({
           membershipId: membership.id,
+          dueTypeId: manualDueTypeId,
           amountDue: amt,
           reason: manualDueReason.trim() || undefined,
           periodFrom: manualDueFrom || undefined,
@@ -553,6 +612,31 @@ export default function MembershipDetailPage() {
       });
     } finally {
       setManualDueSubmitting(false);
+    }
+  }
+
+  async function handleApplyCreditToDue(dueId: string) {
+    setApplyCreditDueId(dueId);
+    try {
+      const result = await api<{ success: boolean; applied: number }>(
+        `/payments/dues/${dueId}/apply-credit`,
+        { method: "POST" }
+      );
+      toast({
+        title: "Credit allocated",
+        description: `Rs. ${result.applied.toFixed(2)} was applied to the selected due.`,
+      });
+      loadBalance();
+      loadStatement();
+      loadCreditLedger();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to allocate credit",
+        description: err instanceof Error ? err.message : "Failed",
+      });
+    } finally {
+      setApplyCreditDueId(null);
     }
   }
 
@@ -583,8 +667,6 @@ export default function MembershipDetailPage() {
     }
     setPaySubmitting(true);
     try {
-      const methodLabel = getPaymentMethodLabel(payMethod);
-      const combinedNote = [methodLabel, payNote].filter(Boolean).join(" — ");
       const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
         body: JSON.stringify(
@@ -592,42 +674,19 @@ export default function MembershipDetailPage() {
             ? {
                 paymentDueId: payDue.id,
                 amount: amt,
-                note: combinedNote || undefined,
+                paymentMethod: payMethod,
+                note: payNote.trim() || undefined,
               }
             : {
                 paymentKind: "credit",
                 membershipId: membership.id,
                 amount: amt,
-                note: combinedNote || undefined,
+                paymentMethod: payMethod,
+                note: payNote.trim() || undefined,
               }
         ),
       });
-      const amountDue = Number(payDue?.amountDue ?? 0);
-      const amountPaidBefore = Number(payDue?.amountPaid ?? 0);
-      const remainingBefore = Math.max(0, amountDue - amountPaidBefore);
-      const appliedToDue = payDue ? Math.min(amt, remainingBefore) : 0;
-      const overpaymentToCredit = payDue ? Math.max(0, amt - appliedToDue) : amt;
-      const remainingAfter = payDue ? Math.max(0, remainingBefore - appliedToDue) : 0;
-      setReceiptData({
-        paymentKind: payDue ? "due" : "credit",
-        organizationName:
-          user?.organization?.name || membership.organization?.name || "Organization",
-        membershipNo: membership.membershipNo,
-        membershipId: membership.id,
-        memberName:
-          membership.hod?.fullName || membership.hod?.nameWithInitials || "",
-        period: payDue?.period ?? "Credit Payment",
-        paymentId: payment.id,
-        paymentDate: payment.paymentDate,
-        paidAmount: amt,
-        appliedToDue,
-        overpaymentToCredit,
-        remainingAfter,
-        note: combinedNote || null,
-        collectedBy: user?.email || "",
-        memberQrValue: `${window.location.origin}/members/${membership.id}`,
-      });
-      setReceiptOpen(true);
+      await openReceiptForPayment(payment.id);
       setPayDialogOpen(false);
       toast({
         title: payDue ? "Payment recorded" : "Credit payment recorded",
@@ -656,20 +715,7 @@ export default function MembershipDetailPage() {
     try {
       const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
       setReceiptData({
-        paymentKind: receipt.paymentKind,
-        organizationName: receipt.organizationName,
-        membershipNo: receipt.membershipNo,
-        membershipId: receipt.membershipId,
-        memberName: receipt.memberName,
-        period: receipt.period,
-        paymentId: receipt.paymentId,
-        paymentDate: receipt.paymentDate,
-        paidAmount: receipt.paidAmount,
-        appliedToDue: receipt.appliedToDue,
-        overpaymentToCredit: receipt.overpaymentToCredit,
-        remainingAfter: receipt.remainingAfter,
-        note: receipt.note || null,
-        collectedBy: receipt.collectedBy,
+        ...toReceiptData(receipt),
         memberQrValue: `${window.location.origin}/members/${receipt.membershipId}`,
       });
       setReceiptOpen(true);
@@ -798,11 +844,12 @@ export default function MembershipDetailPage() {
   function exportStatementCsv() {
     downloadCsv(
       `${csvBaseName}-transaction-history.csv`,
-      ["Date", "Description", "Reference", "Note", "Amount", "Balance", "User ID"],
+      ["Date", "Action", "Due Type", "Description", "Note", "Amount", "Balance", "User ID"],
       visibleStatementItems.map((entry) => [
         new Date(entry.occurredAt).toLocaleDateString(),
-        entry.description,
-        entry.reference ?? "",
+        entry.action,
+        entry.dueType ?? "",
+        entry.detail ?? "",
         entry.note ?? "",
         formatAmountCell(entry.debit - entry.credit),
         formatAmountCell(entry.balance),
@@ -1488,6 +1535,23 @@ export default function MembershipDetailPage() {
                                     Pay
                                   </Button>
                                 )}
+                                {canManage &&
+                                  balance.creditBalance > 0 &&
+                                  d.status !== "paid" &&
+                                  remaining > 0 &&
+                                  d.dueType &&
+                                  !d.dueType.autoAllocate && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs gap-1"
+                                      disabled={applyCreditDueId === d.id}
+                                      onClick={() => handleApplyCreditToDue(d.id)}
+                                    >
+                                      <CreditCard className="h-3 w-3" />
+                                      {applyCreditDueId === d.id ? "Applying…" : "Apply Credit"}
+                                    </Button>
+                                  )}
                                 {canManage && d.status !== "paid" && (
                                   <Button size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
                                     <Pencil className="h-3 w-3" />
@@ -1538,6 +1602,23 @@ export default function MembershipDetailPage() {
                                           Pay
                                         </Button>
                                       )}
+                                      {canManage &&
+                                        balance.creditBalance > 0 &&
+                                        d.status !== "paid" &&
+                                        remaining > 0 &&
+                                        d.dueType &&
+                                        !d.dueType.autoAllocate && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 text-xs gap-1"
+                                            disabled={applyCreditDueId === d.id}
+                                            onClick={() => handleApplyCreditToDue(d.id)}
+                                          >
+                                            <CreditCard className="h-3 w-3" />
+                                            {applyCreditDueId === d.id ? "Applying…" : "Apply Credit"}
+                                          </Button>
+                                        )}
                                       {canManage && d.status !== "paid" && (
                                         <Button size="sm" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
                                           <Pencil className="h-3 w-3" />
@@ -1596,8 +1677,15 @@ export default function MembershipDetailPage() {
                     <div className="space-y-3 md:hidden print:hidden">
                       {visibleStatementItems.map((entry) => {
                         const signedAmount = entry.debit - entry.credit;
+                        const isReversal = entry.entryType === "payment_reversal";
+                        const descriptionPrimary =
+                          entry.entryType === "due" && entry.note ? entry.note : entry.detail;
+                        const descriptionSecondary =
+                          entry.entryType === "due" && entry.note ? entry.detail : null;
                         const amountTone =
-                          signedAmount > 0
+                          isReversal
+                            ? "text-red-400"
+                            : signedAmount > 0
                             ? "text-red-600"
                             : signedAmount < 0
                               ? "text-emerald-600"
@@ -1609,34 +1697,46 @@ export default function MembershipDetailPage() {
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="font-medium">{entry.description}</p>
-                              {entry.reference && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">{entry.reference}</p>
-                              )}
+                              <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.action}</p>
+                              {entry.dueType ? (
+                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {entry.dueType}
+                                </p>
+                              ) : null}
+                              {descriptionPrimary ? (
+                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {descriptionPrimary}
+                                </p>
+                              ) : null}
+                              {descriptionSecondary ? (
+                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {descriptionSecondary}
+                                </p>
+                              ) : null}
                             </div>
-                            <p className="text-xs text-muted-foreground">
+                            <p className={`text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
                               {new Date(entry.occurredAt).toLocaleDateString()}
                             </p>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                             <div>
-                              <p className="text-muted-foreground">Amount</p>
+                              <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>Amount</p>
                               <p className={`font-medium tabular-nums ${amountTone}`}>
                                 {signedAmount > 0 ? "+" : signedAmount < 0 ? "" : ""}
                                 {formatAmountCell(signedAmount)}
                               </p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground">Balance</p>
-                              <p className="font-medium tabular-nums">{formatAmountCell(entry.balance)}</p>
+                              <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>Balance</p>
+                              <p className={`font-medium tabular-nums ${isReversal ? "text-red-400" : ""}`}>{formatAmountCell(entry.balance)}</p>
                             </div>
                             <div>
-                              <p className="text-muted-foreground">User ID</p>
-                              <p className="font-medium">{entry.actor || "System"}</p>
+                              <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>User ID</p>
+                              <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.actor || "System"}</p>
                             </div>
                             <div className="col-span-2">
-                              <p className="text-muted-foreground">Note</p>
-                              <p className="font-medium">{entry.note || "—"}</p>
+                              <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>Note</p>
+                              <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.note || "—"}</p>
                             </div>
                           </div>
                           <div className="mt-3 flex gap-2">
@@ -1674,11 +1774,17 @@ export default function MembershipDetailPage() {
                     </div>
 
                     <div className="hidden md:block print:block rounded-lg border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[860px]">
+                      <table className="w-full text-sm min-w-[1100px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
                             <th className="text-left p-3 font-medium text-muted-foreground">
                               Date
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Action
+                            </th>
+                            <th className="text-left p-3 font-medium text-muted-foreground">
+                              Due Type
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
                               Description
@@ -1696,28 +1802,44 @@ export default function MembershipDetailPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleStatementItems.map((entry, i) => (
+                          {visibleStatementItems.map((entry, i) => {
+                            const isReversal = entry.entryType === "payment_reversal";
+                            const descriptionPrimary =
+                              entry.entryType === "due" && entry.note ? entry.note : entry.detail;
+                            const descriptionSecondary =
+                              entry.entryType === "due" && entry.note ? entry.detail : null;
+                            return (
                             <tr
                               key={entry.id}
                               className={`border-b last:border-0 transition-colors hover:bg-muted/30 ${
                                 i % 2 === 0 ? "" : "bg-muted/10"
-                              }`}
+                              } ${isReversal ? "text-red-400" : ""}`}
                             >
-                              <td className="p-3">
+                              <td className={`p-3 ${isReversal ? "text-red-400" : ""}`}>
                                 {new Date(entry.occurredAt).toLocaleDateString()}
                               </td>
                               <td className="p-3">
-                                <div className="font-medium">{entry.description}</div>
-                                {entry.reference ? (
-                                  <div className="mt-0.5 text-xs text-muted-foreground">{entry.reference}</div>
-                                ) : null}
+                                <div className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.action}</div>
                               </td>
-                              <td className="p-3 text-muted-foreground max-w-[260px] truncate">
+                              <td className={`p-3 max-w-[180px] truncate ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                {entry.dueType || "—"}
+                              </td>
+                              <td className={`p-3 max-w-[220px] ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                <div className="min-w-0">
+                                  <div className="truncate">{descriptionPrimary || "—"}</div>
+                                  {descriptionSecondary ? (
+                                    <div className="truncate text-xs opacity-80">{descriptionSecondary}</div>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className={`p-3 max-w-[260px] truncate ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
                                 {entry.note || "—"}
                               </td>
                               <td
                                 className={`p-3 text-right tabular-nums font-semibold ${
-                                  entry.debit - entry.credit > 0
+                                  isReversal
+                                    ? "text-red-400"
+                                    : entry.debit - entry.credit > 0
                                     ? "text-red-600"
                                     : entry.debit - entry.credit < 0
                                       ? "text-emerald-600"
@@ -1727,8 +1849,8 @@ export default function MembershipDetailPage() {
                                 {entry.debit - entry.credit > 0 ? "+" : entry.debit - entry.credit < 0 ? "" : ""}
                                 {formatAmountCell(entry.debit - entry.credit)}
                               </td>
-                              <td className="p-3 text-right tabular-nums font-semibold">{formatAmountCell(entry.balance)}</td>
-                              <td className="p-3 text-muted-foreground">{entry.actor || "System"}</td>
+                              <td className={`p-3 text-right tabular-nums font-semibold ${isReversal ? "text-red-400" : ""}`}>{formatAmountCell(entry.balance)}</td>
+                              <td className={`p-3 ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>{entry.actor || "System"}</td>
                               <td className="p-3 text-right">
                                 {entry.receiptAvailable && entry.paymentId ? (
                                   <Button
@@ -1762,7 +1884,7 @@ export default function MembershipDetailPage() {
                                 ) : null}
                               </td>
                             </tr>
-                          ))}
+                          )})}
                         </tbody>
                       </table>
                     </div>
@@ -1997,6 +2119,21 @@ export default function MembershipDetailPage() {
                 onChange={(e) => setManualDueAmount(e.target.value)}
                 placeholder="e.g. 500.00"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Due Type *</Label>
+              <Select value={manualDueTypeId} onValueChange={setManualDueTypeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a due type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dueTypes.map((dueType) => (
+                    <SelectItem key={dueType.id} value={dueType.id}>
+                      {dueType.name} {dueType.autoAllocate ? "· Auto" : "· Manual"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Reason</Label>

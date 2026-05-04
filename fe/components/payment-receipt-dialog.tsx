@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,16 @@ export interface PaymentReceiptData {
   membershipNo: string;
   membershipId: string;
   memberName?: string;
-  period: string;
   paymentId: string;
+  receiptNumber: string;
   paymentDate: string;
+  paymentMethod?: string | null;
   paidAmount: number;
   appliedToDue: number;
   overpaymentToCredit: number;
   remainingAfter: number;
+  outstandingAfterPayment: number;
+  creditBalanceAfterPayment: number;
   note?: string | null;
   collectedBy?: string;
   memberQrValue: string;
@@ -48,16 +51,27 @@ function escapeHtml(input: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function rowHtml(label: string, value: string): string {
-  return `<div class="row"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
+function rowHtml(
+  label: string,
+  value?: string,
+  options?: { labelBold?: boolean; valueBold?: boolean }
+): string {
+  const labelHtml = options?.labelBold === false ? escapeHtml(label) : `<strong>${escapeHtml(label)}</strong>`;
+  const valueContent = value === undefined ? "" : escapeHtml(value);
+  const valueHtml =
+    value === undefined
+      ? ""
+      : options?.valueBold
+        ? `<strong>${valueContent}</strong>`
+        : valueContent;
+  return `<div class="textbox-info"><p class="f-left">${labelHtml}</p><p class="f-right">${valueHtml}</p></div>`;
 }
 
 function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): string {
   const noteHtml = receipt.note ? rowHtml("Note", receipt.note) : "";
+  const paymentMethodHtml = rowHtml("Payment Method", receipt.paymentMethod || "-");
   const qrHtml = qrDataUrl
-    ? `<div class="qr-wrap"><img src="${qrDataUrl}" alt="Member QR" /><p class="qr-text">${escapeHtml(
-        receipt.memberQrValue
-      )}</p></div>`
+    ? `<div class="qr-wrap"><img src="${qrDataUrl}" alt="Member QR" /></div>`
     : "";
 
   return `<!doctype html>
@@ -67,53 +81,71 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
     <title>Payment Receipt</title>
     <style>
       html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-      body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-      .receipt {
-        width: 2in;
-        padding: 8px;
+      body {
+        font-family: "Times New Roman", Times, serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .ticket {
+        width: 100%;
         box-sizing: border-box;
         margin: 0 auto;
-        font-size: 10px;
-        line-height: 1.35;
+        font-size: 11px;
+        line-height: 1.3;
       }
-      .center { text-align: center; }
-      .strong { font-weight: 700; }
-      .title { font-size: 11px; }
-      .sep { border-top: 1px dashed #000; margin: 6px 0; }
-      .row { display: flex; justify-content: space-between; gap: 6px; }
-      .qr-wrap { text-align: center; margin-top: 6px; }
+      .centered { text-align: center; }
+      .headings { font-size: 14px; font-weight: 700; text-transform: uppercase; }
+      .text-box { width: 100%; }
+      .textbox-info {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 2px;
+      }
+      .textbox-info p {
+        margin: 0;
+      }
+      .f-left {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .f-right {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        text-align: right;
+      }
+      .border-top { border-top: 1px solid #242424; padding-top: 6px; margin-top: 6px; }
+      .border-bottom { border-bottom: 1px solid #242424; margin: 6px 0; }
+      .qr-wrap { text-align: center; margin-top: 8px; }
       .qr-wrap img { width: 84px; height: 84px; image-rendering: pixelated; }
-      .qr-text { margin: 4px 0 0; font-size: 8px; word-break: break-all; }
-      @page { size: 2in auto; margin: 0; }
+      @page { size: 2in auto; margin: 0.16in 0.08in; }
     </style>
   </head>
   <body>
-    <div class="receipt">
-      <div class="center">
-        <div class="strong title">${escapeHtml(receipt.organizationName)}</div>
+    <div class="ticket">
+      <div class="text-box centered">
+        <div class="headings">${escapeHtml(receipt.organizationName)}</div>
         <div>PAYMENT RECEIPT</div>
       </div>
-      <div class="sep"></div>
-      ${rowHtml("Receipt #", receipt.paymentId.slice(-8).toUpperCase())}
+      <div class="border-top"></div>
+      ${rowHtml("Receipt #", receipt.receiptNumber)}
       ${rowHtml("Date", dateTime(receipt.paymentDate))}
       ${rowHtml("Member #", receipt.membershipNo)}
       ${rowHtml("Name", receipt.memberName || "-")}
-      ${rowHtml("Period", receipt.period)}
-      <div class="sep"></div>
-      ${rowHtml("Paid", `Rs ${money(receipt.paidAmount)}`)}
-      ${
-        receipt.paymentKind === "credit"
-          ? rowHtml("Added To Credit", `Rs ${money(receipt.overpaymentToCredit)}`)
-          : `${rowHtml("Applied To Due", `Rs ${money(receipt.appliedToDue)}`)}
-      ${rowHtml("To Credit", `Rs ${money(receipt.overpaymentToCredit)}`)}
-      ${rowHtml("Outstanding", `Rs ${money(receipt.remainingAfter)}`)}`
-      }
+      ${paymentMethodHtml}
+      <div class="border-bottom"></div>
+      ${rowHtml("Paid", `Rs ${money(receipt.paidAmount)}`, { valueBold: true })}
+      ${rowHtml("Balance After Payment", undefined, { labelBold: false })}
+      ${rowHtml("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)}
+      ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
       ${noteHtml}
-      <div class="sep"></div>
+      <div class="border-bottom"></div>
       ${rowHtml("Collected By", receipt.collectedBy || "-")}
-      <div class="sep"></div>
+      <div class="border-bottom"></div>
       ${qrHtml}
-      <div class="center" style="margin-top: 6px;">Keep this receipt for records</div>
+      <div class="centered" style="margin-top: 6px;">Keep this receipt for records</div>
+      <div class="centered" style="margin-top: 10px; text-size: 8px">Developed by civica.lk</div>
     </div>
     <script>
       window.addEventListener("load", function () {
@@ -159,19 +191,50 @@ export function PaymentReceiptDialog({
     };
   }, [open, receipt]);
 
-  const printableReceiptId = useMemo(
-    () => (receipt ? receipt.paymentId.slice(-8).toUpperCase() : ""),
-    [receipt]
-  );
-
   function handlePrint() {
     if (!receipt) return;
-    const popup = window.open("", "_blank", "width=420,height=900");
-    if (!popup) return;
-    popup.document.open();
-    popup.document.write(buildReceiptHtml(receipt, qrDataUrl));
-    popup.document.close();
-    popup.focus();
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
+
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      iframe.remove();
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    window.addEventListener("afterprint", cleanup);
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      cleanup();
+      return;
+    }
+
+    doc.open();
+    doc.write(buildReceiptHtml(receipt, qrDataUrl));
+    doc.close();
+
+    const frameWindow = iframe.contentWindow;
+    if (!frameWindow) {
+      cleanup();
+      return;
+    }
+
+    frameWindow.addEventListener("afterprint", cleanup, { once: true });
+    frameWindow.focus();
+    window.setTimeout(() => {
+      frameWindow.print();
+    }, 150);
   }
 
   return (
@@ -182,73 +245,69 @@ export function PaymentReceiptDialog({
         </DialogHeader>
         {receipt && (
           <div className="space-y-4">
-            <div className="mx-auto w-[2in] rounded-md border border-dashed bg-white p-2 font-mono text-[10px] leading-tight text-black">
+            <div className="mx-auto w-[2in] rounded-md border border-dashed bg-white p-2 font-['Times_New_Roman'] text-[11px] leading-snug text-black">
               <div className="text-center">
-                <p className="text-[11px] font-bold">{receipt.organizationName}</p>
+                <p className="text-[14px] font-bold uppercase">{receipt.organizationName}</p>
                 <p>PAYMENT RECEIPT</p>
               </div>
-              <div className="my-1 border-t border-dashed border-black" />
+              <div className="mt-1 border-t border-black pt-1" />
 
-              <div className="flex justify-between gap-2">
-                <span>Receipt #</span>
-                <span>{printableReceiptId}</span>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Receipt #</p>
+                <p className="shrink-0 whitespace-nowrap text-right">{receipt.receiptNumber}</p>
               </div>
-              <div className="flex justify-between gap-2">
-                <span>Date</span>
-                <span>{dateTime(receipt.paymentDate)}</span>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Date</p>
+                <p className="shrink-0 whitespace-nowrap text-right">{dateTime(receipt.paymentDate)}</p>
               </div>
-              <div className="flex justify-between gap-2">
-                <span>Member #</span>
-                <span>{receipt.membershipNo}</span>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Member #</p>
+                <p className="shrink-0 whitespace-nowrap text-right">{receipt.membershipNo}</p>
               </div>
-              <div className="flex justify-between gap-2">
-                <span>Name</span>
-                <span>{receipt.memberName || "-"}</span>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Name</p>
+                <p className="shrink-0 text-right">{receipt.memberName || "-"}</p>
               </div>
-              <div className="flex justify-between gap-2">
-                <span>Period</span>
-                <span>{receipt.period}</span>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Payment Method</p>
+                <p className="shrink-0 whitespace-nowrap text-right">{receipt.paymentMethod || "-"}</p>
               </div>
 
-              <div className="my-1 border-t border-dashed border-black" />
-              <div className="flex justify-between gap-2">
-                <span>Paid</span>
-                <span>Rs {money(receipt.paidAmount)}</span>
+              <div className="my-1 border-b border-black" />
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Paid</p>
+                <p className="shrink-0 whitespace-nowrap text-right font-bold">
+                  Rs {money(receipt.paidAmount)}
+                </p>
               </div>
-              {receipt.paymentKind === "credit" ? (
-                <div className="flex justify-between gap-2">
-                  <span>Added To Credit</span>
-                  <span>Rs {money(receipt.overpaymentToCredit)}</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between gap-2">
-                    <span>Applied To Due</span>
-                    <span>Rs {money(receipt.appliedToDue)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span>To Credit</span>
-                    <span>Rs {money(receipt.overpaymentToCredit)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span>Outstanding</span>
-                    <span>Rs {money(receipt.remainingAfter)}</span>
-                  </div>
-                </>
-              )}
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1">Balance After Payment</p>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Total Outstanding</p>
+                <p className="shrink-0 whitespace-nowrap text-right">
+                  Rs {money(receipt.outstandingAfterPayment)}
+                </p>
+              </div>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Total Credit Balance</p>
+                <p className="shrink-0 whitespace-nowrap text-right">
+                  Rs {money(receipt.creditBalanceAfterPayment)}
+                </p>
+              </div>
               {receipt.note ? (
-                <div className="flex justify-between gap-2">
-                  <span>Note</span>
-                  <span>{receipt.note}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 flex-1 font-semibold">Note</p>
+                  <p className="text-right">{receipt.note}</p>
                 </div>
               ) : null}
-              <div className="my-1 border-t border-dashed border-black" />
-              <div className="flex justify-between gap-2">
-                <span>Collected By</span>
-                <span>{receipt.collectedBy || "-"}</span>
+              <div className="my-1 border-b border-black" />
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Collected By</p>
+                <p className="text-right">{receipt.collectedBy || "-"}</p>
               </div>
 
-              <div className="my-1 border-t border-dashed border-black" />
+              <div className="my-1 border-b border-black" />
               {qrDataUrl ? (
                 <div className="text-center">
                   <img
@@ -256,10 +315,10 @@ export function PaymentReceiptDialog({
                     alt={`QR for ${receipt.membershipNo}`}
                     className="mx-auto h-[84px] w-[84px]"
                   />
-                  <p className="mt-1 text-[8px] break-all">{receipt.memberQrValue}</p>
                 </div>
               ) : null}
               <p className="mt-1 text-center">Keep this receipt for records</p>
+              <p className="mt-1 text-center">developed by civica.lk</p>
             </div>
 
             <div className="flex gap-2">

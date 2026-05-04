@@ -5,7 +5,15 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type Payment, type PaymentDue, type PaymentReceipt, type DueStatus } from "@/lib/api";
+import {
+  api,
+  type DueStatus,
+  type DueType,
+  type Payment,
+  type PaymentDue,
+  type PaymentReceipt,
+  type Zone,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +39,6 @@ import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
 import {
   RecordPaymentDialog,
   type PaymentMethod,
-  getPaymentMethodLabel,
 } from "@/components/record-payment-dialog";
 import {
   PaymentReceiptDialog,
@@ -50,6 +57,29 @@ function getPaymentPeriodLabel(payment: Payment | null) {
   return payment.paymentDue?.period ?? (payment.paymentKind === "credit" ? "Credit Payment" : "—");
 }
 
+function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
+  return {
+    paymentKind: receipt.paymentKind,
+    organizationName: receipt.organizationName,
+    membershipNo: receipt.membershipNo,
+    membershipId: receipt.membershipId,
+    memberName: receipt.memberName,
+    paymentId: receipt.paymentId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.paymentDate,
+    paymentMethod: receipt.paymentMethod || null,
+    paidAmount: receipt.paidAmount,
+    appliedToDue: receipt.appliedToDue,
+    overpaymentToCredit: receipt.overpaymentToCredit,
+    remainingAfter: receipt.remainingAfter,
+    outstandingAfterPayment: receipt.outstandingAfterPayment,
+    creditBalanceAfterPayment: receipt.creditBalanceAfterPayment,
+    note: receipt.note || null,
+    collectedBy: receipt.collectedBy,
+    memberQrValue: "",
+  };
+}
+
 export default function PaymentsPage() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
@@ -61,12 +91,16 @@ export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
   const [statusFilter, setStatusFilter] = useState<DueStatus | "all">("all");
+  const [dueTypeFilter, setDueTypeFilter] = useState<string>("all");
   const [searchQ, setSearchQ] = useState("");
+  const [dueTypes, setDueTypes] = useState<DueType[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [history, setHistory] = useState<Payment[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const historyLimit = 20;
+  const [historySearchQ, setHistorySearchQ] = useState("");
 
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState("");
@@ -94,6 +128,22 @@ export default function PaymentsPage() {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
 
+  useEffect(() => {
+    if (!user?.organizationId) {
+      setDueTypes([]);
+      setZones([]);
+      return;
+    }
+
+    api<DueType[]>("/due-types")
+      .then((items) => setDueTypes(items.filter((item) => item.isActive)))
+      .catch(() => setDueTypes([]));
+
+    api<Zone[]>("/zones", { params: { includeInactive: "true" } })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [user?.organizationId]);
+
   function loadDues() {
     if (!user) return;
     const params: Record<string, string> = {
@@ -101,6 +151,7 @@ export default function PaymentsPage() {
       limit: String(limit),
     };
     if (statusFilter !== "all") params.status = statusFilter;
+    if (dueTypeFilter !== "all") params.dueTypeId = dueTypeFilter;
     if (searchQ.trim()) params.q = searchQ.trim();
     setLoading(true);
     api<{ items: PaymentDue[]; total: number }>("/payments/dues", { params })
@@ -114,13 +165,17 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadDues();
-  }, [user, page, statusFilter, searchQ]);
+  }, [user, page, statusFilter, dueTypeFilter, searchQ]);
 
   function loadHistory() {
     if (!user) return;
     setHistoryLoading(true);
     api<{ items: Payment[]; total: number }>("/payments/history", {
-      params: { page: String(historyPage), limit: String(historyLimit) },
+      params: {
+        page: String(historyPage),
+        limit: String(historyLimit),
+        ...(historySearchQ.trim() ? { q: historySearchQ.trim() } : {}),
+      },
     })
       .then((r) => {
         setHistory(r.items);
@@ -135,26 +190,13 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadHistory();
-  }, [user, historyPage]);
+  }, [user, historyPage, historySearchQ]);
 
   async function openReceiptForPayment(paymentId: string) {
     try {
       const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
       setReceiptData({
-        paymentKind: receipt.paymentKind,
-        organizationName: receipt.organizationName,
-        membershipNo: receipt.membershipNo,
-        membershipId: receipt.membershipId,
-        memberName: receipt.memberName,
-        period: receipt.period,
-        paymentId: receipt.paymentId,
-        paymentDate: receipt.paymentDate,
-        paidAmount: receipt.paidAmount,
-        appliedToDue: receipt.appliedToDue,
-        overpaymentToCredit: receipt.overpaymentToCredit,
-        remainingAfter: receipt.remainingAfter,
-        note: receipt.note || null,
-        collectedBy: receipt.collectedBy,
+        ...toReceiptData(receipt),
         memberQrValue: `${window.location.origin}/members/${receipt.membershipId}`,
       });
       setReceiptOpen(true);
@@ -245,43 +287,16 @@ export default function PaymentsPage() {
     }
     setPaySubmitting(true);
     try {
-      const methodLabel = getPaymentMethodLabel(payMethod);
-      const combinedNote = [methodLabel, payNote].filter(Boolean).join(" — ");
       const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
         body: JSON.stringify({
           paymentDueId: payDue.id,
           amount: amt,
-          note: combinedNote || undefined,
+          paymentMethod: payMethod,
+          note: payNote.trim() || undefined,
         }),
       });
-      const amountDue = Number(payDue.amountDue);
-      const amountPaidBefore = Number(payDue.amountPaid);
-      const remainingBefore = Math.max(0, amountDue - amountPaidBefore);
-      const appliedToDue = Math.min(amt, remainingBefore);
-      const overpaymentToCredit = Math.max(0, amt - appliedToDue);
-      const remainingAfter = Math.max(0, remainingBefore - appliedToDue);
-      setReceiptData({
-        paymentKind: "due",
-        organizationName: user?.organization?.name || "Organization",
-        membershipNo: payDue.membership?.membershipNo ?? payDue.membershipId,
-        membershipId: payDue.membershipId,
-        memberName:
-          payDue.membership?.hod?.fullName ||
-          payDue.membership?.hod?.nameWithInitials ||
-          "",
-        period: payDue.period,
-        paymentId: payment.id,
-        paymentDate: payment.paymentDate,
-        paidAmount: amt,
-        appliedToDue,
-        overpaymentToCredit,
-        remainingAfter,
-        note: combinedNote || null,
-        collectedBy: user?.email || "",
-        memberQrValue: `${window.location.origin}/members/${payDue.membershipId}`,
-      });
-      setReceiptOpen(true);
+      await openReceiptForPayment(payment.id);
       setPayDialogOpen(false);
       toast({
         title: "Payment recorded",
@@ -357,6 +372,34 @@ export default function PaymentsPage() {
 
   const totalPages = Math.ceil(total / limit) || 1;
   const historyTotalPages = Math.ceil(historyTotal / historyLimit) || 1;
+  const zoneLabel = (areaCode?: number | null) => {
+    if (areaCode === undefined || areaCode === null) return null;
+    const zone = zones.find((item) => item.code === areaCode);
+    return zone ? `${zone.code} - ${zone.name}` : String(areaCode);
+  };
+  const dueMemberDisplayName = (due: PaymentDue) =>
+    due.membership?.hod?.nameWithInitials ?? due.membership?.hod?.fullName ?? due.membership?.membershipNo ?? due.membershipId;
+  const dueMemberFullName = (due: PaymentDue) =>
+    due.membership?.hod?.fullName ?? due.membership?.hod?.nameWithInitials ?? due.membershipId;
+  const dueMemberMeta = (due: PaymentDue) => {
+    const zone = zoneLabel(due.membership?.areaCode);
+    return [zone ? `Zone: ${zone}` : null, due.membership?.membershipNo].filter(Boolean).join(" • ");
+  };
+  const paymentMemberDisplayName = (payment: Payment) =>
+    payment.membership?.hod?.nameWithInitials ??
+    payment.membership?.hod?.fullName ??
+    payment.membership?.membershipNo ??
+    payment.membershipId;
+  const paymentMemberFullName = (payment: Payment) =>
+    payment.membership?.hod?.fullName ??
+    payment.membership?.hod?.nameWithInitials ??
+    payment.membershipId;
+  const paymentMemberMeta = (payment: Payment) => {
+    const zone = zoneLabel(payment.membership?.areaCode);
+    return [zone ? `Zone: ${zone}` : null, payment.membership?.membershipNo]
+      .filter(Boolean)
+      .join(" • ");
+  };
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
@@ -388,33 +431,54 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as DueStatus | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("payments.allStatuses")}</SelectItem>
-                  <SelectItem value="pending">{t("payments.pending")}</SelectItem>
-                  <SelectItem value="partial">{t("payments.partial")}</SelectItem>
-                  <SelectItem value="paid">{t("payments.paid")}</SelectItem>
-                  <SelectItem value="overdue">{t("payments.overdue")}</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Select
+                  value={statusFilter}
+                  onValueChange={(v) => {
+                    setStatusFilter(v as DueStatus | "all");
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("payments.allStatuses")}</SelectItem>
+                    <SelectItem value="pending">{t("payments.pending")}</SelectItem>
+                    <SelectItem value="partial">{t("payments.partial")}</SelectItem>
+                    <SelectItem value="paid">{t("payments.paid")}</SelectItem>
+                    <SelectItem value="overdue">{t("payments.overdue")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={dueTypeFilter}
+                  onValueChange={(value) => {
+                    setDueTypeFilter(value);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-40">
+                    <SelectValue placeholder="All due types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Due Types</SelectItem>
+                    {dueTypes.map((dueType) => (
+                      <SelectItem key={dueType.id} value={dueType.id}>
+                        {dueType.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <form
               className="flex gap-2 mt-2"
               onSubmit={(e) => { e.preventDefault(); setPage(1); }}
             >
               <Input
-                placeholder="Search by name or membership no..."
+                placeholder="Search by member, membership no, or due type..."
                 value={searchQ}
                 onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
                 className="max-w-sm"
@@ -441,10 +505,10 @@ export default function PaymentsPage() {
                               href={`/members/${d.membershipId}`}
                               className="font-medium text-primary hover:underline break-words"
                             >
-                              {d.membership?.hod?.fullName ?? d.membership?.membershipNo ?? d.membershipId}
+                              {dueMemberDisplayName(d)}
                             </Link>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              {d.membership?.membershipNo}
+                              {dueMemberMeta(d)}
                             </p>
                           </div>
                           <span
@@ -462,16 +526,16 @@ export default function PaymentsPage() {
                             )}
                           </div>
                           <div>
+                            <p className="text-muted-foreground">Full Name</p>
+                            <p className="font-medium break-words">{dueMemberFullName(d)}</p>
+                          </div>
+                          <div>
                             <p className="text-muted-foreground">{t("payments.amountDue")}</p>
                             <p className="font-medium tabular-nums">{Number(d.amountDue).toFixed(2)}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground">{t("payments.paid")}</p>
                             <p className="font-medium tabular-nums">{Number(d.amountPaid).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">{t("payments.remaining")}</p>
-                            <p className="font-medium tabular-nums">{remaining.toFixed(2)}</p>
                           </div>
                         </div>
                         <div className="mt-3 flex gap-2">
@@ -493,14 +557,14 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[700px]">
+                  <table className="w-full text-sm min-w-[900px]">
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
+                        <th className="text-left p-2.5 font-medium">Full Name</th>
                         <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
-                        <th className="text-right p-2.5 font-medium">{t("payments.remaining")}</th>
                         <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
                         <th className="p-2.5"></th>
                       </tr>
@@ -515,12 +579,13 @@ export default function PaymentsPage() {
                                 href={`/members/${d.membershipId}`}
                                 className="font-medium text-primary hover:underline"
                               >
-                                {d.membership?.hod?.fullName ?? d.membershipId}
+                                {dueMemberDisplayName(d)}
                               </Link>
                               <p className="text-muted-foreground text-xs">
-                                {d.membership?.membershipNo}
+                                {dueMemberMeta(d)}
                               </p>
                             </td>
+                            <td className="p-2.5">{dueMemberFullName(d)}</td>
                             <td className="p-2.5">
                               <p className="font-medium">{getPaymentDueTitle(d)}</p>
                               {getPaymentDueSubtitle(d) && (
@@ -532,9 +597,6 @@ export default function PaymentsPage() {
                             </td>
                             <td className="p-2.5 text-right tabular-nums">
                               {Number(d.amountPaid).toFixed(2)}
-                            </td>
-                            <td className="p-2.5 text-right tabular-nums font-medium">
-                              {remaining.toFixed(2)}
                             </td>
                             <td className="p-2.5 text-center">
                               <span
@@ -596,6 +658,23 @@ export default function PaymentsPage() {
         <Card className="mt-6">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Payment History</CardTitle>
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setHistoryPage(1);
+              }}
+            >
+              <Input
+                placeholder="Search by member, membership no, or period..."
+                value={historySearchQ}
+                onChange={(e) => {
+                  setHistorySearchQ(e.target.value);
+                  setHistoryPage(1);
+                }}
+                className="max-w-sm"
+              />
+            </form>
           </CardHeader>
           <CardContent>
             {historyLoading ? (
@@ -613,10 +692,10 @@ export default function PaymentsPage() {
                             href={`/members/${p.membershipId}`}
                             className="font-medium text-primary hover:underline break-words"
                           >
-                            {p.membership?.hod?.fullName ?? p.membership?.membershipNo ?? p.membershipId}
+                            {paymentMemberDisplayName(p)}
                           </Link>
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {p.membership?.membershipNo}
+                            {paymentMemberMeta(p)}
                           </p>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -627,6 +706,10 @@ export default function PaymentsPage() {
                         <div>
                           <p className="text-muted-foreground">{t("payments.period")}</p>
                           <p className="font-medium">{getPaymentPeriodLabel(p)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Full Name</p>
+                          <p className="font-medium break-words">{paymentMemberFullName(p)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">{t("payments.amount")}</p>
@@ -659,11 +742,12 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[800px]">
+                  <table className="w-full text-sm min-w-[940px]">
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-2.5 font-medium">Date</th>
                         <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
+                        <th className="text-left p-2.5 font-medium">Full Name</th>
                         <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.amount")}</th>
                         <th className="text-left p-2.5 font-medium">User ID</th>
@@ -683,12 +767,13 @@ export default function PaymentsPage() {
                               href={`/members/${p.membershipId}`}
                               className="font-medium text-primary hover:underline"
                             >
-                              {p.membership?.hod?.fullName ?? p.membershipId}
+                              {paymentMemberDisplayName(p)}
                             </Link>
                             <p className="text-muted-foreground text-xs">
-                              {p.membership?.membershipNo}
+                              {paymentMemberMeta(p)}
                             </p>
                           </td>
+                          <td className="p-2.5">{paymentMemberFullName(p)}</td>
                           <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>
                           <td className={`p-2.5 text-right tabular-nums ${(p as any).isReversed ? "line-through" : ""}`}>
                             {Number(p.amount).toFixed(2)}

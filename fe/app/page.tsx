@@ -405,6 +405,14 @@ export default function HomePage() {
           href: "/settings/zones",
           roles: ["admin", "super_user"],
         },
+        {
+          actionKey: "admin-due-types",
+          title: "Due Types",
+          description: "Manage manual and auto-allocated due categories",
+          icon: CreditCard,
+          href: "/settings/due-types",
+          roles: ["admin", "super_user"],
+        },
       ],
     },
     {
