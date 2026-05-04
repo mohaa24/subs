@@ -1,86 +1,92 @@
-declare module "@point-of-sale/receipt-printer-encoder" {
-  export interface ReceiptPrinterEncoderOptions {
+type PosConnectedUsbDevice = {
+  type: "usb";
+  vendorId: number;
+  productId: number;
+  manufacturerName?: string;
+  productName?: string;
+  serialNumber?: string;
+  language?: string | null;
+  codepageMapping?: string | null;
+};
+
+type PosConnectedSerialDevice = {
+  type: "serial";
+  vendorId: number | null;
+  productId: number | null;
+  language?: string | null;
+  codepageMapping?: string | null;
+};
+
+type PosReceiptPrinterEncoder = {
+  new (options?: {
     columns?: number;
     language?: string;
     codepageMapping?: string;
     feedBeforeCut?: number;
     newline?: string;
     errors?: "strict" | "relaxed";
-  }
-
-  export default class ReceiptPrinterEncoder {
-    constructor(options?: ReceiptPrinterEncoderOptions);
-    initialize(): this;
-    text(value: string): this;
-    line(value?: string): this;
-    newline(value?: number): this;
-    rule(options?: { style?: "single" | "double"; width?: number }): this;
-    align(value: "left" | "center" | "right"): this;
-    bold(value: boolean): this;
+  }): {
+    initialize(): unknown;
+    text(value: string): unknown;
+    line(value?: string): unknown;
+    newline(value?: number): unknown;
+    rule(options?: { style?: "single" | "double"; width?: number }): unknown;
+    align(value: "left" | "center" | "right"): unknown;
+    bold(value: boolean): unknown;
     qrcode(
       value: string,
       model?: number | { model?: number; size?: number; errorlevel?: "l" | "m" | "q" | "h" },
       size?: number,
       errorlevel?: "l" | "m" | "q" | "h"
-    ): this;
-    cut(value?: string): this;
+    ): unknown;
+    cut(value?: string): unknown;
     encode(): Uint8Array;
-  }
-}
+  };
+};
 
-declare module "@point-of-sale/webusb-receipt-printer" {
-  export interface WebUsbConnectedDevice {
-    type: "usb";
-    vendorId: number;
-    productId: number;
-    manufacturerName?: string;
-    productName?: string;
-    serialNumber?: string;
-    language?: string | null;
-    codepageMapping?: string | null;
-  }
-
-  export default class WebUSBReceiptPrinter {
+type PosWebUsbReceiptPrinter = {
+  new (): {
     connect(): Promise<void>;
     reconnect(device: {
-      vendorId?: number;
-      productId?: number;
+      vendorId?: number | null;
+      productId?: number | null;
       serialNumber?: string;
     }): Promise<void>;
     disconnect(): Promise<void>;
     print(data: Uint8Array): Promise<void>;
     addEventListener(
       type: "connected" | "disconnected" | "data",
-      listener: (event: WebUsbConnectedDevice) => void
+      listener: (event: PosConnectedUsbDevice) => void
     ): void;
-  }
-}
+  };
+};
 
-declare module "@point-of-sale/webserial-receipt-printer" {
-  export interface WebSerialConnectedDevice {
-    type: "serial";
-    vendorId: number | null;
-    productId: number | null;
-    language?: string | null;
-    codepageMapping?: string | null;
-  }
-
-  export default class WebSerialReceiptPrinter {
-    constructor(options?: {
-      baudRate?: number;
-      bufferSize?: number;
-      dataBits?: 7 | 8;
-      flowControl?: "none" | "hardware";
-      parity?: "none" | "even" | "odd";
-      stopBits?: 1 | 2;
-    });
+type PosWebSerialReceiptPrinter = {
+  new (options?: {
+    baudRate?: number;
+    bufferSize?: number;
+    dataBits?: 7 | 8;
+    flowControl?: "none" | "hardware";
+    parity?: "none" | "even" | "odd";
+    stopBits?: 1 | 2;
+  }): {
     connect(): Promise<void>;
     reconnect(device: { vendorId?: number | null; productId?: number | null }): Promise<void>;
     disconnect(): Promise<void>;
     print(data: Uint8Array): Promise<void>;
     addEventListener(
       type: "connected" | "disconnected" | "data",
-      listener: (event: WebSerialConnectedDevice) => void
+      listener: (event: PosConnectedSerialDevice) => void
     ): void;
+  };
+};
+
+declare global {
+  interface Window {
+    ReceiptPrinterEncoder?: PosReceiptPrinterEncoder;
+    WebUSBReceiptPrinter?: PosWebUsbReceiptPrinter;
+    WebSerialReceiptPrinter?: PosWebSerialReceiptPrinter;
   }
 }
+
+export {};

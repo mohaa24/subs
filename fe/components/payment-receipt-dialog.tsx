@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Printer } from "lucide-react";
-import ReceiptPrinterEncoder from "@point-of-sale/receipt-printer-encoder";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,8 +34,7 @@ export interface PaymentReceiptData {
 }
 
 type PosTransport = "usb" | "serial";
-
-type WebUsbConnectedDevice = {
+type PosConnectedUsbDevice = {
   type: "usb";
   vendorId: number;
   productId: number;
@@ -47,7 +45,7 @@ type WebUsbConnectedDevice = {
   codepageMapping?: string | null;
 };
 
-type WebSerialConnectedDevice = {
+type PosConnectedSerialDevice = {
   type: "serial";
   vendorId: number | null;
   productId: number | null;
@@ -66,7 +64,7 @@ type WebUsbPrinterInstance = {
   print(data: Uint8Array): Promise<void>;
   addEventListener(
     type: "connected" | "disconnected" | "data",
-    listener: (event: WebUsbConnectedDevice) => void
+    listener: (event: PosConnectedUsbDevice) => void
   ): void;
 };
 
@@ -77,19 +75,52 @@ type WebSerialPrinterInstance = {
   print(data: Uint8Array): Promise<void>;
   addEventListener(
     type: "connected" | "disconnected" | "data",
-    listener: (event: WebSerialConnectedDevice) => void
+    listener: (event: PosConnectedSerialDevice) => void
   ): void;
 };
 
-type WebUsbPrinterClass = new () => WebUsbPrinterInstance;
-type WebSerialPrinterClass = new (options?: {
+type WebUsbPrinterClass = {
+  new (): WebUsbPrinterInstance;
+};
+type WebSerialPrinterClass = {
+  new (options?: WebSerialPrinterOptions): WebSerialPrinterInstance;
+};
+type ReceiptEncoderInstance = {
+  initialize(): ReceiptEncoderInstance;
+  text(value: string): ReceiptEncoderInstance;
+  line(value?: string): ReceiptEncoderInstance;
+  newline(value?: number): ReceiptEncoderInstance;
+  rule(options?: { style?: "single" | "double"; width?: number }): ReceiptEncoderInstance;
+  align(value: "left" | "center" | "right"): ReceiptEncoderInstance;
+  bold(value: boolean): ReceiptEncoderInstance;
+  qrcode(
+    value: string,
+    model?: number | { model?: number; size?: number; errorlevel?: "l" | "m" | "q" | "h" },
+    size?: number,
+    errorlevel?: "l" | "m" | "q" | "h"
+  ): ReceiptEncoderInstance;
+  cut(value?: string): ReceiptEncoderInstance;
+  encode(): Uint8Array;
+};
+type ReceiptPrinterEncoderClass = {
+  new (options?: {
+    columns?: number;
+    language?: string;
+    codepageMapping?: string;
+    feedBeforeCut?: number;
+    newline?: string;
+    errors?: "strict" | "relaxed";
+  }): ReceiptEncoderInstance;
+};
+type WebSerialPrinterOptions = {
   baudRate?: number;
   bufferSize?: number;
   dataBits?: 7 | 8;
   flowControl?: "none" | "hardware";
   parity?: "none" | "even" | "odd";
   stopBits?: 1 | 2;
-}) => WebSerialPrinterInstance;
+};
+type PosGlobalName = "ReceiptPrinterEncoder" | "WebUSBReceiptPrinter" | "WebSerialReceiptPrinter";
 
 type StoredPosPrinter = {
   transport: PosTransport;
@@ -114,6 +145,8 @@ type PosPrinterConnection = {
 
 const POS_COLUMNS = 32;
 const POS_PRINTER_STORAGE_KEY = "subs.pos-receipt-printer";
+const POS_SCRIPT_BASE = "/vendor";
+const posScriptPromises = new Map<string, Promise<void>>();
 
 function money(value: number): string {
   return Number(value || 0).toFixed(2);
@@ -282,13 +315,71 @@ function supportsPosPrinting() {
 }
 
 async function loadWebUsbPrinterClass(): Promise<WebUsbPrinterClass> {
-  const mod = await import("@/lib/pos/webusb-receipt-printer");
-  return mod.default as WebUsbPrinterClass;
+  await loadPosBrowserScript(
+    `${POS_SCRIPT_BASE}/webusb-receipt-printer.umd.js`,
+    "WebUSBReceiptPrinter"
+  );
+  if (!window.WebUSBReceiptPrinter) {
+    throw new Error("WebUSB printer library failed to load.");
+  }
+  return window.WebUSBReceiptPrinter as unknown as WebUsbPrinterClass;
 }
 
 async function loadWebSerialPrinterClass(): Promise<WebSerialPrinterClass> {
-  const mod = await import("@/lib/pos/webserial-receipt-printer");
-  return mod.default as WebSerialPrinterClass;
+  await loadPosBrowserScript(
+    `${POS_SCRIPT_BASE}/webserial-receipt-printer.umd.js`,
+    "WebSerialReceiptPrinter"
+  );
+  if (!window.WebSerialReceiptPrinter) {
+    throw new Error("WebSerial printer library failed to load.");
+  }
+  return window.WebSerialReceiptPrinter as unknown as WebSerialPrinterClass;
+}
+
+async function loadReceiptPrinterEncoderClass(): Promise<ReceiptPrinterEncoderClass> {
+  await loadPosBrowserScript(
+    `${POS_SCRIPT_BASE}/receipt-printer-encoder.umd.js`,
+    "ReceiptPrinterEncoder"
+  );
+  if (!window.ReceiptPrinterEncoder) {
+    throw new Error("Receipt encoder library failed to load.");
+  }
+  return window.ReceiptPrinterEncoder as unknown as ReceiptPrinterEncoderClass;
+}
+
+function loadPosBrowserScript(src: string, globalName: PosGlobalName): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("POS printing is only available in the browser."));
+  }
+
+  if (window[globalName]) {
+    return Promise.resolve();
+  }
+
+  const existingPromise = posScriptPromises.get(src);
+  if (existingPromise) return existingPromise;
+
+  const promise = new Promise<void>((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(`script[data-pos-src="${src}"]`);
+    if (existingScript) {
+      existingScript.addEventListener("load", () => resolve(), { once: true });
+      existingScript.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), {
+        once: true,
+      });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.posSrc = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+
+  posScriptPromises.set(src, promise);
+  return promise;
 }
 
 function wrapText(value: string, width: number): string[] {
@@ -331,7 +422,11 @@ function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS):
   return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
 }
 
-function encodePosReceipt(receipt: PaymentReceiptData, profile: PosPrinterProfile): Uint8Array {
+async function encodePosReceipt(
+  receipt: PaymentReceiptData,
+  profile: PosPrinterProfile
+): Promise<Uint8Array> {
+  const ReceiptPrinterEncoder = await loadReceiptPrinterEncoderClass();
   const encoder = new ReceiptPrinterEncoder({
     columns: POS_COLUMNS,
     language: profile.language,
@@ -512,7 +607,7 @@ export function PaymentReceiptDialog({
     const printer = usbPrinterRef.current ?? new PrinterClass();
     usbPrinterRef.current = printer;
 
-    const device = await waitForConnection<WebUsbConnectedDevice>(
+    const device = await waitForConnection<PosConnectedUsbDevice>(
       (listener) => printer.addEventListener("connected", listener),
       async () => {
         if (stored?.transport === "usb") {
@@ -546,10 +641,10 @@ export function PaymentReceiptDialog({
 
   async function connectSerialPrinter(stored: StoredPosPrinter | null): Promise<PosPrinterConnection> {
     const PrinterClass = await loadWebSerialPrinterClass();
-    const printer = serialPrinterRef.current ?? new PrinterClass({ baudRate: 9600 });
+    const printer = serialPrinterRef.current ?? new PrinterClass({ baudRate: 9600 } as WebSerialPrinterOptions);
     serialPrinterRef.current = printer;
 
-    const device = await waitForConnection<WebSerialConnectedDevice>(
+    const device = await waitForConnection<PosConnectedSerialDevice>(
       (listener) => printer.addEventListener("connected", listener),
       async () => {
         if (stored?.transport === "serial") {
@@ -628,7 +723,7 @@ export function PaymentReceiptDialog({
       }
 
       const connection = await getPosPrinterConnection();
-      const data = encodePosReceipt(receipt, connection.profile);
+      const data = await encodePosReceipt(receipt, connection.profile);
       await connection.print(data);
 
       toast({
