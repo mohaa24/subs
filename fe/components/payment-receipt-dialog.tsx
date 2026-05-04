@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Printer } from "lucide-react";
+import ReceiptPrinterEncoder from "@point-of-sale/receipt-printer-encoder";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
 
 export interface PaymentReceiptData {
   paymentKind: "due" | "credit";
@@ -32,6 +34,87 @@ export interface PaymentReceiptData {
   memberQrValue: string;
 }
 
+type PosTransport = "usb" | "serial";
+
+type WebUsbConnectedDevice = {
+  type: "usb";
+  vendorId: number;
+  productId: number;
+  manufacturerName?: string;
+  productName?: string;
+  serialNumber?: string;
+  language?: string | null;
+  codepageMapping?: string | null;
+};
+
+type WebSerialConnectedDevice = {
+  type: "serial";
+  vendorId: number | null;
+  productId: number | null;
+  language?: string | null;
+  codepageMapping?: string | null;
+};
+
+type WebUsbPrinterInstance = {
+  connect(): Promise<void>;
+  reconnect(device: {
+    vendorId?: number | null;
+    productId?: number | null;
+    serialNumber?: string;
+  }): Promise<void>;
+  disconnect(): Promise<void>;
+  print(data: Uint8Array): Promise<void>;
+  addEventListener(
+    type: "connected" | "disconnected" | "data",
+    listener: (event: WebUsbConnectedDevice) => void
+  ): void;
+};
+
+type WebSerialPrinterInstance = {
+  connect(): Promise<void>;
+  reconnect(device: { vendorId?: number | null; productId?: number | null }): Promise<void>;
+  disconnect(): Promise<void>;
+  print(data: Uint8Array): Promise<void>;
+  addEventListener(
+    type: "connected" | "disconnected" | "data",
+    listener: (event: WebSerialConnectedDevice) => void
+  ): void;
+};
+
+type WebUsbPrinterClass = new () => WebUsbPrinterInstance;
+type WebSerialPrinterClass = new (options?: {
+  baudRate?: number;
+  bufferSize?: number;
+  dataBits?: 7 | 8;
+  flowControl?: "none" | "hardware";
+  parity?: "none" | "even" | "odd";
+  stopBits?: 1 | 2;
+}) => WebSerialPrinterInstance;
+
+type StoredPosPrinter = {
+  transport: PosTransport;
+  vendorId?: number | null;
+  productId?: number | null;
+  serialNumber?: string;
+  language?: string | null;
+  codepageMapping?: string | null;
+};
+
+type PosPrinterProfile = {
+  language: string;
+  codepageMapping: string;
+};
+
+type PosPrinterConnection = {
+  transport: PosTransport;
+  print: (data: Uint8Array) => Promise<void>;
+  profile: PosPrinterProfile;
+  stored: StoredPosPrinter;
+};
+
+const POS_COLUMNS = 32;
+const POS_PRINTER_STORAGE_KEY = "subs.pos-receipt-printer";
+
 function money(value: number): string {
   return Number(value || 0).toFixed(2);
 }
@@ -40,6 +123,19 @@ function dateTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleString();
+}
+
+function posDateTime(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 function escapeHtml(input: string): string {
@@ -158,6 +254,176 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
 </html>`;
 }
 
+function getStoredPosPrinter(): StoredPosPrinter | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(POS_PRINTER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredPosPrinter;
+    if (parsed && (parsed.transport === "usb" || parsed.transport === "serial")) {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function setStoredPosPrinter(device: StoredPosPrinter) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(POS_PRINTER_STORAGE_KEY, JSON.stringify(device));
+}
+
+function supportsPosPrinting() {
+  if (typeof window === "undefined") return false;
+  return window.isSecureContext && ("usb" in navigator || "serial" in navigator);
+}
+
+async function loadWebUsbPrinterClass(): Promise<WebUsbPrinterClass> {
+  const mod = await import("@/lib/pos/webusb-receipt-printer");
+  return mod.default as WebUsbPrinterClass;
+}
+
+async function loadWebSerialPrinterClass(): Promise<WebSerialPrinterClass> {
+  const mod = await import("@/lib/pos/webserial-receipt-printer");
+  return mod.default as WebSerialPrinterClass;
+}
+
+function wrapText(value: string, width: number): string[] {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return [""];
+
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+
+    if (`${current} ${word}`.length <= width) {
+      current = `${current} ${word}`;
+      continue;
+    }
+
+    lines.push(current);
+    current = word;
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS): string[] {
+  const cleanLabel = label.trim();
+  const cleanValue = value.trim();
+  if (!cleanValue) return [cleanLabel];
+
+  if (cleanLabel.length + cleanValue.length + 1 <= width) {
+    return [`${cleanLabel}${" ".repeat(width - cleanLabel.length - cleanValue.length)}${cleanValue}`];
+  }
+
+  const wrappedValue = wrapText(cleanValue, width);
+  return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
+}
+
+function encodePosReceipt(receipt: PaymentReceiptData, profile: PosPrinterProfile): Uint8Array {
+  const encoder = new ReceiptPrinterEncoder({
+    columns: POS_COLUMNS,
+    language: profile.language,
+    codepageMapping: profile.codepageMapping,
+    feedBeforeCut: 3,
+    errors: "relaxed",
+  });
+
+  encoder.initialize();
+  encoder.align("center");
+  encoder.bold(true).line(receipt.organizationName.toUpperCase());
+  encoder.bold(false).line("PAYMENT RECEIPT");
+  encoder.rule();
+
+  encoder.align("left");
+  for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
+  for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
+  for (const line of formatKeyValueLines("Member #", receipt.membershipNo)) encoder.line(line);
+
+  encoder.line("Name");
+  for (const line of wrapText(receipt.memberName || "-", POS_COLUMNS)) encoder.line(line);
+
+  for (const line of formatKeyValueLines("Payment Method", receipt.paymentMethod || "-")) {
+    encoder.line(line);
+  }
+
+  encoder.rule();
+  encoder.bold(true);
+  for (const line of formatKeyValueLines("Paid", `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
+  encoder.bold(false);
+
+  encoder.line("Balance After Payment");
+  for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
+    encoder.line(line);
+  }
+  for (const line of formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)) {
+    encoder.line(line);
+  }
+
+  if (receipt.note) {
+    encoder.line("Note");
+    for (const line of wrapText(receipt.note, POS_COLUMNS)) encoder.line(line);
+  }
+
+  encoder.rule();
+  encoder.line("Collected By");
+  for (const line of wrapText(receipt.collectedBy || "-", POS_COLUMNS)) encoder.line(line);
+  encoder.rule();
+
+  if (receipt.memberQrValue) {
+    encoder.align("center");
+    encoder.qrcode(receipt.memberQrValue, { model: 2, size: 5, errorlevel: "m" });
+  }
+
+  encoder.align("center");
+  encoder.line("Keep this receipt for records");
+  encoder.line("Developed by civica.lk");
+  encoder.newline(2);
+  encoder.cut();
+
+  return encoder.encode();
+}
+
+async function waitForConnection<TDevice>(
+  register: (listener: (device: TDevice) => void) => void,
+  trigger: () => Promise<void>,
+  timeoutMs = 10000
+): Promise<TDevice> {
+  return await new Promise<TDevice>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("Printer connection timed out"));
+    }, timeoutMs);
+
+    register((device) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(device);
+    });
+
+    trigger().catch((error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      reject(error);
+    });
+  });
+}
+
 export function PaymentReceiptDialog({
   open,
   onOpenChange,
@@ -168,6 +434,10 @@ export function PaymentReceiptDialog({
   receipt: PaymentReceiptData | null;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [posPrinting, setPosPrinting] = useState(false);
+  const usbPrinterRef = useRef<WebUsbPrinterInstance | null>(null);
+  const serialPrinterRef = useRef<WebSerialPrinterInstance | null>(null);
+  const posConnectionRef = useRef<PosPrinterConnection | null>(null);
 
   useEffect(() => {
     if (!open || !receipt) {
@@ -191,7 +461,7 @@ export function PaymentReceiptDialog({
     };
   }, [open, receipt]);
 
-  function handlePrint() {
+  function handleBrowserPrint() {
     if (!receipt) return;
     const iframe = document.createElement("iframe");
     iframe.setAttribute("aria-hidden", "true");
@@ -235,6 +505,153 @@ export function PaymentReceiptDialog({
     window.setTimeout(() => {
       frameWindow.print();
     }, 150);
+  }
+
+  async function connectUsbPrinter(stored: StoredPosPrinter | null): Promise<PosPrinterConnection> {
+    const PrinterClass = await loadWebUsbPrinterClass();
+    const printer = usbPrinterRef.current ?? new PrinterClass();
+    usbPrinterRef.current = printer;
+
+    const device = await waitForConnection<WebUsbConnectedDevice>(
+      (listener) => printer.addEventListener("connected", listener),
+      async () => {
+        if (stored?.transport === "usb") {
+          await printer.reconnect(stored);
+        } else {
+          await printer.connect();
+        }
+      }
+    );
+
+    const nextStored: StoredPosPrinter = {
+      transport: "usb",
+      vendorId: device.vendorId,
+      productId: device.productId,
+      serialNumber: device.serialNumber,
+      language: device.language || "esc-pos",
+      codepageMapping: device.codepageMapping || "epson",
+    };
+    setStoredPosPrinter(nextStored);
+
+    return {
+      transport: "usb",
+      print: (data) => printer.print(data),
+      profile: {
+        language: device.language || "esc-pos",
+        codepageMapping: device.codepageMapping || "epson",
+      },
+      stored: nextStored,
+    };
+  }
+
+  async function connectSerialPrinter(stored: StoredPosPrinter | null): Promise<PosPrinterConnection> {
+    const PrinterClass = await loadWebSerialPrinterClass();
+    const printer = serialPrinterRef.current ?? new PrinterClass({ baudRate: 9600 });
+    serialPrinterRef.current = printer;
+
+    const device = await waitForConnection<WebSerialConnectedDevice>(
+      (listener) => printer.addEventListener("connected", listener),
+      async () => {
+        if (stored?.transport === "serial") {
+          await printer.reconnect(stored);
+        } else {
+          await printer.connect();
+        }
+      }
+    );
+
+    const nextStored: StoredPosPrinter = {
+      transport: "serial",
+      vendorId: device.vendorId,
+      productId: device.productId,
+      language: "esc-pos",
+      codepageMapping: "epson",
+    };
+    setStoredPosPrinter(nextStored);
+
+    return {
+      transport: "serial",
+      print: (data) => printer.print(data),
+      profile: {
+        language: "esc-pos",
+        codepageMapping: "epson",
+      },
+      stored: nextStored,
+    };
+  }
+
+  async function getPosPrinterConnection(): Promise<PosPrinterConnection> {
+    if (posConnectionRef.current) return posConnectionRef.current;
+
+    if (!window.isSecureContext) {
+      throw new Error("Direct POS printing requires HTTPS or localhost in Chrome or Edge.");
+    }
+
+    const stored = getStoredPosPrinter();
+    const canUseUsb = "usb" in navigator;
+    const canUseSerial = "serial" in navigator;
+
+    const attempts: Array<() => Promise<PosPrinterConnection>> = [];
+
+    if (stored?.transport === "usb" && canUseUsb) attempts.push(() => connectUsbPrinter(stored));
+    if (stored?.transport === "serial" && canUseSerial) attempts.push(() => connectSerialPrinter(stored));
+    if (!stored && canUseUsb) attempts.push(() => connectUsbPrinter(null));
+    if (!stored && canUseSerial) attempts.push(() => connectSerialPrinter(null));
+    if (stored?.transport !== "usb" && canUseUsb) attempts.push(() => connectUsbPrinter(null));
+    if (stored?.transport !== "serial" && canUseSerial) attempts.push(() => connectSerialPrinter(null));
+
+    let lastError: Error | null = null;
+
+    for (const attempt of attempts) {
+      try {
+        const connection = await attempt();
+        posConnectionRef.current = connection;
+        return connection;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error("Failed to connect to printer");
+      }
+    }
+
+    throw lastError ?? new Error("No supported POS printer connection is available.");
+  }
+
+  async function handlePosPrint() {
+    if (!receipt) return;
+
+    try {
+      setPosPrinting(true);
+
+      if (!supportsPosPrinting()) {
+        throw new Error(
+          "This browser cannot talk directly to an ESC/POS printer here. Use Chrome or Edge over HTTPS, or use Browser Print with the correct Windows printer driver."
+        );
+      }
+
+      const connection = await getPosPrinterConnection();
+      const data = encodePosReceipt(receipt, connection.profile);
+      await connection.print(data);
+
+      toast({
+        title: "Receipt sent to POS printer",
+        description:
+          connection.transport === "usb"
+            ? "The receipt was sent directly over USB."
+            : "The receipt was sent through the serial printer connection.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to print directly to the POS printer.";
+
+      toast({
+        variant: "destructive",
+        title: "POS print failed",
+        description: message,
+      });
+    } finally {
+      setPosPrinting(false);
+    }
   }
 
   return (
@@ -321,14 +738,23 @@ export function PaymentReceiptDialog({
               <p className="mt-1 text-center">developed by civica.lk</p>
             </div>
 
-            <div className="flex gap-2">
-              <Button onClick={handlePrint} className="gap-1.5">
-                <Printer className="h-4 w-4" />
-                Print 2&quot; Receipt
-              </Button>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Use POS Print for ESC/POS thermal printers. Browser Print is the fallback for normal
+                printers.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handlePosPrint} className="gap-1.5" disabled={posPrinting}>
+                  <Printer className="h-4 w-4" />
+                  {posPrinting ? "Sending to POS printer..." : "POS Print"}
+                </Button>
+                <Button variant="outline" onClick={handleBrowserPrint}>
+                  Browser Print
+                </Button>
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  Close
+                </Button>
+              </div>
             </div>
           </div>
         )}

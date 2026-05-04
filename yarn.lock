@@ -7,6 +7,11 @@
   resolved "https://registry.npmjs.org/@alloc/quick-lru/-/quick-lru-5.2.0.tgz"
   integrity sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==
 
+"@canvas/image-data@^1.0.0":
+  version "1.1.0"
+  resolved "https://registry.npmjs.org/@canvas/image-data/-/image-data-1.1.0.tgz"
+  integrity sha512-QdObRRjRbcXGmM1tmJ+MrHcaz1MftF2+W7YI+MsphnsCrmtyfS0d5qJbk0MeSbUeyM/jCb0hmnkXPsy026L7dA==
+
 "@esbuild/darwin-arm64@0.27.3":
   version "0.27.3"
   resolved "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.27.3.tgz"
@@ -95,6 +100,32 @@
   dependencies:
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
+
+"@point-of-sale/codepage-encoder@^3.0.0":
+  version "3.0.2"
+  resolved "https://registry.npmjs.org/@point-of-sale/codepage-encoder/-/codepage-encoder-3.0.2.tgz"
+  integrity sha512-Sx+0sE/XgPtMUNKScHpwTIZiHNd/+Mg0udACQJVwPsxH9kUAgIkRi9kRlmWBMCruwOJadjKLyKs8MO8Bh+VS/A==
+
+"@point-of-sale/receipt-printer-encoder@^3.0.3":
+  version "3.0.3"
+  resolved "https://registry.npmjs.org/@point-of-sale/receipt-printer-encoder/-/receipt-printer-encoder-3.0.3.tgz"
+  integrity sha512-2+xgs6rwNfrkEw9g4LkgQS6k29qnmo3+hOV7Z2xHNBFn8h4FrwquZwL/dBOTwgmQ9sWEYBkj/bQkg9Rz6lL99w==
+  dependencies:
+    "@canvas/image-data" "^1.0.0"
+    "@point-of-sale/codepage-encoder" "^3.0.0"
+    canvas-dither "^1.0.1"
+    canvas-flatten "^1.0.1"
+    resize-image-data "^0.3.1"
+
+"@point-of-sale/webserial-receipt-printer@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.npmjs.org/@point-of-sale/webserial-receipt-printer/-/webserial-receipt-printer-2.0.0.tgz"
+  integrity sha512-txTb+DTdkrl2c3oxtIAYc7vKGb4fJMPGnC8iCYMETeAhcFZP2yeISyCa0DVgw4YXNCmsOv6mI6aYzqUjuBb+wQ==
+
+"@point-of-sale/webusb-receipt-printer@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.npmjs.org/@point-of-sale/webusb-receipt-printer/-/webusb-receipt-printer-2.0.0.tgz"
+  integrity sha512-jpPow4XBoHhLH5eqENQOtT7si8iwchfX/4eh5rvwOsLeTowtV2BFb6Jf9yxDY3mFmOGW35MR3yW02GR8bj0y1Q==
 
 "@prisma/client@^5.22.0":
   version "5.22.0"
@@ -819,6 +850,16 @@ caniuse-lite@^1.0.30001579, caniuse-lite@^1.0.30001759, caniuse-lite@^1.0.300017
   resolved "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001770.tgz"
   integrity sha512-x/2CLQ1jHENRbHg5PSId2sXq1CIO1CISvwWAj027ltMVG2UNgW+w9oH2+HzgEIRFembL8bUlXtfbBHR1fCg2xw==
 
+canvas-dither@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/canvas-dither/-/canvas-dither-1.0.1.tgz"
+  integrity sha512-wT1RnV2y9SauibcsfMMCagQTnXmyQq2nJXuX5tTEvo0sXm1vVbJ2r8QxSC3fRQMY3ZgZVq1j54cOvmO4u+Lu/A==
+
+canvas-flatten@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/canvas-flatten/-/canvas-flatten-1.0.1.tgz"
+  integrity sha512-UhHeKeWGS23Bm5teZiHk6NEOme1OKCpv6arFovV89dydt0Xz+U4HkPXAKBZS/hmpR15x5U9tDj1ieMQMTwvCAA==
+
 chalk@4.1.2:
   version "4.1.2"
   resolved "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz"
@@ -1160,6 +1201,7 @@ fdir@^6.5.0:
     "@radix-ui/react-alert-dialog" "^1.1.15"
     "@radix-ui/react-checkbox" "^1.1.2"
     "@radix-ui/react-dialog" "^1.1.2"
+    "@radix-ui/react-dropdown-menu" "^2.1.16"
     "@radix-ui/react-label" "^2.1.0"
     "@radix-ui/react-select" "^2.1.2"
     "@radix-ui/react-slot" "^1.1.0"
@@ -1886,6 +1928,13 @@ require-main-filename@^2.0.0:
   version "2.0.0"
   resolved "https://registry.npmjs.org/require-main-filename/-/require-main-filename-2.0.0.tgz"
   integrity sha512-NKN5kMDylKuldxYLSUfrbo5Tuzh4hd+2E8NPPX02mZtn1VuREQToYe/ZdlJy+J3uCpfaiGF05e7B8W0iXbQHmg==
+
+resize-image-data@^0.3.1:
+  version "0.3.1"
+  resolved "https://registry.npmjs.org/resize-image-data/-/resize-image-data-0.3.1.tgz"
+  integrity sha512-6hVRn2S6W1cdycreA6Vth5XRN2NnGs7/RnVpxNw/1OCK8aCoevRFH2WprmQRZDnnH3e6awLv2tTIPuv7/7xeGg==
+  dependencies:
+    "@canvas/image-data" "^1.0.0"
 
 resolve-pkg-maps@^1.0.0:
   version "1.0.0"
