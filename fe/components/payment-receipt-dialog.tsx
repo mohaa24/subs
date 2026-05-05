@@ -183,7 +183,9 @@ type PosPrinterConnection = {
   stored: StoredPosPrinter;
 };
 
-const POS_COLUMNS = 32;
+const RECEIPT_WIDTH_INCHES = 3;
+const POS_COLUMNS = 48;
+const RECEIPT_QR_SIZE_PX = 104;
 const POS_PRINTER_STORAGE_KEY = "subs.pos-receipt-printer";
 const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
 const POS_SCRIPT_BASE = "/vendor";
@@ -288,8 +290,8 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       .border-top { border-top: 1px solid #242424; padding-top: 6px; margin-top: 6px; }
       .border-bottom { border-bottom: 1px solid #242424; margin: 6px 0; }
       .qr-wrap { text-align: center; margin-top: 8px; }
-      .qr-wrap img { width: 84px; height: 84px; image-rendering: pixelated; }
-      @page { size: 2in auto; margin: 0.16in 0.08in; }
+      .qr-wrap img { width: ${RECEIPT_QR_SIZE_PX}px; height: ${RECEIPT_QR_SIZE_PX}px; image-rendering: pixelated; }
+      @page { size: ${RECEIPT_WIDTH_INCHES}in auto; margin: 0.16in 0.08in; }
     </style>
   </head>
   <body>
@@ -967,7 +969,10 @@ export function PaymentReceiptDialog({
         </DialogHeader>
         {receipt && (
           <div className="space-y-4">
-            <div className="mx-auto w-[2in] rounded-md border border-dashed bg-white p-2 font-['Times_New_Roman'] text-[11px] leading-snug text-black">
+            <div
+              className="mx-auto rounded-md border border-dashed bg-white p-2 font-['Times_New_Roman'] text-[11px] leading-snug text-black"
+              style={{ width: `${RECEIPT_WIDTH_INCHES}in` }}
+            >
               <div className="text-center">
                 <p className="text-[14px] font-bold uppercase">{receipt.organizationName}</p>
                 <p>PAYMENT RECEIPT</p>
@@ -1035,7 +1040,8 @@ export function PaymentReceiptDialog({
                   <img
                     src={qrDataUrl}
                     alt={`QR for ${receipt.membershipNo}`}
-                    className="mx-auto h-[84px] w-[84px]"
+                    className="mx-auto"
+                    style={{ height: `${RECEIPT_QR_SIZE_PX}px`, width: `${RECEIPT_QR_SIZE_PX}px` }}
                   />
                 </div>
               ) : null}
