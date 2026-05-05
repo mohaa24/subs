@@ -889,7 +889,7 @@ export function PaymentReceiptDialog({
                   variant="outline"
                   onClick={handleRawBtPrint}
                   className="gap-1.5"
-                  disabled={rawBtPrinting || !isAndroid}
+                  disabled={rawBtPrinting}
                 >
                   <Printer className="h-4 w-4" />
                   {rawBtPrinting ? "Opening RAWBT..." : "RAWBT Print"}
