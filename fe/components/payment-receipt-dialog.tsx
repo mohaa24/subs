@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,58 +40,6 @@ export interface PaymentReceiptData {
   memberQrValue: string;
 }
 
-type PosTransport = "usb" | "serial";
-type PosConnectedUsbDevice = {
-  type: "usb";
-  vendorId: number;
-  productId: number;
-  manufacturerName?: string;
-  productName?: string;
-  serialNumber?: string;
-  language?: string | null;
-  codepageMapping?: string | null;
-};
-
-type PosConnectedSerialDevice = {
-  type: "serial";
-  vendorId: number | null;
-  productId: number | null;
-  language?: string | null;
-  codepageMapping?: string | null;
-};
-
-type WebUsbPrinterInstance = {
-  connect(): Promise<void>;
-  reconnect(device: {
-    vendorId?: number | null;
-    productId?: number | null;
-    serialNumber?: string;
-  }): Promise<void>;
-  disconnect(): Promise<void>;
-  print(data: Uint8Array): Promise<void>;
-  addEventListener(
-    type: "connected" | "disconnected" | "data",
-    listener: (event: PosConnectedUsbDevice) => void
-  ): void;
-};
-
-type WebSerialPrinterInstance = {
-  connect(): Promise<void>;
-  reconnect(device: { vendorId?: number | null; productId?: number | null }): Promise<void>;
-  disconnect(): Promise<void>;
-  print(data: Uint8Array): Promise<void>;
-  addEventListener(
-    type: "connected" | "disconnected" | "data",
-    listener: (event: PosConnectedSerialDevice) => void
-  ): void;
-};
-
-type WebUsbPrinterClass = {
-  new (): WebUsbPrinterInstance;
-};
-type WebSerialPrinterClass = {
-  new (options?: WebSerialPrinterOptions): WebSerialPrinterInstance;
-};
 type ReceiptEncoderInstance = {
   initialize(): ReceiptEncoderInstance;
   text(value: string): ReceiptEncoderInstance;
@@ -120,15 +68,7 @@ type ReceiptPrinterEncoderClass = {
     errors?: "strict" | "relaxed";
   }): ReceiptEncoderInstance;
 };
-type WebSerialPrinterOptions = {
-  baudRate?: number;
-  bufferSize?: number;
-  dataBits?: 7 | 8;
-  flowControl?: "none" | "hardware";
-  parity?: "none" | "even" | "odd";
-  stopBits?: 1 | 2;
-};
-type PosGlobalName = "ReceiptPrinterEncoder" | "WebUSBReceiptPrinter" | "WebSerialReceiptPrinter" | "qz";
+type PosGlobalName = "ReceiptPrinterEncoder" | "qz";
 
 type QzTrayConfig = {
   getPrinter(): string;
@@ -163,31 +103,14 @@ type QzTrayGlobal = {
   ): Promise<void>;
 };
 
-type StoredPosPrinter = {
-  transport: PosTransport;
-  vendorId?: number | null;
-  productId?: number | null;
-  serialNumber?: string;
-  language?: string | null;
-  codepageMapping?: string | null;
-};
-
 type PosPrinterProfile = {
   language: string;
   codepageMapping: string;
 };
 
-type PosPrinterConnection = {
-  transport: PosTransport;
-  print: (data: Uint8Array) => Promise<void>;
-  profile: PosPrinterProfile;
-  stored: StoredPosPrinter;
-};
-
 const RECEIPT_WIDTH_INCHES = 3;
 const POS_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 104;
-const POS_PRINTER_STORAGE_KEY = "subs.pos-receipt-printer";
 const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
 const POS_SCRIPT_BASE = "/vendor";
 const posScriptPromises = new Map<string, Promise<void>>();
@@ -332,28 +255,6 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
 </html>`;
 }
 
-function getStoredPosPrinter(): StoredPosPrinter | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(POS_PRINTER_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredPosPrinter;
-    if (parsed && (parsed.transport === "usb" || parsed.transport === "serial")) {
-      return parsed;
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
-}
-
-function setStoredPosPrinter(device: StoredPosPrinter) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(POS_PRINTER_STORAGE_KEY, JSON.stringify(device));
-}
-
 function getStoredQzPrinterName(): string {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem(QZ_PRINTER_STORAGE_KEY) || "";
@@ -366,33 +267,6 @@ function setStoredQzPrinterName(printerName: string) {
     return;
   }
   window.localStorage.setItem(QZ_PRINTER_STORAGE_KEY, printerName);
-}
-
-function supportsPosPrinting() {
-  if (typeof window === "undefined") return false;
-  return window.isSecureContext && ("usb" in navigator || "serial" in navigator);
-}
-
-async function loadWebUsbPrinterClass(): Promise<WebUsbPrinterClass> {
-  await loadPosBrowserScript(
-    `${POS_SCRIPT_BASE}/webusb-receipt-printer.umd.js`,
-    "WebUSBReceiptPrinter"
-  );
-  if (!window.WebUSBReceiptPrinter) {
-    throw new Error("WebUSB printer library failed to load.");
-  }
-  return window.WebUSBReceiptPrinter as unknown as WebUsbPrinterClass;
-}
-
-async function loadWebSerialPrinterClass(): Promise<WebSerialPrinterClass> {
-  await loadPosBrowserScript(
-    `${POS_SCRIPT_BASE}/webserial-receipt-printer.umd.js`,
-    "WebSerialReceiptPrinter"
-  );
-  if (!window.WebSerialReceiptPrinter) {
-    throw new Error("WebSerial printer library failed to load.");
-  }
-  return window.WebSerialReceiptPrinter as unknown as WebSerialPrinterClass;
 }
 
 async function loadReceiptPrinterEncoderClass(): Promise<ReceiptPrinterEncoderClass> {
@@ -590,33 +464,21 @@ async function encodePosReceipt(
   return encoder.encode();
 }
 
-async function waitForConnection<TDevice>(
-  register: (listener: (device: TDevice) => void) => void,
-  trigger: () => Promise<void>,
-  timeoutMs = 10000
-): Promise<TDevice> {
-  return await new Promise<TDevice>((resolve, reject) => {
-    let settled = false;
-    const timeoutId = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error("Printer connection timed out"));
-    }, timeoutMs);
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
 
-    register((device) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      resolve(device);
-    });
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...Array.from(chunk));
+  }
 
-    trigger().catch((error) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      reject(error);
-    });
-  });
+  return window.btoa(binary);
+}
+
+function isAndroidDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android/i.test(navigator.userAgent);
 }
 
 export function PaymentReceiptDialog({
@@ -629,17 +491,15 @@ export function PaymentReceiptDialog({
   receipt: PaymentReceiptData | null;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
-  const [posPrinting, setPosPrinting] = useState(false);
   const [qzPrinting, setQzPrinting] = useState(false);
+  const [rawBtPrinting, setRawBtPrinting] = useState(false);
   const [qzLoadingPrinters, setQzLoadingPrinters] = useState(false);
   const [qzPrinters, setQzPrinters] = useState<string[]>([]);
   const [qzPrinterName, setQzPrinterName] = useState("");
   const [qzStatus, setQzStatus] = useState(
     "QZ Tray can print through the installed Windows printer queue."
   );
-  const usbPrinterRef = useRef<WebUsbPrinterInstance | null>(null);
-  const serialPrinterRef = useRef<WebSerialPrinterInstance | null>(null);
-  const posConnectionRef = useRef<PosPrinterConnection | null>(null);
+  const [isAndroid, setIsAndroid] = useState(false);
 
   useEffect(() => {
     if (!open || !receipt) {
@@ -666,6 +526,7 @@ export function PaymentReceiptDialog({
   useEffect(() => {
     if (!open) return;
 
+    setIsAndroid(isAndroidDevice());
     const storedPrinterName = getStoredQzPrinterName();
     if (storedPrinterName) {
       setQzPrinterName(storedPrinterName);
@@ -718,153 +579,6 @@ export function PaymentReceiptDialog({
     window.setTimeout(() => {
       frameWindow.print();
     }, 150);
-  }
-
-  async function connectUsbPrinter(stored: StoredPosPrinter | null): Promise<PosPrinterConnection> {
-    const PrinterClass = await loadWebUsbPrinterClass();
-    const printer = usbPrinterRef.current ?? new PrinterClass();
-    usbPrinterRef.current = printer;
-
-    const device = await waitForConnection<PosConnectedUsbDevice>(
-      (listener) => printer.addEventListener("connected", listener),
-      async () => {
-        if (stored?.transport === "usb") {
-          await printer.reconnect(stored);
-        } else {
-          await printer.connect();
-        }
-      }
-    );
-
-    const nextStored: StoredPosPrinter = {
-      transport: "usb",
-      vendorId: device.vendorId,
-      productId: device.productId,
-      serialNumber: device.serialNumber,
-      language: device.language || "esc-pos",
-      codepageMapping: device.codepageMapping || "epson",
-    };
-    setStoredPosPrinter(nextStored);
-
-    return {
-      transport: "usb",
-      print: (data) => printer.print(data),
-      profile: {
-        language: device.language || "esc-pos",
-        codepageMapping: device.codepageMapping || "epson",
-      },
-      stored: nextStored,
-    };
-  }
-
-  async function connectSerialPrinter(stored: StoredPosPrinter | null): Promise<PosPrinterConnection> {
-    const PrinterClass = await loadWebSerialPrinterClass();
-    const printer = serialPrinterRef.current ?? new PrinterClass({ baudRate: 9600 } as WebSerialPrinterOptions);
-    serialPrinterRef.current = printer;
-
-    const device = await waitForConnection<PosConnectedSerialDevice>(
-      (listener) => printer.addEventListener("connected", listener),
-      async () => {
-        if (stored?.transport === "serial") {
-          await printer.reconnect(stored);
-        } else {
-          await printer.connect();
-        }
-      }
-    );
-
-    const nextStored: StoredPosPrinter = {
-      transport: "serial",
-      vendorId: device.vendorId,
-      productId: device.productId,
-      language: "esc-pos",
-      codepageMapping: "epson",
-    };
-    setStoredPosPrinter(nextStored);
-
-    return {
-      transport: "serial",
-      print: (data) => printer.print(data),
-      profile: {
-        language: "esc-pos",
-        codepageMapping: "epson",
-      },
-      stored: nextStored,
-    };
-  }
-
-  async function getPosPrinterConnection(): Promise<PosPrinterConnection> {
-    if (posConnectionRef.current) return posConnectionRef.current;
-
-    if (!window.isSecureContext) {
-      throw new Error("Direct POS printing requires HTTPS or localhost in Chrome or Edge.");
-    }
-
-    const stored = getStoredPosPrinter();
-    const canUseUsb = "usb" in navigator;
-    const canUseSerial = "serial" in navigator;
-
-    const attempts: Array<() => Promise<PosPrinterConnection>> = [];
-
-    if (stored?.transport === "usb" && canUseUsb) attempts.push(() => connectUsbPrinter(stored));
-    if (stored?.transport === "serial" && canUseSerial) attempts.push(() => connectSerialPrinter(stored));
-    if (!stored && canUseUsb) attempts.push(() => connectUsbPrinter(null));
-    if (!stored && canUseSerial) attempts.push(() => connectSerialPrinter(null));
-    if (stored?.transport !== "usb" && canUseUsb) attempts.push(() => connectUsbPrinter(null));
-    if (stored?.transport !== "serial" && canUseSerial) attempts.push(() => connectSerialPrinter(null));
-
-    let lastError: Error | null = null;
-
-    for (const attempt of attempts) {
-      try {
-        const connection = await attempt();
-        posConnectionRef.current = connection;
-        return connection;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error("Failed to connect to printer");
-      }
-    }
-
-    throw lastError ?? new Error("No supported POS printer connection is available.");
-  }
-
-  async function handlePosPrint() {
-    if (!receipt) return;
-
-    try {
-      setPosPrinting(true);
-
-      if (!supportsPosPrinting()) {
-        throw new Error(
-          "This browser cannot talk directly to an ESC/POS printer here. Use Chrome or Edge over HTTPS, or use Browser Print with the correct Windows printer driver."
-        );
-      }
-
-      const connection = await getPosPrinterConnection();
-      const data = await encodePosReceipt(receipt, connection.profile);
-      await connection.print(data);
-
-      toast({
-        title: "Receipt sent to POS printer",
-        description:
-          connection.transport === "usb"
-            ? "The receipt was sent directly over USB."
-            : "The receipt was sent through the serial printer connection.",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to print directly to the POS printer.";
-
-      toast({
-        variant: "destructive",
-        title: "POS print failed",
-        description: message,
-      });
-    } finally {
-      setPosPrinting(false);
-    }
   }
 
   async function ensureQzConnection(): Promise<QzTrayGlobal> {
@@ -991,6 +705,44 @@ export function PaymentReceiptDialog({
     }
   }
 
+  async function handleRawBtPrint() {
+    if (!receipt) return;
+
+    try {
+      setRawBtPrinting(true);
+
+      if (!isAndroidDevice()) {
+        throw new Error("RAWBT printing is only available on Android devices.");
+      }
+
+      const data = await encodePosReceipt(receipt, {
+        language: "esc-pos",
+        codepageMapping: "epson",
+      });
+      const base64 = toBase64(data);
+      const rawBtUrl =
+        `intent:base64,${base64}` +
+        "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
+
+      window.location.href = rawBtUrl;
+
+      toast({
+        title: "Opening RAWBT",
+        description: "If RAWBT is installed and paired to the printer, it should handle the receipt.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to open RAWBT.";
+
+      toast({
+        variant: "destructive",
+        title: "RAWBT print failed",
+        description: message,
+      });
+    } finally {
+      setRawBtPrinting(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -1083,9 +835,8 @@ export function PaymentReceiptDialog({
 
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                If the printer does not appear in POS Print, use QZ Tray Print. It prints through
-                the installed Windows printer queue and is usually more reliable for ESC/POS
-                printers.
+                Use QZ Tray Print on Windows. Use RAWBT Print on Android after installing the
+                RAWBT app and pairing the printer there. Browser Print remains the generic fallback.
               </p>
               <div className="grid gap-2 rounded-md border p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1125,10 +876,6 @@ export function PaymentReceiptDialog({
                 <p className="text-xs text-muted-foreground">{qzStatus}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={handlePosPrint} className="gap-1.5" disabled={posPrinting}>
-                  <Printer className="h-4 w-4" />
-                  {posPrinting ? "Sending to POS printer..." : "POS Print"}
-                </Button>
                 <Button
                   variant="outline"
                   onClick={handleQzTrayPrint}
@@ -1137,6 +884,15 @@ export function PaymentReceiptDialog({
                 >
                   <Printer className="h-4 w-4" />
                   {qzPrinting ? "Sending with QZ Tray..." : "QZ Tray Print"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleRawBtPrint}
+                  className="gap-1.5"
+                  disabled={rawBtPrinting || !isAndroid}
+                >
+                  <Printer className="h-4 w-4" />
+                  {rawBtPrinting ? "Opening RAWBT..." : "RAWBT Print"}
                 </Button>
                 <Button variant="outline" onClick={handleBrowserPrint}>
                   Browser Print
