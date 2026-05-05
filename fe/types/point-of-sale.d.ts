@@ -81,11 +81,45 @@ type PosWebSerialReceiptPrinter = {
   };
 };
 
+type PosQzTrayConfig = {
+  getPrinter(): string;
+};
+
+type PosQzTray = {
+  websocket: {
+    isActive(): boolean;
+    connect(options?: { retries?: number; delay?: number }): Promise<void>;
+  };
+  printers: {
+    find(query?: string): Promise<string | string[]>;
+    getDefault(): Promise<string>;
+  };
+  configs: {
+    create(
+      printer: string,
+      options?: { encoding?: string; forceRaw?: boolean; altPrinting?: boolean }
+    ): PosQzTrayConfig;
+  };
+  print(
+    config: PosQzTrayConfig,
+    data: Array<
+      | string
+      | {
+          type?: "raw";
+          format?: "command";
+          flavor?: "plain" | "base64" | "hex";
+          data: string | Uint8Array;
+        }
+    >
+  ): Promise<void>;
+};
+
 declare global {
   interface Window {
     ReceiptPrinterEncoder?: PosReceiptPrinterEncoder;
     WebUSBReceiptPrinter?: PosWebUsbReceiptPrinter;
     WebSerialReceiptPrinter?: PosWebSerialReceiptPrinter;
+    qz?: PosQzTray;
   }
 }
 

@@ -10,6 +10,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 
 export interface PaymentReceiptData {
@@ -120,7 +127,40 @@ type WebSerialPrinterOptions = {
   parity?: "none" | "even" | "odd";
   stopBits?: 1 | 2;
 };
-type PosGlobalName = "ReceiptPrinterEncoder" | "WebUSBReceiptPrinter" | "WebSerialReceiptPrinter";
+type PosGlobalName = "ReceiptPrinterEncoder" | "WebUSBReceiptPrinter" | "WebSerialReceiptPrinter" | "qz";
+
+type QzTrayConfig = {
+  getPrinter(): string;
+};
+
+type QzTrayGlobal = {
+  websocket: {
+    isActive(): boolean;
+    connect(options?: { retries?: number; delay?: number }): Promise<void>;
+  };
+  printers: {
+    find(query?: string): Promise<string | string[]>;
+    getDefault(): Promise<string>;
+  };
+  configs: {
+    create(
+      printer: string,
+      options?: { encoding?: string; forceRaw?: boolean; altPrinting?: boolean }
+    ): QzTrayConfig;
+  };
+  print(
+    config: QzTrayConfig,
+    data: Array<
+      | string
+      | {
+          type?: "raw";
+          format?: "command";
+          flavor?: "plain" | "base64" | "hex";
+          data: string | Uint8Array;
+        }
+    >
+  ): Promise<void>;
+};
 
 type StoredPosPrinter = {
   transport: PosTransport;
@@ -145,6 +185,7 @@ type PosPrinterConnection = {
 
 const POS_COLUMNS = 32;
 const POS_PRINTER_STORAGE_KEY = "subs.pos-receipt-printer";
+const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
 const POS_SCRIPT_BASE = "/vendor";
 const posScriptPromises = new Map<string, Promise<void>>();
 
@@ -309,6 +350,20 @@ function setStoredPosPrinter(device: StoredPosPrinter) {
   window.localStorage.setItem(POS_PRINTER_STORAGE_KEY, JSON.stringify(device));
 }
 
+function getStoredQzPrinterName(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(QZ_PRINTER_STORAGE_KEY) || "";
+}
+
+function setStoredQzPrinterName(printerName: string) {
+  if (typeof window === "undefined") return;
+  if (!printerName) {
+    window.localStorage.removeItem(QZ_PRINTER_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(QZ_PRINTER_STORAGE_KEY, printerName);
+}
+
 function supportsPosPrinting() {
   if (typeof window === "undefined") return false;
   return window.isSecureContext && ("usb" in navigator || "serial" in navigator);
@@ -347,6 +402,14 @@ async function loadReceiptPrinterEncoderClass(): Promise<ReceiptPrinterEncoderCl
   return window.ReceiptPrinterEncoder as unknown as ReceiptPrinterEncoderClass;
 }
 
+async function loadQzTray(): Promise<QzTrayGlobal> {
+  await loadPosBrowserScript(`${POS_SCRIPT_BASE}/qz-tray.js`, "qz");
+  if (!window.qz) {
+    throw new Error("QZ Tray script failed to load.");
+  }
+  return window.qz as QzTrayGlobal;
+}
+
 function loadPosBrowserScript(src: string, globalName: PosGlobalName): Promise<void> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("POS printing is only available in the browser."));
@@ -380,6 +443,11 @@ function loadPosBrowserScript(src: string, globalName: PosGlobalName): Promise<v
 
   posScriptPromises.set(src, promise);
   return promise;
+}
+
+function normalizeQzPrinterList(input: string | string[]): string[] {
+  if (Array.isArray(input)) return input;
+  return input ? [input] : [];
 }
 
 function wrapText(value: string, width: number): string[] {
@@ -530,6 +598,13 @@ export function PaymentReceiptDialog({
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [posPrinting, setPosPrinting] = useState(false);
+  const [qzPrinting, setQzPrinting] = useState(false);
+  const [qzLoadingPrinters, setQzLoadingPrinters] = useState(false);
+  const [qzPrinters, setQzPrinters] = useState<string[]>([]);
+  const [qzPrinterName, setQzPrinterName] = useState("");
+  const [qzStatus, setQzStatus] = useState(
+    "QZ Tray can print through the installed Windows printer queue."
+  );
   const usbPrinterRef = useRef<WebUsbPrinterInstance | null>(null);
   const serialPrinterRef = useRef<WebSerialPrinterInstance | null>(null);
   const posConnectionRef = useRef<PosPrinterConnection | null>(null);
@@ -555,6 +630,17 @@ export function PaymentReceiptDialog({
       cancelled = true;
     };
   }, [open, receipt]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const storedPrinterName = getStoredQzPrinterName();
+    if (storedPrinterName) {
+      setQzPrinterName(storedPrinterName);
+    }
+
+    void loadQzPrinters(false);
+  }, [open]);
 
   function handleBrowserPrint() {
     if (!receipt) return;
@@ -749,6 +835,130 @@ export function PaymentReceiptDialog({
     }
   }
 
+  async function ensureQzConnection(): Promise<QzTrayGlobal> {
+    const qz = await loadQzTray();
+    if (!qz.websocket.isActive()) {
+      await qz.websocket.connect({ retries: 2, delay: 1 });
+    }
+    return qz;
+  }
+
+  async function loadQzPrinters(showToast = true): Promise<string> {
+    try {
+      setQzLoadingPrinters(true);
+      setQzStatus("Checking QZ Tray and installed printers...");
+
+      const qz = await ensureQzConnection();
+      const [printerResult, defaultPrinter] = await Promise.all([
+        qz.printers.find(),
+        qz.printers.getDefault().catch(() => ""),
+      ]);
+
+      const printers = normalizeQzPrinterList(printerResult);
+      setQzPrinters(printers);
+
+      const storedPrinterName = getStoredQzPrinterName();
+      const nextPrinterName =
+        (storedPrinterName && printers.includes(storedPrinterName) && storedPrinterName) ||
+        (qzPrinterName && printers.includes(qzPrinterName) && qzPrinterName) ||
+        (defaultPrinter && printers.includes(defaultPrinter) && defaultPrinter) ||
+        printers[0] ||
+        "";
+
+      setQzPrinterName(nextPrinterName);
+      setStoredQzPrinterName(nextPrinterName);
+
+      if (printers.length === 0) {
+        setQzStatus("QZ Tray is running, but no installed printers were found.");
+        throw new Error(
+          "QZ Tray is running, but no printers were found. Pair or install the receipt printer in Windows first."
+        );
+      }
+
+      setQzStatus(`QZ Tray connected. ${printers.length} printer${printers.length === 1 ? "" : "s"} found.`);
+
+      if (showToast) {
+        toast({
+          title: "QZ Tray connected",
+          description: nextPrinterName
+            ? `Selected printer: ${nextPrinterName}`
+            : "Installed printers are ready to use.",
+        });
+      }
+
+      return nextPrinterName;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "QZ Tray is not available. Install it and keep it running on this computer.";
+
+      setQzStatus(message);
+      if (showToast) {
+        toast({
+          variant: "destructive",
+          title: "QZ Tray unavailable",
+          description: message,
+        });
+      }
+      return "";
+    } finally {
+      setQzLoadingPrinters(false);
+    }
+  }
+
+  async function handleQzTrayPrint() {
+    if (!receipt) return;
+
+    try {
+      setQzPrinting(true);
+
+      const printerName = qzPrinterName || (await loadQzPrinters(false));
+      if (!printerName) {
+        throw new Error(
+          "No QZ printer is selected. Install QZ Tray, make sure the printer is installed in Windows, then refresh the printer list."
+        );
+      }
+
+      const qz = await ensureQzConnection();
+      const data = await encodePosReceipt(receipt, {
+        language: "esc-pos",
+        codepageMapping: "epson",
+      });
+
+      const config = qz.configs.create(printerName, {
+        encoding: "Cp1252",
+        forceRaw: true,
+      });
+
+      await qz.print(config, [
+        {
+          type: "raw",
+          format: "command",
+          flavor: "hex",
+          data,
+        },
+      ]);
+
+      setStoredQzPrinterName(printerName);
+      toast({
+        title: "Receipt sent with QZ Tray",
+        description: `Printed to ${printerName}.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to print with QZ Tray.";
+
+      toast({
+        variant: "destructive",
+        title: "QZ Tray print failed",
+        description: message,
+      });
+    } finally {
+      setQzPrinting(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -835,13 +1045,60 @@ export function PaymentReceiptDialog({
 
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                Use POS Print for ESC/POS thermal printers. Browser Print is the fallback for normal
+                If the printer does not appear in POS Print, use QZ Tray Print. It prints through
+                the installed Windows printer queue and is usually more reliable for ESC/POS
                 printers.
               </p>
+              <div className="grid gap-2 rounded-md border p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Select
+                    value={qzPrinterName || "__none__"}
+                    onValueChange={(value) => {
+                      const nextValue = value === "__none__" ? "" : value;
+                      setQzPrinterName(nextValue);
+                      setStoredQzPrinterName(nextValue);
+                    }}
+                    disabled={qzLoadingPrinters || qzPrinters.length === 0}
+                  >
+                    <SelectTrigger className="sm:flex-1">
+                      <SelectValue placeholder="Select installed printer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {qzPrinters.length === 0 ? (
+                        <SelectItem value="__none__">No printers found</SelectItem>
+                      ) : (
+                        qzPrinters.map((printerName) => (
+                          <SelectItem key={printerName} value={printerName}>
+                            {printerName}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void loadQzPrinters(true)}
+                    disabled={qzLoadingPrinters}
+                  >
+                    {qzLoadingPrinters ? "Checking printers..." : "Refresh QZ Printers"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">{qzStatus}</p>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={handlePosPrint} className="gap-1.5" disabled={posPrinting}>
                   <Printer className="h-4 w-4" />
                   {posPrinting ? "Sending to POS printer..." : "POS Print"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleQzTrayPrint}
+                  className="gap-1.5"
+                  disabled={qzPrinting}
+                >
+                  <Printer className="h-4 w-4" />
+                  {qzPrinting ? "Sending with QZ Tray..." : "QZ Tray Print"}
                 </Button>
                 <Button variant="outline" onClick={handleBrowserPrint}>
                   Browser Print

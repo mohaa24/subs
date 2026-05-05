@@ -1198,6 +1198,9 @@ fdir@^6.5.0:
   version "1.0.0"
   resolved "file:fe"
   dependencies:
+    "@point-of-sale/receipt-printer-encoder" "^3.0.3"
+    "@point-of-sale/webserial-receipt-printer" "^2.0.0"
+    "@point-of-sale/webusb-receipt-printer" "^2.0.0"
     "@radix-ui/react-alert-dialog" "^1.1.15"
     "@radix-ui/react-checkbox" "^1.1.2"
     "@radix-ui/react-dialog" "^1.1.2"
@@ -1842,6 +1845,11 @@ queue-microtask@^1.2.2:
   version "1.2.3"
   resolved "https://registry.npmjs.org/queue-microtask/-/queue-microtask-1.2.3.tgz"
   integrity sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==
+
+qz-tray@^2.2.6:
+  version "2.2.6"
+  resolved "https://registry.npmjs.org/qz-tray/-/qz-tray-2.2.6.tgz"
+  integrity sha512-b9w0vcjHSdKiOq1jL/KXfb3IvgaIc/BeQv9JuJ3nTEoqSUZfIGKLAyKTS+akHSXrR64R0UwEDmw20GvD2di/Pg==
 
 range-parser@~1.2.1:
   version "1.2.1"
