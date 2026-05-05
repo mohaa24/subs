@@ -711,9 +711,9 @@ export function PaymentReceiptDialog({
     try {
       setRawBtPrinting(true);
 
-      if (!isAndroidDevice()) {
-        throw new Error("RAWBT printing is only available on Android devices.");
-      }
+      // if (!isAndroidDevice()) {
+      //   throw new Error("RAWBT printing is only available on Android devices.");
+      // }
 
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
