@@ -97,6 +97,7 @@ type ReceiptEncoderInstance = {
   text(value: string): ReceiptEncoderInstance;
   line(value?: string): ReceiptEncoderInstance;
   newline(value?: number): ReceiptEncoderInstance;
+  size(width: number, height?: number): ReceiptEncoderInstance;
   rule(options?: { style?: "single" | "double"; width?: number }): ReceiptEncoderInstance;
   align(value: "left" | "center" | "right"): ReceiptEncoderInstance;
   bold(value: boolean): ReceiptEncoderInstance;
@@ -492,6 +493,19 @@ function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS):
   return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
 }
 
+function formatTwoColumnLines(label: string, value: string, width = POS_COLUMNS, valueWidth = 22): string[] {
+  const cleanLabel = label.trim();
+  const cleanValue = value.trim() || "-";
+  const normalizedValueWidth = Math.min(Math.max(valueWidth, 8), width - 4);
+  const labelWidth = width - normalizedValueWidth - 1;
+  const wrappedValue = wrapText(cleanValue, normalizedValueWidth);
+
+  return wrappedValue.map((line, index) => {
+    const left = index === 0 ? cleanLabel : "";
+    return `${left.padEnd(labelWidth)} ${line.padStart(normalizedValueWidth)}`;
+  });
+}
+
 async function encodePosReceipt(
   receipt: PaymentReceiptData,
   profile: PosPrinterProfile
@@ -507,7 +521,7 @@ async function encodePosReceipt(
 
   encoder.initialize();
   encoder.align("center");
-  encoder.bold(true).line(receipt.organizationName.toUpperCase());
+  encoder.bold(true).size(1, 2).line(receipt.organizationName.toUpperCase()).size(1, 1);
   encoder.bold(false).line("PAYMENT RECEIPT");
   encoder.rule();
 
@@ -515,9 +529,7 @@ async function encodePosReceipt(
   for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
   for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
   for (const line of formatKeyValueLines("Member #", receipt.membershipNo)) encoder.line(line);
-
-  encoder.line("Name");
-  for (const line of wrapText(receipt.memberName || "-", POS_COLUMNS)) encoder.line(line);
+  for (const line of formatTwoColumnLines("Name", receipt.memberName || "-")) encoder.line(line);
 
   for (const line of formatKeyValueLines("Payment Method", receipt.paymentMethod || "-")) {
     encoder.line(line);
@@ -527,7 +539,7 @@ async function encodePosReceipt(
   encoder.bold(true);
   for (const line of formatKeyValueLines("Paid", `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
   encoder.bold(false);
-
+  encoder.newline();
   encoder.line("Balance After Payment");
   for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
     encoder.line(line);
@@ -542,8 +554,9 @@ async function encodePosReceipt(
   }
 
   encoder.rule();
-  encoder.line("Collected By");
-  for (const line of wrapText(receipt.collectedBy || "-", POS_COLUMNS)) encoder.line(line);
+  for (const line of formatTwoColumnLines("Collected By", receipt.collectedBy || "-")) {
+    encoder.line(line);
+  }
   encoder.rule();
 
   if (receipt.memberQrValue) {

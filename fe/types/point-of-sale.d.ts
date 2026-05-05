@@ -30,6 +30,7 @@ type PosReceiptPrinterEncoder = {
     text(value: string): unknown;
     line(value?: string): unknown;
     newline(value?: number): unknown;
+    size(width: number, height?: number): unknown;
     rule(options?: { style?: "single" | "double"; width?: number }): unknown;
     align(value: "left" | "center" | "right"): unknown;
     bold(value: boolean): unknown;
