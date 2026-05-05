@@ -266,12 +266,12 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
         line-height: 1.3;
       }
       .centered { text-align: center; }
-      .headings { font-size: 14px; font-weight: 700; text-transform: uppercase; }
+      .headings { font-size: 15px; font-weight: 700; text-transform: uppercase; }
       .text-box { width: 100%; }
       .textbox-info {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 48%);
         align-items: flex-start;
-        justify-content: space-between;
         gap: 8px;
         margin: 0 0 2px;
       }
@@ -279,13 +279,12 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
         margin: 0;
       }
       .f-left {
-        flex: 1 1 auto;
         min-width: 0;
       }
       .f-right {
-        flex: 0 0 auto;
-        white-space: nowrap;
+        min-width: 0;
         text-align: right;
+        word-break: break-word;
       }
       .border-top { border-top: 1px solid #242424; padding-top: 6px; margin-top: 6px; }
       .border-bottom { border-bottom: 1px solid #242424; margin: 6px 0; }
@@ -308,6 +307,7 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       ${paymentMethodHtml}
       <div class="border-bottom"></div>
       ${rowHtml("Paid", `Rs ${money(receipt.paidAmount)}`, { valueBold: true })}
+      <div style="height: 10px;"></div>
       ${rowHtml("Balance After Payment", undefined, { labelBold: false })}
       ${rowHtml("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)}
       ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
@@ -974,7 +974,7 @@ export function PaymentReceiptDialog({
               style={{ width: `${RECEIPT_WIDTH_INCHES}in` }}
             >
               <div className="text-center">
-                <p className="text-[14px] font-bold uppercase">{receipt.organizationName}</p>
+                <p className="text-[15px] font-bold uppercase">{receipt.organizationName}</p>
                 <p>PAYMENT RECEIPT</p>
               </div>
               <div className="mt-1 border-t border-black pt-1" />
@@ -991,9 +991,9 @@ export function PaymentReceiptDialog({
                 <p className="min-w-0 flex-1 font-semibold">Member #</p>
                 <p className="shrink-0 whitespace-nowrap text-right">{receipt.membershipNo}</p>
               </div>
-              <div className="flex items-start justify-between gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
                 <p className="min-w-0 flex-1 font-semibold">Name</p>
-                <p className="shrink-0 text-right">{receipt.memberName || "-"}</p>
+                <p className="min-w-0 break-words text-right">{receipt.memberName || "-"}</p>
               </div>
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1 font-semibold">Payment Method</p>
@@ -1007,6 +1007,7 @@ export function PaymentReceiptDialog({
                   Rs {money(receipt.paidAmount)}
                 </p>
               </div>
+              <div className="h-2" />
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1">Balance After Payment</p>
               </div>
@@ -1023,15 +1024,15 @@ export function PaymentReceiptDialog({
                 </p>
               </div>
               {receipt.note ? (
-                <div className="flex items-start justify-between gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
                   <p className="min-w-0 flex-1 font-semibold">Note</p>
-                  <p className="text-right">{receipt.note}</p>
+                  <p className="min-w-0 break-words text-right">{receipt.note}</p>
                 </div>
               ) : null}
               <div className="my-1 border-b border-black" />
-              <div className="flex items-start justify-between gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
                 <p className="min-w-0 flex-1 font-semibold">Collected By</p>
-                <p className="text-right">{receipt.collectedBy || "-"}</p>
+                <p className="min-w-0 break-words text-right">{receipt.collectedBy || "-"}</p>
               </div>
 
               <div className="my-1 border-b border-black" />
