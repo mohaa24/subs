@@ -507,6 +507,14 @@ function formatTwoColumnLines(label: string, value: string, width = POS_COLUMNS,
   });
 }
 
+function formatCenteredLines(value: string, width = POS_COLUMNS): string[] {
+  return wrapText(value.trim(), Math.max(width - 4, 1)).map((line) => {
+    const totalPadding = Math.max(width - line.length, 0);
+    const leftPadding = Math.floor(totalPadding / 2);
+    return `${" ".repeat(leftPadding)}${line}`;
+  });
+}
+
 async function encodePosReceipt(
   receipt: PaymentReceiptData,
   profile: PosPrinterProfile
@@ -521,13 +529,16 @@ async function encodePosReceipt(
   });
 
   encoder.initialize();
-  encoder.align("center");
+  encoder.align("left");
   encoder.bold(true).size(1, 2);
-  for (const line of wrapText(receipt.organizationName.toUpperCase(), POS_COLUMNS - 4)) {
+  for (const line of formatCenteredLines(receipt.organizationName.toUpperCase())) {
     encoder.line(line);
   }
   encoder.size(1, 1);
-  encoder.bold(false).line("PAYMENT RECEIPT");
+  encoder.bold(false);
+  for (const line of formatCenteredLines("PAYMENT RECEIPT")) {
+    encoder.line(line);
+  }
   encoder.rule();
 
   encoder.align("left");
