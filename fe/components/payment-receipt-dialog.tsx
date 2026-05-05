@@ -728,7 +728,7 @@ export function PaymentReceiptDialog({
 
       toast({
         title: "Opening RAWBT",
-        description: "If RAWBT is installed and paired to the printer, it should handle the receipt.",
+        description: "Sending receipt to RAWBT...",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to open RAWBT.";
@@ -834,10 +834,7 @@ export function PaymentReceiptDialog({
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Use QZ Tray Print on Windows. Use RAWBT Print on Android after installing the
-                RAWBT app and pairing the printer there. Browser Print remains the generic fallback.
-              </p>
+
               <div className="grid gap-2 rounded-md border p-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Select
