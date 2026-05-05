@@ -312,10 +312,11 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       ${rowHtml("Balance After Payment", undefined, { labelBold: false })}
       ${rowHtml("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)}
       ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
-      ${noteHtml}
       <div class="border-bottom"></div>
       ${rowHtml("Collected By", receipt.collectedBy || "-")}
+      ${noteHtml}
       <div class="border-bottom"></div>
+      <div style="height: 20px;"></div>
       ${qrHtml}
       <div class="centered" style="margin-top: 6px;">Keep this receipt for records</div>
       <div class="centered" style="margin-top: 10px; text-size: 8px">Developed by civica.lk</div>
@@ -521,7 +522,11 @@ async function encodePosReceipt(
 
   encoder.initialize();
   encoder.align("center");
-  encoder.bold(true).size(1, 2).line(receipt.organizationName.toUpperCase()).size(1, 1);
+  encoder.bold(true).size(1, 2);
+  for (const line of wrapText(receipt.organizationName.toUpperCase(), POS_COLUMNS - 4)) {
+    encoder.line(line);
+  }
+  encoder.size(1, 1);
   encoder.bold(false).line("PAYMENT RECEIPT");
   encoder.rule();
 
@@ -548,19 +553,20 @@ async function encodePosReceipt(
     encoder.line(line);
   }
 
-  if (receipt.note) {
-    encoder.line("Note");
-    for (const line of wrapText(receipt.note, POS_COLUMNS)) encoder.line(line);
-  }
-
   encoder.rule();
   for (const line of formatTwoColumnLines("Collected By", receipt.collectedBy || "-")) {
     encoder.line(line);
+  }
+  if (receipt.note) {
+    for (const line of formatTwoColumnLines("Note", receipt.note)) {
+      encoder.line(line);
+    }
   }
   encoder.rule();
 
   if (receipt.memberQrValue) {
     encoder.align("center");
+    encoder.newline(2);
     encoder.qrcode(receipt.memberQrValue, { model: 2, size: 5, errorlevel: "m" });
   }
 
@@ -1036,19 +1042,20 @@ export function PaymentReceiptDialog({
                   Rs {money(receipt.creditBalanceAfterPayment)}
                 </p>
               </div>
+              <div className="my-1 border-b border-black" />
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
+                <p className="min-w-0 flex-1 font-semibold">Collected By</p>
+                <p className="min-w-0 break-words text-right">{receipt.collectedBy || "-"}</p>
+              </div>
               {receipt.note ? (
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
                   <p className="min-w-0 flex-1 font-semibold">Note</p>
                   <p className="min-w-0 break-words text-right">{receipt.note}</p>
                 </div>
               ) : null}
-              <div className="my-1 border-b border-black" />
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Collected By</p>
-                <p className="min-w-0 break-words text-right">{receipt.collectedBy || "-"}</p>
-              </div>
 
               <div className="my-1 border-b border-black" />
+              <div className="h-4" />
               {qrDataUrl ? (
                 <div className="text-center">
                   <img
