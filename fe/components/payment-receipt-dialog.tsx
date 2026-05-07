@@ -79,6 +79,14 @@ type QzTrayGlobal = {
     isActive(): boolean;
     connect(options?: { retries?: number; delay?: number }): Promise<void>;
   };
+  security: {
+    setCertificatePromise(
+      promiseHandler: (() => Promise<string>) | { then: (onfulfilled?: (value: string) => unknown) => unknown },
+      options?: { rejectOnFailure?: boolean }
+    ): void;
+    setSignatureAlgorithm(algorithm: "SHA1" | "SHA256" | "SHA512"): void;
+    setSignaturePromise(promiseFactory: (toSign: string) => Promise<string>): void;
+  };
   printers: {
     find(query?: string): Promise<string | string[]>;
     getDefault(): Promise<string>;
@@ -113,7 +121,9 @@ const POS_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 104;
 const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
 const POS_SCRIPT_BASE = "/vendor";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const posScriptPromises = new Map<string, Promise<void>>();
+let qzSecuritySetupPromise: Promise<void> | null = null;
 
 function money(value: number): string {
   return Number(value || 0).toFixed(2);
@@ -285,7 +295,13 @@ async function loadQzTray(): Promise<QzTrayGlobal> {
   if (!window.qz) {
     throw new Error("QZ Tray script failed to load.");
   }
-  return window.qz as QzTrayGlobal;
+  const qz = window.qz as QzTrayGlobal;
+  try {
+    await setupQzTraySecurity(qz);
+  } catch (error) {
+    console.warn("QZ Tray signing is not configured yet.", error);
+  }
+  return qz;
 }
 
 function loadPosBrowserScript(src: string, globalName: PosGlobalName): Promise<void> {
@@ -474,6 +490,64 @@ function toBase64(bytes: Uint8Array): string {
   }
 
   return window.btoa(binary);
+}
+
+function getQzAuthHeaders(): HeadersInit {
+  if (typeof window === "undefined") return {};
+  const token = window.localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function fetchQzCertificate(): Promise<string> {
+  const response = await fetch(new URL("/integrations/qz/certificate", API_URL), {
+    cache: "no-store",
+    headers: {
+      ...getQzAuthHeaders(),
+      "Content-Type": "text/plain",
+    },
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || "QZ Tray certificate is not configured.");
+  }
+
+  return response.text();
+}
+
+async function fetchQzSignature(request: string): Promise<string> {
+  const response = await fetch(new URL("/integrations/qz/sign", API_URL), {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      ...getQzAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ request }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || "Failed to sign QZ Tray request.");
+  }
+
+  return response.text();
+}
+
+async function setupQzTraySecurity(qz: QzTrayGlobal): Promise<void> {
+  if (qzSecuritySetupPromise) return qzSecuritySetupPromise;
+
+  qzSecuritySetupPromise = (async () => {
+    const certificate = await fetchQzCertificate();
+    qz.security.setCertificatePromise(async () => certificate);
+    qz.security.setSignatureAlgorithm("SHA512");
+    qz.security.setSignaturePromise(async (toSign: string) => fetchQzSignature(toSign));
+  })().catch((error) => {
+    qzSecuritySetupPromise = null;
+    throw error;
+  });
+
+  return qzSecuritySetupPromise;
 }
 
 function isAndroidDevice(): boolean {

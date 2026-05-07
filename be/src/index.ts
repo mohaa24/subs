@@ -24,6 +24,7 @@ import { zonesRouter } from "./routes/zones.js";
 import { dueTypesRouter } from "./routes/due-types.js";
 import { activityFeedRouter } from "./routes/activity-feed.js";
 import { publicMembershipExportRouter } from "./routes/public-membership-export.js";
+import { qzRouter } from "./routes/qz.js";
 import { startCronJobs } from "./lib/cron.js";
 
 const app = express();
@@ -60,6 +61,7 @@ app.use("/reports", reportsRouter);
 app.use("/messages", messagesRouter);
 app.use("/zones", zonesRouter);
 app.use("/due-types", dueTypesRouter);
+app.use("/integrations/qz", qzRouter);
 app.use("/", activityFeedRouter);
 
 app.listen(PORT, () => {

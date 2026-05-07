@@ -35,6 +35,14 @@ type PosQzTray = {
     isActive(): boolean;
     connect(options?: { retries?: number; delay?: number }): Promise<void>;
   };
+  security: {
+    setCertificatePromise(
+      promiseHandler: (() => Promise<string>) | { then: (onfulfilled?: (value: string) => unknown) => unknown },
+      options?: { rejectOnFailure?: boolean }
+    ): void;
+    setSignatureAlgorithm(algorithm: "SHA1" | "SHA256" | "SHA512"): void;
+    setSignaturePromise(promiseFactory: (dataToSign: string) => Promise<string>): void;
+  };
   printers: {
     find(query?: string): Promise<string | string[]>;
     getDefault(): Promise<string>;
