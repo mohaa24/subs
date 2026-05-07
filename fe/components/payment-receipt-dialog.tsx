@@ -116,9 +116,9 @@ type PosPrinterProfile = {
   codepageMapping: string;
 };
 
-const RECEIPT_WIDTH_INCHES = 3;
-const POS_COLUMNS = 48;
-const RECEIPT_QR_SIZE_PX = 104;
+const RECEIPT_WIDTH_INCHES = 2.8;
+const POS_COLUMNS = 44;
+const RECEIPT_QR_SIZE_PX = 96;
 const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
