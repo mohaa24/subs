@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { ChevronRight, House } from "lucide-react";
 
 export interface BreadcrumbItem {
   label: string;
@@ -14,52 +13,22 @@ interface BreadcrumbProps {
 }
 
 export function Breadcrumb({ items }: BreadcrumbProps) {
-  const router = useRouter();
-  const fallbackHref =
-    [...items]
-      .slice(0, -1)
-      .reverse()
-      .find((item) => item.href)?.href ?? "/";
-
-  function handleBack() {
-    if (typeof window === "undefined") {
-      router.push(fallbackHref);
-      return;
-    }
-
-    let hasSameOriginReferrer = false;
-    if (document.referrer) {
-      try {
-        hasSameOriginReferrer = new URL(document.referrer).origin === window.location.origin;
-      } catch {
-        hasSameOriginReferrer = false;
-      }
-    }
-
-    if (window.history.length > 1 && hasSameOriginReferrer) {
-      router.back();
-      return;
-    }
-
-    router.push(fallbackHref);
-  }
-
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3">
-      {items.length > 1 ? (
-        <button
-          type="button"
-          onClick={handleBack}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
-          <span>Back</span>
-        </button>
-      ) : null}
-
+    <div className="mb-4">
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm">
         {items.map((item, i) => {
           const isLast = i === items.length - 1;
+          const isHomeItem = item.href === "/" && i === 0;
+
+          const crumbContent = isHomeItem ? (
+            <>
+              <House className="h-4 w-4 shrink-0" />
+              <span className="sr-only">{item.label}</span>
+            </>
+          ) : (
+            item.label
+          );
+
           return (
             <span key={i} className="flex items-center gap-1">
               {i > 0 && (
@@ -73,14 +42,15 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
                       : "text-muted-foreground"
                   }
                 >
-                  {item.label}
+                  {crumbContent}
                 </span>
               ) : (
                 <Link
                   href={item.href}
                   className="text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={isHomeItem ? item.label : undefined}
                 >
-                  {item.label}
+                  {crumbContent}
                 </Link>
               )}
             </span>
