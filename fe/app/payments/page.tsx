@@ -35,7 +35,11 @@ import { ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle } f
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
-import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
+import {
+  getPaymentDuePeriodLine,
+  getPaymentDueSubtitle,
+  getPaymentDueTitle,
+} from "@/lib/payment-due";
 import {
   RecordPaymentDialog,
   type PaymentMethod,
@@ -519,10 +523,13 @@ export default function PaymentsPage() {
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                           <div>
-                            <p className="text-muted-foreground">{t("payments.period")}</p>
+                            <p className="text-muted-foreground">Description</p>
                             <p className="font-medium">{getPaymentDueTitle(d)}</p>
                             {getPaymentDueSubtitle(d) && (
                               <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                            )}
+                            {getPaymentDuePeriodLine(d) && (
+                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
                             )}
                           </div>
                           <div>
@@ -562,7 +569,7 @@ export default function PaymentsPage() {
                       <tr>
                         <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
                         <th className="text-left p-2.5 font-medium">Full Name</th>
-                        <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
+                        <th className="text-left p-2.5 font-medium">Description</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
                         <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
@@ -590,6 +597,9 @@ export default function PaymentsPage() {
                               <p className="font-medium">{getPaymentDueTitle(d)}</p>
                               {getPaymentDueSubtitle(d) && (
                                 <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                              )}
+                              {getPaymentDuePeriodLine(d) && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
                               )}
                             </td>
                             <td className="p-2.5 text-right tabular-nums">

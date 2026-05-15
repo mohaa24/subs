@@ -36,6 +36,13 @@ import {
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 
@@ -73,9 +80,9 @@ function formatCompactRs(n: number) {
 }
 
 function formatPeriod(period: string) {
-  const [y, m] = period.split("-");
-  const date = new Date(Number(y), Number(m) - 1);
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const [start, end] = period.split(":");
+  if (!start || !end) return period;
+  return `${start} to ${end}`;
 }
 
 type FlowAction = {
@@ -102,6 +109,7 @@ export default function HomePage() {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [statsWindowDays, setStatsWindowDays] = useState("30");
   const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
@@ -177,14 +185,16 @@ export default function HomePage() {
   const fetchStats = useCallback(async () => {
     try {
       setStatsLoading(true);
-      const data = await api<DashboardStats>("/dashboard");
+      const data = await api<DashboardStats>("/dashboard", {
+        params: { windowDays: statsWindowDays },
+      });
       setStats(data);
     } catch {
       /* stats are non-critical — silently degrade */
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [statsWindowDays]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -241,29 +251,43 @@ export default function HomePage() {
 
   const ROW1_CARDS = [
     {
-      label: t("dashboard.totalHouseholds"),
-      value: stats ? formatCompactInteger(stats.totalHouseholds) : "—",
-      icon: Home,
-      color: "text-blue-500",
-      bg: "bg-blue-500/10",
-    },
-    {
-      label: t("dashboard.dueThisMonth"),
+      label: "Amount Due",
       value: stats ? formatCompactRs(stats.totalDueThisMonth) : "—",
       icon: Receipt,
       color: "text-rose-500",
       bg: "bg-rose-500/10",
     },
     {
-      label: t("dashboard.collectedThisMonth"),
+      label: "Amount Collected",
       value: stats ? formatCompactRs(stats.collectedThisMonth) : "—",
       icon: Banknote,
       color: "text-emerald-500",
       bg: "bg-emerald-500/10",
     },
+    {
+      label: "Outstanding Balance",
+      value: stats ? formatCompactRs(stats.outstandingThisMonth) : "—",
+      icon: Receipt,
+      color: "text-amber-500",
+      bg: "bg-amber-500/10",
+    },
+    {
+      label: "Overpayments",
+      value: stats ? formatCompactRs(stats.overpaymentsThisMonth) : "—",
+      icon: Repeat,
+      color: "text-sky-500",
+      bg: "bg-sky-500/10",
+    },
   ];
 
   const ROW2_CARDS = [
+    {
+      label: t("dashboard.totalHouseholds"),
+      value: stats ? formatCompactInteger(stats.totalHouseholds) : "—",
+      icon: Home,
+      color: "text-blue-500",
+      bg: "bg-blue-500/10",
+    },
     {
       label: t("dashboard.totalHeadcount"),
       value: stats ? formatCompactInteger(stats.totalHeadcount) : "—",
@@ -480,14 +504,31 @@ export default function HomePage() {
       <Header />
       <main className="relative z-10 p-6 max-w-5xl mx-auto">
         <div className="mb-6">
-          <h2 className="text-xl font-semibold text-foreground">{t("dashboard.title")}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {stats ? formatPeriod(stats.period) : t("dashboard.overview")}
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">{t("dashboard.title")}</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {stats ? formatPeriod(stats.period) : t("dashboard.overview")}
+              </p>
+            </div>
+            <div className="w-full sm:w-[180px]">
+              <Select value={statsWindowDays} onValueChange={setStatsWindowDays}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Today</SelectItem>
+                  <SelectItem value="7">Last 7 Days</SelectItem>
+                  <SelectItem value="14">Last 14 Days</SelectItem>
+                  <SelectItem value="30">Last 1 Month</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
 
         {/* ── Stat cards — Row 1 ────────────────────────────── */}
-        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {ROW1_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="relative overflow-hidden">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
@@ -512,7 +553,7 @@ export default function HomePage() {
         </div>
 
         {/* ── Stat cards — Row 2 ────────────────────────────── */}
-        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           {ROW2_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="relative overflow-hidden">
               <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">

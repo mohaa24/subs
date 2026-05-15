@@ -83,7 +83,11 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
-import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
+import {
+  getPaymentDuePeriodLine,
+  getPaymentDueSubtitle,
+  getPaymentDueTitle,
+} from "@/lib/payment-due";
 import { downloadCsv } from "@/lib/export-csv";
 import { cn } from "@/lib/utils";
 import {
@@ -827,11 +831,17 @@ export default function MembershipDetailPage() {
   function exportDuesCsv() {
     downloadCsv(
       `${csvBaseName}-dues.csv`,
-      ["Period", "Due", "Paid", "Remaining", "Status"],
+      ["Description", "Due", "Paid", "Remaining", "Status"],
       duesItems.map((due) => {
         const remaining = Number(due.amountDue) - Number(due.amountPaid);
         return [
-          [getPaymentDueTitle(due), getPaymentDueSubtitle(due)].filter(Boolean).join(" · "),
+          [
+            getPaymentDueTitle(due),
+            getPaymentDueSubtitle(due),
+            getPaymentDuePeriodLine(due),
+          ]
+            .filter(Boolean)
+            .join(" | "),
           formatAmountCell(due.amountDue),
           formatAmountCell(due.amountPaid),
           formatAmountCell(remaining),
@@ -1508,6 +1518,9 @@ export default function MembershipDetailPage() {
                                   {getPaymentDueSubtitle(d) && (
                                     <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
                                   )}
+                                  {getPaymentDuePeriodLine(d) && (
+                                    <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
+                                  )}
                                 </div>
                                 <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${statusColors[d.status] ?? ""}`}>
                                   <StatusIcon className="h-3 w-3" />
@@ -1567,7 +1580,7 @@ export default function MembershipDetailPage() {
                         <table className="w-full text-sm min-w-[480px]">
                           <thead>
                             <tr className="bg-muted/50 border-b">
-                              <th className="text-left p-3 font-medium text-muted-foreground">Period</th>
+                              <th className="text-left p-3 font-medium text-muted-foreground">Description</th>
                               <th className="text-right p-3 font-medium text-muted-foreground">Due</th>
                               <th className="text-right p-3 font-medium text-muted-foreground">Paid</th>
                               <th className="text-center p-3 font-medium text-muted-foreground">Status</th>
@@ -1584,6 +1597,9 @@ export default function MembershipDetailPage() {
                                     <p className="font-medium">{getPaymentDueTitle(d)}</p>
                                     {getPaymentDueSubtitle(d) && (
                                       <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                                    )}
+                                    {getPaymentDuePeriodLine(d) && (
+                                      <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
                                     )}
                                   </td>
                                   <td className="p-3 text-right tabular-nums">{Number(d.amountDue).toFixed(2)}</td>

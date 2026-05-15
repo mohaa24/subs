@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Printer } from "lucide-react";
+import { ChevronDown, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,12 +11,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { toast } from "@/hooks/use-toast";
 
 export interface PaymentReceiptData {
@@ -116,10 +116,12 @@ type PosPrinterProfile = {
   codepageMapping: string;
 };
 
+type PrintMethod = "qz" | "rawbt" | "browser";
+
 const RECEIPT_WIDTH_INCHES = 2.8;
 const POS_COLUMNS = 44;
 const RECEIPT_QR_SIZE_PX = 96;
-const QZ_PRINTER_STORAGE_KEY = "subs.qz-printer-name";
+const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const posScriptPromises = new Map<string, Promise<void>>();
@@ -265,18 +267,17 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
 </html>`;
 }
 
-function getStoredQzPrinterName(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(QZ_PRINTER_STORAGE_KEY) || "";
+function getStoredPrintMethod(): PrintMethod {
+  if (typeof window === "undefined") return "browser";
+  const storedValue = window.localStorage.getItem(RECEIPT_PRINT_METHOD_STORAGE_KEY);
+  return storedValue === "qz" || storedValue === "rawbt" || storedValue === "browser"
+    ? storedValue
+    : "browser";
 }
 
-function setStoredQzPrinterName(printerName: string) {
+function setStoredPrintMethod(method: PrintMethod) {
   if (typeof window === "undefined") return;
-  if (!printerName) {
-    window.localStorage.removeItem(QZ_PRINTER_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(QZ_PRINTER_STORAGE_KEY, printerName);
+  window.localStorage.setItem(RECEIPT_PRINT_METHOD_STORAGE_KEY, method);
 }
 
 async function loadReceiptPrinterEncoderClass(): Promise<ReceiptPrinterEncoderClass> {
@@ -550,11 +551,6 @@ async function setupQzTraySecurity(qz: QzTrayGlobal): Promise<void> {
   return qzSecuritySetupPromise;
 }
 
-function isAndroidDevice(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Android/i.test(navigator.userAgent);
-}
-
 export function PaymentReceiptDialog({
   open,
   onOpenChange,
@@ -567,13 +563,7 @@ export function PaymentReceiptDialog({
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [qzPrinting, setQzPrinting] = useState(false);
   const [rawBtPrinting, setRawBtPrinting] = useState(false);
-  const [qzLoadingPrinters, setQzLoadingPrinters] = useState(false);
-  const [qzPrinters, setQzPrinters] = useState<string[]>([]);
-  const [qzPrinterName, setQzPrinterName] = useState("");
-  const [qzStatus, setQzStatus] = useState(
-    "QZ Tray can print through the installed Windows printer queue."
-  );
-  const [isAndroid, setIsAndroid] = useState(false);
+  const [selectedPrintMethod, setSelectedPrintMethod] = useState<PrintMethod>("browser");
 
   useEffect(() => {
     if (!open || !receipt) {
@@ -599,14 +589,7 @@ export function PaymentReceiptDialog({
 
   useEffect(() => {
     if (!open) return;
-
-    setIsAndroid(isAndroidDevice());
-    const storedPrinterName = getStoredQzPrinterName();
-    if (storedPrinterName) {
-      setQzPrinterName(storedPrinterName);
-    }
-
-    void loadQzPrinters(false);
+    setSelectedPrintMethod(getStoredPrintMethod());
   }, [open]);
 
   function handleBrowserPrint() {
@@ -663,84 +646,24 @@ export function PaymentReceiptDialog({
     return qz;
   }
 
-  async function loadQzPrinters(showToast = true): Promise<string> {
-    try {
-      setQzLoadingPrinters(true);
-      setQzStatus("Checking QZ Tray and installed printers...");
-
-      const qz = await ensureQzConnection();
-      const [printerResult, defaultPrinter] = await Promise.all([
-        qz.printers.find(),
-        qz.printers.getDefault().catch(() => ""),
-      ]);
-
-      const printers = normalizeQzPrinterList(printerResult);
-      setQzPrinters(printers);
-
-      const storedPrinterName = getStoredQzPrinterName();
-      const nextPrinterName =
-        (storedPrinterName && printers.includes(storedPrinterName) && storedPrinterName) ||
-        (qzPrinterName && printers.includes(qzPrinterName) && qzPrinterName) ||
-        (defaultPrinter && printers.includes(defaultPrinter) && defaultPrinter) ||
-        printers[0] ||
-        "";
-
-      setQzPrinterName(nextPrinterName);
-      setStoredQzPrinterName(nextPrinterName);
-
-      if (printers.length === 0) {
-        setQzStatus("QZ Tray is running, but no installed printers were found.");
-        throw new Error(
-          "QZ Tray is running, but no printers were found. Pair or install the receipt printer in Windows first."
-        );
-      }
-
-      setQzStatus(`QZ Tray connected. ${printers.length} printer${printers.length === 1 ? "" : "s"} found.`);
-
-      if (showToast) {
-        toast({
-          title: "QZ Tray connected",
-          description: nextPrinterName
-            ? `Selected printer: ${nextPrinterName}`
-            : "Installed printers are ready to use.",
-        });
-      }
-
-      return nextPrinterName;
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "QZ Tray is not available. Install it and keep it running on this computer.";
-
-      setQzStatus(message);
-      if (showToast) {
-        toast({
-          variant: "destructive",
-          title: "QZ Tray unavailable",
-          description: message,
-        });
-      }
-      return "";
-    } finally {
-      setQzLoadingPrinters(false);
-    }
-  }
-
   async function handleQzTrayPrint() {
     if (!receipt) return;
 
     try {
       setQzPrinting(true);
 
-      const printerName = qzPrinterName || (await loadQzPrinters(false));
+      const qz = await ensureQzConnection();
+      const [defaultPrinter, printerResult] = await Promise.all([
+        qz.printers.getDefault().catch(() => ""),
+        qz.printers.find().catch(() => [] as string[]),
+      ]);
+      const printerName = defaultPrinter || normalizeQzPrinterList(printerResult)[0] || "";
       if (!printerName) {
         throw new Error(
-          "No QZ printer is selected. Install QZ Tray, make sure the printer is installed in Windows, then refresh the printer list."
+          "No QZ printer was found. Install QZ Tray and make sure the printer is installed in Windows."
         );
       }
 
-      const qz = await ensureQzConnection();
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
         codepageMapping: "epson",
@@ -760,7 +683,6 @@ export function PaymentReceiptDialog({
         },
       ]);
 
-      setStoredQzPrinterName(printerName);
       toast({
         title: "Receipt sent with QZ Tray",
         description: `Printed to ${printerName}.`,
@@ -784,10 +706,6 @@ export function PaymentReceiptDialog({
 
     try {
       setRawBtPrinting(true);
-
-      // if (!isAndroidDevice()) {
-      //   throw new Error("RAWBT printing is only available on Android devices.");
-      // }
 
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
@@ -816,6 +734,35 @@ export function PaymentReceiptDialog({
       setRawBtPrinting(false);
     }
   }
+
+  async function runPrintMethod(method: PrintMethod) {
+    setSelectedPrintMethod(method);
+    setStoredPrintMethod(method);
+
+    if (method === "qz") {
+      await handleQzTrayPrint();
+      return;
+    }
+
+    if (method === "rawbt") {
+      await handleRawBtPrint();
+      return;
+    }
+
+    handleBrowserPrint();
+  }
+
+  const isPrinting = qzPrinting || rawBtPrinting;
+  const currentPrintLabel =
+    selectedPrintMethod === "qz"
+      ? qzPrinting
+        ? "Printing..."
+        : "Print"
+      : selectedPrintMethod === "rawbt"
+        ? rawBtPrinting
+          ? "Printing..."
+          : "Print"
+        : "Print";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -907,70 +854,42 @@ export function PaymentReceiptDialog({
               <p className="mt-1 text-center">developed by civica.lk</p>
             </div>
 
-            <div className="space-y-2">
-
-              <div className="grid gap-2 rounded-md border p-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Select
-                    value={qzPrinterName || "__none__"}
-                    onValueChange={(value) => {
-                      const nextValue = value === "__none__" ? "" : value;
-                      setQzPrinterName(nextValue);
-                      setStoredQzPrinterName(nextValue);
-                    }}
-                    disabled={qzLoadingPrinters || qzPrinters.length === 0}
-                  >
-                    <SelectTrigger className="sm:flex-1">
-                      <SelectValue placeholder="Select installed printer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {qzPrinters.length === 0 ? (
-                        <SelectItem value="__none__">No printers found</SelectItem>
-                      ) : (
-                        qzPrinters.map((printerName) => (
-                          <SelectItem key={printerName} value={printerName}>
-                            {printerName}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void loadQzPrinters(true)}
-                    disabled={qzLoadingPrinters}
-                  >
-                    {qzLoadingPrinters ? "Checking printers..." : "Refresh QZ Printers"}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">{qzStatus}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+              <div className="flex items-center">
                 <Button
-                  variant="outline"
-                  onClick={handleQzTrayPrint}
-                  className="gap-1.5"
-                  disabled={qzPrinting}
+                  onClick={() => void runPrintMethod(selectedPrintMethod)}
+                  className="gap-1.5 rounded-r-none"
+                  disabled={isPrinting}
                 >
                   <Printer className="h-4 w-4" />
-                  {qzPrinting ? "Sending with QZ Tray..." : "QZ Tray Print"}
+                  {currentPrintLabel}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleRawBtPrint}
-                  className="gap-1.5"
-                  disabled={rawBtPrinting}
-                >
-                  <Printer className="h-4 w-4" />
-                  {rawBtPrinting ? "Opening RAWBT..." : "RAWBT Print"}
-                </Button>
-                <Button variant="outline" onClick={handleBrowserPrint}>
-                  Browser Print
-                </Button>
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                  Close
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      className="px-2 rounded-l-none border-l border-primary-foreground/20"
+                      disabled={isPrinting}
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuRadioGroup
+                      value={selectedPrintMethod}
+                      onValueChange={(value) => {
+                        void runPrintMethod(value as PrintMethod);
+                      }}
+                    >
+                      <DropdownMenuRadioItem value="qz">QZ Tray Print</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="rawbt">RAWBT Print</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="browser">Browser Print</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
