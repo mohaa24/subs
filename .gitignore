@@ -10,3 +10,4 @@ DS_Store
 .DS_Store
 scripts/db-tunnel.sh
 backups/
+be/dist/routes/qz.js

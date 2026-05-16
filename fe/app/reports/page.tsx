@@ -51,9 +51,20 @@ interface PersonResult {
 interface MembershipResult {
   id: string;
   membershipNo: string;
+  memberZone: string;
+  nameWithInitials: string;
+  fullName: string;
   membershipType: string;
   membershipStatus: string;
-  hod?: { fullName: string; nameWithInitials: string };
+  totalHeadcount: number;
+  adults: number;
+  youth: number;
+  children: number;
+  paymentPeriod: string;
+  membershipFee: number;
+  discountAmount: number;
+  voluntaryContributionAmount: number;
+  totalContribution: number;
 }
 
 interface PaymentResult {
@@ -321,7 +332,7 @@ export default function ReportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="persons">{t("reports.persons")}</SelectItem>
-                    <SelectItem value="memberships">{t("reports.memberships")}</SelectItem>
+                    <SelectItem value="memberships">Membership Data Report</SelectItem>
                     <SelectItem value="payments">{t("reports.payments")}</SelectItem>
                     <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
                     <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
@@ -655,24 +666,44 @@ export default function ReportsPage() {
                   </table>
                 )}
                 {entity === "memberships" && (
-                  <table className="w-full text-sm min-w-[500px]">
+                  <table className="w-full text-sm min-w-[1500px]">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left p-3 font-medium">No.</th>
-                        <th className="text-left p-3 font-medium">Type</th>
-                        <th className="text-left p-3 font-medium">Status</th>
-                        <th className="text-left p-3 font-medium">Head</th>
+                        <th className="text-left p-3 font-medium">Membership No</th>
+                        <th className="text-left p-3 font-medium">Member Zone</th>
+                        <th className="text-left p-3 font-medium">Name with Initials</th>
+                        <th className="text-left p-3 font-medium">Full Name</th>
+                        <th className="text-left p-3 font-medium">Membership Type</th>
+                        <th className="text-left p-3 font-medium">Membership Status</th>
+                        <th className="text-right p-3 font-medium">Total Headcount</th>
+                        <th className="text-right p-3 font-medium">Adults (18+)</th>
+                        <th className="text-right p-3 font-medium">Youth (13-17)</th>
+                        <th className="text-right p-3 font-medium">Children (0-12)</th>
+                        <th className="text-left p-3 font-medium">Payment Period</th>
+                        <th className="text-right p-3 font-medium">Membership Fee</th>
+                        <th className="text-right p-3 font-medium">Discount Amount</th>
+                        <th className="text-right p-3 font-medium">Voluntary Contribution Amount</th>
+                        <th className="text-right p-3 font-medium">Total Contribution</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(results as MembershipResult[]).map((r) => (
                         <tr key={r.id} className="border-t">
                           <td className="p-3 font-medium">{r.membershipNo}</td>
+                          <td className="p-3">{r.memberZone || "—"}</td>
+                          <td className="p-3">{r.nameWithInitials || "—"}</td>
+                          <td className="p-3">{r.fullName || "—"}</td>
                           <td className="p-3">{r.membershipType}</td>
                           <td className="p-3">{r.membershipStatus}</td>
-                          <td className="p-3">
-                            {r.hod?.fullName ?? r.hod?.nameWithInitials ?? "—"}
-                          </td>
+                          <td className="p-3 text-right tabular-nums">{r.totalHeadcount}</td>
+                          <td className="p-3 text-right tabular-nums">{r.adults}</td>
+                          <td className="p-3 text-right tabular-nums">{r.youth}</td>
+                          <td className="p-3 text-right tabular-nums">{r.children}</td>
+                          <td className="p-3">{r.paymentPeriod || "—"}</td>
+                          <td className="p-3 text-right tabular-nums">{Number(r.membershipFee).toFixed(2)}</td>
+                          <td className="p-3 text-right tabular-nums">{Number(r.discountAmount).toFixed(2)}</td>
+                          <td className="p-3 text-right tabular-nums">{Number(r.voluntaryContributionAmount).toFixed(2)}</td>
+                          <td className="p-3 text-right tabular-nums">{Number(r.totalContribution).toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>

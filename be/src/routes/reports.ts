@@ -41,6 +41,140 @@ function formatZoneLabel(areaCode: number | null | undefined, zoneMap: Map<numbe
   return zoneName ? `${areaCode} - ${zoneName}` : String(areaCode);
 }
 
+function getAgeOnDate(dateOfBirth: Date | null | undefined, today = new Date()) {
+  if (!dateOfBirth) return null;
+  if (Number.isNaN(dateOfBirth.getTime())) return null;
+  let age = today.getFullYear() - dateOfBirth.getFullYear();
+  const monthDiff = today.getMonth() - dateOfBirth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dateOfBirth.getDate())) age--;
+  return age;
+}
+
+function isCountableMember(person: {
+  isArchived?: boolean | null;
+  livingStatus?: string | null;
+} | null | undefined): person is {
+  isArchived?: boolean | null;
+  livingStatus?: string | null;
+  dateOfBirth?: Date | null;
+} {
+  if (!person) return false;
+  if (person.isArchived) return false;
+  return !person.livingStatus || person.livingStatus === "Active";
+}
+
+type MembershipReportPerson = {
+  isArchived?: boolean | null;
+  livingStatus?: string | null;
+  dateOfBirth?: Date | null;
+};
+
+async function getMembershipDataRows(orgId: string, filters: Record<string, unknown>) {
+  const where: Prisma.MembershipWhereInput = { organizationId: orgId };
+  if (typeof filters.membershipType === "string" && filters.membershipType) {
+    where.membershipType = filters.membershipType as any;
+  }
+
+  const [memberships, zones] = await Promise.all([
+    prisma.membership.findMany({
+      where,
+      include: {
+        hod: {
+          select: {
+            fullName: true,
+            nameWithInitials: true,
+            dateOfBirth: true,
+            livingStatus: true,
+            isArchived: true,
+          },
+        },
+        spouse: {
+          select: {
+            fullName: true,
+            nameWithInitials: true,
+            dateOfBirth: true,
+            livingStatus: true,
+            isArchived: true,
+          },
+        },
+        dependents: {
+          select: {
+            group: true,
+            person: {
+              select: {
+                fullName: true,
+                nameWithInitials: true,
+                dateOfBirth: true,
+                livingStatus: true,
+                isArchived: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { membershipNo: "asc" },
+      take: 10000,
+    }),
+    prisma.zone.findMany({
+      where: { organizationId: orgId },
+      select: { code: true, name: true },
+      orderBy: { code: "asc" },
+    }),
+  ]);
+
+  const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
+  const today = new Date();
+
+  return memberships.map((membership) => {
+    const rawPeople: Array<MembershipReportPerson | null | undefined> = [
+      membership.hod,
+      membership.spouse,
+      ...membership.dependents.map((dependent) => dependent.person),
+    ];
+    const people = rawPeople.filter(
+      (person): person is MembershipReportPerson => isCountableMember(person)
+    );
+
+    const adults = people.filter((person) => {
+      const age = getAgeOnDate(person.dateOfBirth, today);
+      return age === null || age >= 18;
+    }).length;
+    const youth = people.filter((person) => {
+      const age = getAgeOnDate(person.dateOfBirth, today);
+      return age !== null && age >= 13 && age <= 17;
+    }).length;
+    const children = people.filter((person) => {
+      const age = getAgeOnDate(person.dateOfBirth, today);
+      return age !== null && age >= 0 && age <= 12;
+    }).length;
+
+    return {
+      id: membership.id,
+      membershipNo: membership.membershipNo,
+      memberZone: formatZoneLabel(membership.areaCode, zoneMap),
+      nameWithInitials:
+        membership.hod?.nameWithInitials ??
+        membership.hod?.fullName ??
+        membership.membershipNo,
+      fullName:
+        membership.hod?.fullName ??
+        membership.hod?.nameWithInitials ??
+        membership.membershipNo,
+      membershipType: membership.membershipType,
+      membershipStatus: membership.membershipStatus,
+      totalHeadcount: people.length,
+      adults,
+      youth,
+      children,
+      paymentPeriod: membership.paymentPeriod,
+      membershipFee: Number(membership.membershipFee),
+      discountAmount: Number(membership.membershipFeeDiscount),
+      voluntaryContributionAmount: Number(membership.additionalVoluntaryContributions),
+      totalContribution: Number(membership.totalContribution),
+    };
+  });
+}
+
 async function getOutstandingBalanceRows(orgId: string, filters: Record<string, unknown>) {
   const areaCode =
     typeof filters.areaCode === "number"
@@ -323,16 +457,8 @@ reportsRouter.post("/query", async (req, res) => {
       return res.json(persons);
     }
     case "memberships": {
-      const where: Prisma.MembershipWhereInput = { organizationId: orgId! };
-      if (typeof filters.membershipType === "string" && filters.membershipType) {
-        where.membershipType = filters.membershipType as any;
-      }
-      const memberships = await prisma.membership.findMany({
-        where,
-        include: { hod: { select: { fullName: true, nameWithInitials: true } } },
-        take: 500,
-      });
-      return res.json(memberships);
+      const memberships = await getMembershipDataRows(orgId!, filters);
+      return res.json(memberships.slice(0, 500));
     }
     case "payments": {
       const where: Prisma.PaymentWhereInput = { organizationId: orgId! };
@@ -439,20 +565,40 @@ reportsRouter.get("/export", async (req, res) => {
       break;
     }
     case "memberships": {
-      const where: Prisma.MembershipWhereInput = { organizationId: orgId! };
-      if (typeof filters.membershipType === "string") where.membershipType = filters.membershipType as any;
-      const memberships = await prisma.membership.findMany({
-        where,
-        include: { hod: { select: { fullName: true } } },
-        take: 10000,
-      });
-      headers = ["id", "membershipNo", "membershipType", "membershipStatus", "hodName"];
-      rows = memberships.map((m) => ({
-        id: m.id,
-        membershipNo: m.membershipNo,
-        membershipType: m.membershipType,
-        membershipStatus: m.membershipStatus,
-        hodName: m.hod.fullName,
+      const memberships = await getMembershipDataRows(orgId!, filters);
+      headers = [
+        "membershipNo",
+        "memberZone",
+        "nameWithInitials",
+        "fullName",
+        "membershipType",
+        "membershipStatus",
+        "totalHeadcount",
+        "adults",
+        "youth",
+        "children",
+        "paymentPeriod",
+        "membershipFee",
+        "discountAmount",
+        "voluntaryContributionAmount",
+        "totalContribution",
+      ];
+      rows = memberships.map((membership) => ({
+        membershipNo: membership.membershipNo,
+        memberZone: membership.memberZone,
+        nameWithInitials: membership.nameWithInitials,
+        fullName: membership.fullName,
+        membershipType: membership.membershipType,
+        membershipStatus: membership.membershipStatus,
+        totalHeadcount: membership.totalHeadcount,
+        adults: membership.adults,
+        youth: membership.youth,
+        children: membership.children,
+        paymentPeriod: membership.paymentPeriod,
+        membershipFee: membership.membershipFee.toFixed(2),
+        discountAmount: membership.discountAmount.toFixed(2),
+        voluntaryContributionAmount: membership.voluntaryContributionAmount.toFixed(2),
+        totalContribution: membership.totalContribution.toFixed(2),
       }));
       break;
     }

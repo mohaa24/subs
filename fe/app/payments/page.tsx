@@ -385,10 +385,8 @@ export default function PaymentsPage() {
     due.membership?.hod?.nameWithInitials ?? due.membership?.hod?.fullName ?? due.membership?.membershipNo ?? due.membershipId;
   const dueMemberFullName = (due: PaymentDue) =>
     due.membership?.hod?.fullName ?? due.membership?.hod?.nameWithInitials ?? due.membershipId;
-  const dueMemberMeta = (due: PaymentDue) => {
-    const zone = zoneLabel(due.membership?.areaCode);
-    return [zone ? `Zone: ${zone}` : null, due.membership?.membershipNo].filter(Boolean).join(" • ");
-  };
+  const dueMemberZone = (due: PaymentDue) => zoneLabel(due.membership?.areaCode);
+  const dueMemberMembershipNo = (due: PaymentDue) => due.membership?.membershipNo ?? null;
   const paymentMemberDisplayName = (payment: Payment) =>
     payment.membership?.hod?.nameWithInitials ??
     payment.membership?.hod?.fullName ??
@@ -511,9 +509,16 @@ export default function PaymentsPage() {
                             >
                               {dueMemberDisplayName(d)}
                             </Link>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {dueMemberMeta(d)}
-                            </p>
+                            {dueMemberZone(d) && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {dueMemberZone(d)}
+                              </p>
+                            )}
+                            {dueMemberMembershipNo(d) && (
+                              <p className="text-xs text-muted-foreground">
+                                {dueMemberMembershipNo(d)}
+                              </p>
+                            )}
                           </div>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
@@ -544,6 +549,10 @@ export default function PaymentsPage() {
                             <p className="text-muted-foreground">{t("payments.paid")}</p>
                             <p className="font-medium tabular-nums">{Number(d.amountPaid).toFixed(2)}</p>
                           </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("payments.remaining")}</p>
+                            <p className="font-medium tabular-nums">{remaining.toFixed(2)}</p>
+                          </div>
                         </div>
                         <div className="mt-3 flex gap-2">
                           {d.status !== "paid" && remaining > 0 && (
@@ -572,6 +581,7 @@ export default function PaymentsPage() {
                         <th className="text-left p-2.5 font-medium">Description</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
                         <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.remaining")}</th>
                         <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
                         <th className="p-2.5"></th>
                       </tr>
@@ -588,9 +598,16 @@ export default function PaymentsPage() {
                               >
                                 {dueMemberDisplayName(d)}
                               </Link>
-                              <p className="text-muted-foreground text-xs">
-                                {dueMemberMeta(d)}
-                              </p>
+                              {dueMemberZone(d) && (
+                                <p className="text-muted-foreground text-xs">
+                                  {dueMemberZone(d)}
+                                </p>
+                              )}
+                              {dueMemberMembershipNo(d) && (
+                                <p className="text-muted-foreground text-xs">
+                                  {dueMemberMembershipNo(d)}
+                                </p>
+                              )}
                             </td>
                             <td className="p-2.5">{dueMemberFullName(d)}</td>
                             <td className="p-2.5">
@@ -607,6 +624,9 @@ export default function PaymentsPage() {
                             </td>
                             <td className="p-2.5 text-right tabular-nums">
                               {Number(d.amountPaid).toFixed(2)}
+                            </td>
+                            <td className="p-2.5 text-right tabular-nums">
+                              {remaining.toFixed(2)}
                             </td>
                             <td className="p-2.5 text-center">
                               <span

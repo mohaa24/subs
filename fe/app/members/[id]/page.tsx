@@ -831,17 +831,18 @@ export default function MembershipDetailPage() {
   function exportDuesCsv() {
     downloadCsv(
       `${csvBaseName}-dues.csv`,
-      ["Description", "Due", "Paid", "Remaining", "Status"],
+      ["Reason", "Due Type", "Period", "Due", "Paid", "Remaining", "Status"],
       duesItems.map((due) => {
         const remaining = Number(due.amountDue) - Number(due.amountPaid);
+        const reason = due.reason?.trim()
+          ? due.reason.trim()
+          : !due.isManual && due.dueType?.systemKey === "subscription"
+            ? due.period
+            : "";
         return [
-          [
-            getPaymentDueTitle(due),
-            getPaymentDueSubtitle(due),
-            getPaymentDuePeriodLine(due),
-          ]
-            .filter(Boolean)
-            .join(" | "),
+          reason,
+          due.dueType?.name ?? "",
+          due.period ?? "",
           formatAmountCell(due.amountDue),
           formatAmountCell(due.amountPaid),
           formatAmountCell(remaining),
@@ -1583,6 +1584,7 @@ export default function MembershipDetailPage() {
                               <th className="text-left p-3 font-medium text-muted-foreground">Description</th>
                               <th className="text-right p-3 font-medium text-muted-foreground">Due</th>
                               <th className="text-right p-3 font-medium text-muted-foreground">Paid</th>
+                              <th className="text-right p-3 font-medium text-muted-foreground">Remaining</th>
                               <th className="text-center p-3 font-medium text-muted-foreground">Status</th>
                               <th className="p-3 w-20 print:hidden"></th>
                             </tr>
@@ -1604,6 +1606,7 @@ export default function MembershipDetailPage() {
                                   </td>
                                   <td className="p-3 text-right tabular-nums">{Number(d.amountDue).toFixed(2)}</td>
                                   <td className="p-3 text-right tabular-nums">{Number(d.amountPaid).toFixed(2)}</td>
+                                  <td className="p-3 text-right tabular-nums">{remaining.toFixed(2)}</td>
                                   <td className="p-3 text-center">
                                     <span className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${statusColors[d.status] ?? ""}`}>
                                       <StatusIcon className="h-3 w-3" />
@@ -1698,6 +1701,18 @@ export default function MembershipDetailPage() {
                           entry.entryType === "due" && entry.note ? entry.note : entry.detail;
                         const descriptionSecondary =
                           entry.entryType === "due" && entry.note ? entry.detail : null;
+                        const inlineDueType =
+                          entry.dueType &&
+                          entry.dueType !== descriptionPrimary &&
+                          entry.dueType !== descriptionSecondary
+                            ? entry.dueType
+                            : null;
+                        const inlineNote =
+                          entry.note &&
+                          entry.note !== descriptionPrimary &&
+                          entry.note !== descriptionSecondary
+                            ? entry.note
+                            : null;
                         const amountTone =
                           isReversal
                             ? "text-red-400"
@@ -1714,11 +1729,6 @@ export default function MembershipDetailPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.action}</p>
-                              {entry.dueType ? (
-                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
-                                  {entry.dueType}
-                                </p>
-                              ) : null}
                               {descriptionPrimary ? (
                                 <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
                                   {descriptionPrimary}
@@ -1727,6 +1737,16 @@ export default function MembershipDetailPage() {
                               {descriptionSecondary ? (
                                 <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
                                   {descriptionSecondary}
+                                </p>
+                              ) : null}
+                              {inlineDueType ? (
+                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {inlineDueType}
+                                </p>
+                              ) : null}
+                              {inlineNote ? (
+                                <p className={`mt-0.5 text-xs ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                                  {inlineNote}
                                 </p>
                               ) : null}
                             </div>
@@ -1749,10 +1769,6 @@ export default function MembershipDetailPage() {
                             <div>
                               <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>User ID</p>
                               <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.actor || "System"}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className={isReversal ? "text-red-400" : "text-muted-foreground"}>Note</p>
-                              <p className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.note || "—"}</p>
                             </div>
                           </div>
                           <div className="mt-3 flex gap-2">
@@ -1790,7 +1806,7 @@ export default function MembershipDetailPage() {
                     </div>
 
                     <div className="hidden md:block print:block rounded-lg border overflow-x-auto">
-                      <table className="w-full text-sm min-w-[1100px]">
+                      <table className="w-full text-sm min-w-[900px]">
                         <thead>
                           <tr className="bg-muted/50 border-b">
                             <th className="text-left p-3 font-medium text-muted-foreground">
@@ -1800,13 +1816,7 @@ export default function MembershipDetailPage() {
                               Action
                             </th>
                             <th className="text-left p-3 font-medium text-muted-foreground">
-                              Due Type
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
                               Description
-                            </th>
-                            <th className="text-left p-3 font-medium text-muted-foreground">
-                              Note
                             </th>
                             <th className="text-right p-3 font-medium text-muted-foreground">
                               Amount
@@ -1824,6 +1834,18 @@ export default function MembershipDetailPage() {
                               entry.entryType === "due" && entry.note ? entry.note : entry.detail;
                             const descriptionSecondary =
                               entry.entryType === "due" && entry.note ? entry.detail : null;
+                            const inlineDueType =
+                              entry.dueType &&
+                              entry.dueType !== descriptionPrimary &&
+                              entry.dueType !== descriptionSecondary
+                                ? entry.dueType
+                                : null;
+                            const inlineNote =
+                              entry.note &&
+                              entry.note !== descriptionPrimary &&
+                              entry.note !== descriptionSecondary
+                                ? entry.note
+                                : null;
                             return (
                             <tr
                               key={entry.id}
@@ -1837,19 +1859,19 @@ export default function MembershipDetailPage() {
                               <td className="p-3">
                                 <div className={`font-medium ${isReversal ? "text-red-400" : ""}`}>{entry.action}</div>
                               </td>
-                              <td className={`p-3 max-w-[180px] truncate ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
-                                {entry.dueType || "—"}
-                              </td>
-                              <td className={`p-3 max-w-[220px] ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
+                              <td className={`p-3 max-w-[320px] ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
                                 <div className="min-w-0">
                                   <div className="truncate">{descriptionPrimary || "—"}</div>
                                   {descriptionSecondary ? (
                                     <div className="truncate text-xs opacity-80">{descriptionSecondary}</div>
                                   ) : null}
+                                  {inlineDueType ? (
+                                    <div className="truncate text-xs opacity-80">{inlineDueType}</div>
+                                  ) : null}
+                                  {inlineNote ? (
+                                    <div className="truncate text-xs opacity-80">{inlineNote}</div>
+                                  ) : null}
                                 </div>
-                              </td>
-                              <td className={`p-3 max-w-[260px] truncate ${isReversal ? "text-red-400" : "text-muted-foreground"}`}>
-                                {entry.note || "—"}
                               </td>
                               <td
                                 className={`p-3 text-right tabular-nums font-semibold ${
