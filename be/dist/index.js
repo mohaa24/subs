@@ -28,6 +28,7 @@ const zones_js_1 = require("./routes/zones.js");
 const due_types_js_1 = require("./routes/due-types.js");
 const activity_feed_js_1 = require("./routes/activity-feed.js");
 const public_membership_export_js_1 = require("./routes/public-membership-export.js");
+const qz_js_1 = require("./routes/qz.js");
 const cron_js_1 = require("./lib/cron.js");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4000;
@@ -59,6 +60,7 @@ app.use("/reports", reports_js_1.reportsRouter);
 app.use("/messages", messages_js_1.messagesRouter);
 app.use("/zones", zones_js_1.zonesRouter);
 app.use("/due-types", due_types_js_1.dueTypesRouter);
+app.use("/integrations/qz", qz_js_1.qzRouter);
 app.use("/", activity_feed_js_1.activityFeedRouter);
 app.listen(PORT, () => {
     console.log(`BE running on http://localhost:${PORT}`);
