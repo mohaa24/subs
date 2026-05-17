@@ -124,7 +124,7 @@ export default function PeriodicPaymentReportPage() {
             const signedAmount = payment.isReversed ? -payment.amount : payment.amount;
             totals.set(dueType, (totals.get(dueType) ?? 0) + signedAmount);
           }
-          return [...totals.entries()]
+          return Array.from(totals.entries())
             .map(([dueType, amount]) => ({ dueType, amount }))
             .filter((item) => Math.abs(item.amount) > 0.000001)
             .sort((a, b) => {
