@@ -357,6 +357,12 @@ function MembersContent() {
     const zone = zones.find((item) => String(item.code) === areaCode);
     return zone ? `${zone.code} - ${zone.name}` : areaCode;
   };
+  const membershipIdOnly = (membershipNo: string | null | undefined) => {
+    const normalized = membershipNo?.trim();
+    if (!normalized) return null;
+    const match = normalized.match(/(\d+)\s*$/);
+    return match?.[1] ?? normalized;
+  };
   const memberDisplayName = (membership: Membership) =>
     membership.hod?.nameWithInitials ?? membership.hod?.fullName ?? membership.hodPersonId;
   const memberFullName = (membership: Membership) =>
@@ -705,9 +711,16 @@ function MembersContent() {
                           <p className="font-medium break-words">
                             {memberDisplayName(m)}
                           </p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {[memberZone(m), m.membershipNo].filter(Boolean).join(" • ")}
-                          </p>
+                          {memberZone(m) && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Zone: {memberZone(m)}
+                            </p>
+                          )}
+                          {membershipIdOnly(m.membershipNo) && (
+                            <p className="text-xs text-muted-foreground">
+                              ID: {membershipIdOnly(m.membershipNo)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                           <MembershipActions membership={m} />
@@ -778,9 +791,16 @@ function MembersContent() {
                                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
                                 )}
                               </div>
-                              <p className="text-xs text-muted-foreground">
-                                {[memberZone(m), m.membershipNo].filter(Boolean).join(" • ")}
-                              </p>
+                              {memberZone(m) && (
+                                <p className="text-xs text-muted-foreground">
+                                  Zone: {memberZone(m)}
+                                </p>
+                              )}
+                              {membershipIdOnly(m.membershipNo) && (
+                                <p className="text-xs text-muted-foreground">
+                                  ID: {membershipIdOnly(m.membershipNo)}
+                                </p>
+                              )}
                             </div>
                           </td>
                           <td className="p-3">

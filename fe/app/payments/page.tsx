@@ -381,12 +381,18 @@ export default function PaymentsPage() {
     const zone = zones.find((item) => item.code === areaCode);
     return zone ? `${zone.code} - ${zone.name}` : String(areaCode);
   };
+  const membershipIdOnly = (membershipNo: string | null | undefined) => {
+    const normalized = membershipNo?.trim();
+    if (!normalized) return null;
+    const match = normalized.match(/(\d+)\s*$/);
+    return match?.[1] ?? normalized;
+  };
   const dueMemberDisplayName = (due: PaymentDue) =>
     due.membership?.hod?.nameWithInitials ?? due.membership?.hod?.fullName ?? due.membership?.membershipNo ?? due.membershipId;
   const dueMemberFullName = (due: PaymentDue) =>
     due.membership?.hod?.fullName ?? due.membership?.hod?.nameWithInitials ?? due.membershipId;
   const dueMemberZone = (due: PaymentDue) => zoneLabel(due.membership?.areaCode);
-  const dueMemberMembershipNo = (due: PaymentDue) => due.membership?.membershipNo ?? null;
+  const dueMemberMembershipId = (due: PaymentDue) => membershipIdOnly(due.membership?.membershipNo);
   const paymentMemberDisplayName = (payment: Payment) =>
     payment.membership?.hod?.nameWithInitials ??
     payment.membership?.hod?.fullName ??
@@ -396,12 +402,8 @@ export default function PaymentsPage() {
     payment.membership?.hod?.fullName ??
     payment.membership?.hod?.nameWithInitials ??
     payment.membershipId;
-  const paymentMemberMeta = (payment: Payment) => {
-    const zone = zoneLabel(payment.membership?.areaCode);
-    return [zone ? `Zone: ${zone}` : null, payment.membership?.membershipNo]
-      .filter(Boolean)
-      .join(" • ");
-  };
+  const paymentMemberZone = (payment: Payment) => zoneLabel(payment.membership?.areaCode);
+  const paymentMemberMembershipId = (payment: Payment) => membershipIdOnly(payment.membership?.membershipNo);
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
@@ -511,12 +513,12 @@ export default function PaymentsPage() {
                             </Link>
                             {dueMemberZone(d) && (
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                {dueMemberZone(d)}
+                                Zone: {dueMemberZone(d)}
                               </p>
                             )}
-                            {dueMemberMembershipNo(d) && (
+                            {dueMemberMembershipId(d) && (
                               <p className="text-xs text-muted-foreground">
-                                {dueMemberMembershipNo(d)}
+                                ID: {dueMemberMembershipId(d)}
                               </p>
                             )}
                           </div>
@@ -600,12 +602,12 @@ export default function PaymentsPage() {
                               </Link>
                               {dueMemberZone(d) && (
                                 <p className="text-muted-foreground text-xs">
-                                  {dueMemberZone(d)}
+                                  Zone: {dueMemberZone(d)}
                                 </p>
                               )}
-                              {dueMemberMembershipNo(d) && (
+                              {dueMemberMembershipId(d) && (
                                 <p className="text-muted-foreground text-xs">
-                                  {dueMemberMembershipNo(d)}
+                                  ID: {dueMemberMembershipId(d)}
                                 </p>
                               )}
                             </td>
@@ -724,9 +726,16 @@ export default function PaymentsPage() {
                           >
                             {paymentMemberDisplayName(p)}
                           </Link>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {paymentMemberMeta(p)}
-                          </p>
+                          {paymentMemberZone(p) && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Zone: {paymentMemberZone(p)}
+                            </p>
+                          )}
+                          {paymentMemberMembershipId(p) && (
+                            <p className="text-xs text-muted-foreground">
+                              ID: {paymentMemberMembershipId(p)}
+                            </p>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {new Date(p.paymentDate).toLocaleDateString()}
@@ -799,9 +808,16 @@ export default function PaymentsPage() {
                             >
                               {paymentMemberDisplayName(p)}
                             </Link>
-                            <p className="text-muted-foreground text-xs">
-                              {paymentMemberMeta(p)}
-                            </p>
+                            {paymentMemberZone(p) && (
+                              <p className="text-muted-foreground text-xs">
+                                Zone: {paymentMemberZone(p)}
+                              </p>
+                            )}
+                            {paymentMemberMembershipId(p) && (
+                              <p className="text-muted-foreground text-xs">
+                                ID: {paymentMemberMembershipId(p)}
+                              </p>
+                            )}
                           </td>
                           <td className="p-2.5">{paymentMemberFullName(p)}</td>
                           <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>

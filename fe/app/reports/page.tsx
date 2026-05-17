@@ -333,7 +333,7 @@ export default function ReportsPage() {
                   <SelectContent>
                     <SelectItem value="persons">{t("reports.persons")}</SelectItem>
                     <SelectItem value="memberships">Membership Data Report</SelectItem>
-                    <SelectItem value="payments">{t("reports.payments")}</SelectItem>
+                    <SelectItem value="payments">Periodic Payment Report</SelectItem>
                     <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
                     <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
                     <SelectItem value="outstandingBalances">Outstanding Balance Report</SelectItem>

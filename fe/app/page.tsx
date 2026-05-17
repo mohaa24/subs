@@ -258,7 +258,7 @@ export default function HomePage() {
       bg: "bg-rose-500/10",
     },
     {
-      label: "Amount Collected",
+      label: "Net Collected",
       value: stats ? formatCompactRs(stats.collectedThisMonth) : "—",
       icon: Banknote,
       color: "text-emerald-500",
