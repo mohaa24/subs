@@ -27,7 +27,7 @@ exports.dashboardRouter.get("/", async (req, res) => {
         isArchived: false,
         OR: [{ livingStatus: "Active" }, { livingStatus: null }],
     };
-    const [totalHouseholds, totalHeadcount, adultsCount, youthCount, childrenCount, currentMonthDues, currentMonthPayments, currentMonthOverpayments,] = await Promise.all([
+    const [totalHouseholds, totalHeadcount, adultsCount, youthCount, childrenCount, currentMonthDues, activePaymentsInPeriod, currentMonthOverpayments, currentOutstandingDues,] = await Promise.all([
         prisma_js_1.prisma.membership.count({ where: { ...orgFilter, isArchived: false } }),
         prisma_js_1.prisma.person.count({ where: { ...orgFilter, ...activePersonFilter } }),
         prisma_js_1.prisma.person.count({
@@ -62,7 +62,9 @@ exports.dashboardRouter.get("/", async (req, res) => {
             where: {
                 ...orgFilter,
                 paymentDate: { gte: rangeStart, lt: rangeEnd },
+                isReversed: false,
             },
+            _count: { _all: true },
             _sum: { amount: true },
         }),
         prisma_js_1.prisma.membershipCreditLedger.aggregate({
@@ -73,10 +75,22 @@ exports.dashboardRouter.get("/", async (req, res) => {
             },
             _sum: { amountDelta: true },
         }),
+        prisma_js_1.prisma.paymentDue.findMany({
+            where: {
+                ...orgFilter,
+                status: { not: "paid" },
+            },
+            select: { amountDue: true, amountPaid: true },
+        }),
     ]);
     const totalDue = currentMonthDues.reduce((sum, d) => sum.add(d.amountDue), new library_1.Decimal(0));
     const outstandingThisMonth = currentMonthDues.reduce((sum, d) => sum.add(d.amountDue.sub(d.amountPaid)), new library_1.Decimal(0));
-    const collectedThisMonth = currentMonthPayments._sum.amount ?? new library_1.Decimal(0);
+    const currentOutstanding = currentOutstandingDues.reduce((sum, d) => {
+        const remaining = d.amountDue.sub(d.amountPaid);
+        return remaining.gt(0) ? sum.add(remaining) : sum;
+    }, new library_1.Decimal(0));
+    const netCollectedInPeriod = activePaymentsInPeriod._sum.amount ?? new library_1.Decimal(0);
+    const activePaymentCountInPeriod = activePaymentsInPeriod._count._all;
     const overpaymentsThisMonth = currentMonthOverpayments._sum.amountDelta ?? new library_1.Decimal(0);
     return res.json({
         totalHouseholds,
@@ -85,9 +99,12 @@ exports.dashboardRouter.get("/", async (req, res) => {
         youth: youthCount,
         children: childrenCount,
         totalDueThisMonth: totalDue.toNumber(),
-        collectedThisMonth: new library_1.Decimal(collectedThisMonth.toString()).toNumber(),
+        collectedThisMonth: new library_1.Decimal(netCollectedInPeriod.toString()).toNumber(),
+        netCollectedInPeriod: new library_1.Decimal(netCollectedInPeriod.toString()).toNumber(),
         outstandingThisMonth: outstandingThisMonth.toNumber(),
+        currentOutstanding: currentOutstanding.toNumber(),
         overpaymentsThisMonth: new library_1.Decimal(overpaymentsThisMonth.toString()).toNumber(),
+        activePaymentsInPeriod: activePaymentCountInPeriod,
         period: `${rangeStart.toISOString().slice(0, 10)}:${new Date(rangeEnd.getTime() - 1)
             .toISOString()
             .slice(0, 10)}`,

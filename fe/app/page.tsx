@@ -282,32 +282,32 @@ function HomePageContent() {
 
   const ROW1_CARDS = [
     {
-      label: "Amount Due",
+      label: "Dues Generated",
       value: stats ? formatCompactRs(stats.totalDueThisMonth) : "—",
       icon: Receipt,
       color: "text-rose-500",
       bg: "bg-rose-500/10",
     },
     {
+      label: "No of Payments",
+      value: stats ? formatCompactInteger(stats.activePaymentsInPeriod) : "—",
+      icon: CreditCard,
+      color: "text-sky-500",
+      bg: "bg-sky-500/10",
+    },
+    {
       label: "Net Collected",
-      value: stats ? formatCompactRs(stats.collectedThisMonth) : "—",
+      value: stats ? formatCompactRs(stats.netCollectedInPeriod) : "—",
       icon: Banknote,
       color: "text-emerald-500",
       bg: "bg-emerald-500/10",
     },
     {
-      label: "Outstanding Balance",
-      value: stats ? formatCompactRs(stats.outstandingThisMonth) : "—",
+      label: "Outstanding(Current)",
+      value: stats ? formatCompactRs(stats.currentOutstanding) : "—",
       icon: Receipt,
       color: "text-amber-500",
       bg: "bg-amber-500/10",
-    },
-    {
-      label: "Overpayments",
-      value: stats ? formatCompactRs(stats.overpaymentsThisMonth) : "—",
-      icon: Repeat,
-      color: "text-sky-500",
-      bg: "bg-sky-500/10",
     },
   ];
 

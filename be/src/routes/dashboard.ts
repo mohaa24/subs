@@ -39,8 +39,9 @@ dashboardRouter.get("/", async (req, res) => {
     youthCount,
     childrenCount,
     currentMonthDues,
-    currentMonthPayments,
+    activePaymentsInPeriod,
     currentMonthOverpayments,
+    currentOutstandingDues,
   ] = await Promise.all([
     prisma.membership.count({ where: { ...orgFilter, isArchived: false } }),
 
@@ -82,7 +83,9 @@ dashboardRouter.get("/", async (req, res) => {
       where: {
         ...orgFilter,
         paymentDate: { gte: rangeStart, lt: rangeEnd },
+        isReversed: false,
       },
+      _count: { _all: true },
       _sum: { amount: true },
     }),
 
@@ -94,6 +97,14 @@ dashboardRouter.get("/", async (req, res) => {
       },
       _sum: { amountDelta: true },
     }),
+
+    prisma.paymentDue.findMany({
+      where: {
+        ...orgFilter,
+        status: { not: "paid" },
+      },
+      select: { amountDue: true, amountPaid: true },
+    }),
   ]);
 
   const totalDue = currentMonthDues.reduce(
@@ -104,7 +115,12 @@ dashboardRouter.get("/", async (req, res) => {
     (sum, d) => sum.add(d.amountDue.sub(d.amountPaid)),
     new Decimal(0)
   );
-  const collectedThisMonth = currentMonthPayments._sum.amount ?? new Decimal(0);
+  const currentOutstanding = currentOutstandingDues.reduce((sum, d) => {
+    const remaining = d.amountDue.sub(d.amountPaid);
+    return remaining.gt(0) ? sum.add(remaining) : sum;
+  }, new Decimal(0));
+  const netCollectedInPeriod = activePaymentsInPeriod._sum.amount ?? new Decimal(0);
+  const activePaymentCountInPeriod = activePaymentsInPeriod._count._all;
   const overpaymentsThisMonth = currentMonthOverpayments._sum.amountDelta ?? new Decimal(0);
 
   return res.json({
@@ -114,9 +130,12 @@ dashboardRouter.get("/", async (req, res) => {
     youth: youthCount,
     children: childrenCount,
     totalDueThisMonth: totalDue.toNumber(),
-    collectedThisMonth: new Decimal(collectedThisMonth.toString()).toNumber(),
+    collectedThisMonth: new Decimal(netCollectedInPeriod.toString()).toNumber(),
+    netCollectedInPeriod: new Decimal(netCollectedInPeriod.toString()).toNumber(),
     outstandingThisMonth: outstandingThisMonth.toNumber(),
+    currentOutstanding: currentOutstanding.toNumber(),
     overpaymentsThisMonth: new Decimal(overpaymentsThisMonth.toString()).toNumber(),
+    activePaymentsInPeriod: activePaymentCountInPeriod,
     period: `${rangeStart.toISOString().slice(0, 10)}:${new Date(rangeEnd.getTime() - 1)
       .toISOString()
       .slice(0, 10)}`,

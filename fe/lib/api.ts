@@ -326,8 +326,11 @@ export interface DashboardStats {
   children: number;
   totalDueThisMonth: number;
   collectedThisMonth: number;
+  netCollectedInPeriod: number;
   outstandingThisMonth: number;
+  currentOutstanding: number;
   overpaymentsThisMonth: number;
+  activePaymentsInPeriod: number;
   period: string;
 }
 
