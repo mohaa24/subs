@@ -98,8 +98,67 @@
   table {
     page-break-inside: auto;
   }
+  thead {
+    display: table-header-group;
+  }
   tr {
     page-break-inside: avoid;
+  }
+
+  body.payment-report-print-page [aria-hidden="true"] {
+    display: none !important;
+  }
+
+  .payment-report-table {
+    table-layout: fixed;
+    font-size: 8px;
+    line-height: 1.25;
+  }
+
+  .payment-report-table th,
+  .payment-report-table td {
+    padding: 4px !important;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    vertical-align: top;
+  }
+
+  .payment-report-col-date {
+    width: 9%;
+  }
+
+  .payment-report-col-member {
+    width: 21%;
+  }
+
+  .payment-report-col-amount {
+    width: 9%;
+  }
+
+  .payment-report-col-method {
+    width: 11%;
+  }
+
+  .payment-report-col-receipt {
+    width: 12%;
+  }
+
+  .payment-report-col-collector {
+    width: 12%;
+  }
+
+  .payment-report-col-status {
+    width: 10%;
+  }
+
+  .payment-report-col-reversal {
+    width: 16%;
+  }
+
+  .payment-report-table .rounded-full {
+    border-radius: 4px !important;
+    gap: 3px !important;
+    padding: 2px 4px !important;
   }
 
   .rounded-xl, .rounded-lg {
