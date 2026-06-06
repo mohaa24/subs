@@ -5,10 +5,10 @@ making deployment, environment, or database changes.
 
 ## Environments And Branches
 
-- Production branch: `prd`.
+- Production deployment branch: `main`.
 - Staging branch: `stg`.
-- If this clone or the server is still on an older branch such as `v2`, stop and
-  confirm the intended branch before deploying.
+- Older branches such as `v2` and `prd` should not be deployed directly. Merge
+  required changes into `main`, then deploy `main`.
 - Production app path on the server: the checked-out repo root.
 - Production app is run with Docker Compose.
 - Production app ports: frontend `3000`, backend `4000`.
@@ -79,7 +79,7 @@ ls -lh "backups/subs_prod_before_migration_$TS.dump"
 
 ## Production Deployment Checklist
 
-1. Confirm the target branch is `prd`.
+1. Confirm the target branch is `main`.
 2. Check server git status and do not overwrite unrelated server-local changes.
 3. Pull using fast-forward only.
 4. Rebuild and restart with Docker Compose.
@@ -93,8 +93,8 @@ ssh <server-user>@<server-host>
 cd <repo-root>
 git status --short
 git fetch origin
-git checkout prd
-git pull --ff-only origin prd
+git checkout main
+git pull --ff-only origin main
 sudo docker compose up -d --build
 sudo docker compose ps
 curl -fsS http://localhost:4000/health
@@ -102,8 +102,8 @@ curl -I -fsS http://localhost:3000
 git log --oneline -1
 ```
 
-If the server is not on `prd`, or if `prd` does not exist yet, stop and confirm
-the branch migration plan with the user before deploying.
+If the server is not on `main`, switch it to `main` only after confirming the
+branch migration plan with the user. Do not deploy directly from `v2` or `prd`.
 
 ## Migration Checklist
 
