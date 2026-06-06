@@ -44,6 +44,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { RESIDENT_TYPES } from "@/lib/constants";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 const LIVING_STATUS_OPTIONS = ["Active", "Deceased", "PermanentlyRelocated"] as const;
 
@@ -626,7 +627,7 @@ function PersonsPageContent() {
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
         <Breadcrumb
-          items={[{ label: "Dashboard", href: "/" }, { label: "Manage People" }]}
+          items={[{ label: "Dashboard", href: dashboardFlowHref("person") }, { label: "Manage People" }]}
         />
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">

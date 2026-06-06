@@ -10,6 +10,7 @@ import { AbstractBg } from "@/components/abstract-bg";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, TrendingUp, Users, ArrowLeft } from "lucide-react";
 import type { Distribution, DashboardStats, PaymentDue, DistributionReport } from "@/lib/api";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 interface DuesResponse {
   items: PaymentDue[];
@@ -152,7 +153,7 @@ export default function ChartsPage() {
       <main className="relative z-10 p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Link
-            href="/"
+            href={dashboardFlowHref("reports")}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />

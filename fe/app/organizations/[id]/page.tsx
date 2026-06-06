@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import {
   Building2,
   Phone,
@@ -272,7 +273,7 @@ export default function OrganizationDetailPage() {
         <main className="relative z-10 p-6 max-w-5xl mx-auto">
           <Breadcrumb
             items={[
-              { label: t("dashboard.title"), href: "/" },
+              { label: t("dashboard.title"), href: dashboardFlowHref("admin") },
               { label: t("organizations.title"), href: "/organizations" },
               { label: "…" },
             ]}
@@ -300,7 +301,7 @@ export default function OrganizationDetailPage() {
         <main className="relative z-10 p-6 max-w-5xl mx-auto">
           <Breadcrumb
             items={[
-              { label: t("dashboard.title"), href: "/" },
+              { label: t("dashboard.title"), href: dashboardFlowHref("admin") },
               { label: t("organizations.title"), href: "/organizations" },
             ]}
           />
@@ -328,7 +329,7 @@ export default function OrganizationDetailPage() {
       <main className="relative z-10 p-6 max-w-5xl mx-auto">
         <Breadcrumb
           items={[
-            { label: t("dashboard.title"), href: "/" },
+            { label: t("dashboard.title"), href: dashboardFlowHref("admin") },
             { label: t("organizations.title"), href: "/organizations" },
             { label: org.name },
           ]}

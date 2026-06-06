@@ -26,6 +26,7 @@ import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { MapPin, Plus, Pencil, Power, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 const MAX_ZONE_CODE = 9;
 
@@ -184,7 +185,7 @@ export default function ZonesPage() {
       <AbstractBg />
       <Header />
       <main className="relative p-6 max-w-4xl mx-auto">
-        <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Settings" }, { label: "Zones" }]} />
+        <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("admin") }, { label: "Settings" }, { label: "Zones" }]} />
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <MapPin className="h-5 w-5 text-muted-foreground" />

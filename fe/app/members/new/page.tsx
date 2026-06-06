@@ -28,6 +28,7 @@ import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS } from "@/lib/constants";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
@@ -422,7 +423,7 @@ export default function NewMembershipPage() {
       <main className="p-6 max-w-3xl mx-auto">
         <Breadcrumb
           items={[
-            { label: "Dashboard", href: "/" },
+            { label: "Dashboard", href: dashboardFlowHref("membership") },
             { label: "Members", href: "/members" },
             { label: "New Membership" },
           ]}

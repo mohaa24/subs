@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { MessageSquare, Plus, Trash2, Send, Users, X } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 interface GroupMember {
   id: string;
@@ -216,7 +217,7 @@ export default function AnnouncementsPage() {
       <AbstractBg />
       <Header />
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("announcements.title") }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("announcements") }, { label: t("announcements.title") }]} />
 
         <h1 className="text-xl font-semibold text-foreground flex items-center gap-2 mb-5">
           <MessageSquare className="h-5 w-5 text-primary" />
@@ -431,4 +432,3 @@ export default function AnnouncementsPage() {
     </div>
   );
 }
-

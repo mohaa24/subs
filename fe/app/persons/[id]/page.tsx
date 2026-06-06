@@ -19,6 +19,7 @@ import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { BLOOD_GROUPS, RESIDENT_TYPES } from "@/lib/constants";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import {
   User,
   BadgeCheck,
@@ -285,7 +286,7 @@ export default function PersonDetailPage() {
       <main className="p-6 max-w-5xl mx-auto">
         <Breadcrumb
           items={[
-            { label: "Dashboard", href: "/" },
+            { label: "Dashboard", href: dashboardFlowHref("person") },
             { label: "Manage People", href: "/persons" },
             { label: person.fullName },
           ]}

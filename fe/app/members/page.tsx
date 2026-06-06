@@ -26,6 +26,7 @@ import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveR
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -415,7 +416,7 @@ function MembersContent() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-4xl mx-auto">
-        <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Members" }]} />
+        <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("membership") }, { label: "Members" }]} />
 
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground">Members</h1>

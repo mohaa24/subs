@@ -26,6 +26,7 @@ import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { CreditCard, Plus, Pencil, Power } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 export default function DueTypesPage() {
   const { user, loading: authLoading } = useAuth();
@@ -168,7 +169,7 @@ export default function DueTypesPage() {
       <main className="relative p-6 max-w-4xl mx-auto">
         <Breadcrumb
           items={[
-            { label: "Dashboard", href: "/" },
+            { label: "Dashboard", href: dashboardFlowHref("admin") },
             { label: "Settings" },
             { label: "Due Types" },
           ]}

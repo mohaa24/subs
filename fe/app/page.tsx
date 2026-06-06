@@ -1,8 +1,8 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
+import { normalizeDashboardFlow } from "@/lib/dashboard-flows";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -104,9 +105,29 @@ type FlowTab = {
 };
 
 export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          </div>
+        </div>
+      }
+    >
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageContent() {
   const { user, loading } = useAuth();
   const { t } = useTranslation();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeFlow = normalizeDashboardFlow(searchParams.get("flow"));
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsWindowDays, setStatsWindowDays] = useState("30");
@@ -116,6 +137,16 @@ export default function HomePage() {
   const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
+
+  const setActiveFlow = useCallback(
+    (flow: string) => {
+      const nextFlow = normalizeDashboardFlow(flow);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("flow", nextFlow);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
@@ -482,7 +513,7 @@ export default function HomePage() {
         },
         {
           actionKey: "reports-periodic-payments",
-          title: t("reports.periodicPayments"),
+          title: "Periodic Payment Report",
           description: t("reports.periodicPaymentsDesc"),
           icon: Receipt,
           href: "/reports/payments",
@@ -659,7 +690,7 @@ export default function HomePage() {
         <div className="mb-4">
           <h3 className="text-sm font-medium text-muted-foreground">{t("dashboard.flows")}</h3>
         </div>
-        <Tabs defaultValue="person" className="w-full">
+        <Tabs value={activeFlow} onValueChange={setActiveFlow} className="w-full">
           <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
             {FLOW_TABS.map((tab) => (
               <TabsTrigger

@@ -15,6 +15,7 @@ import { UserPlus, Shield, Users2, CreditCard, MessageSquare, Package, FileText,
 import { Checkbox } from "@/components/ui/checkbox";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 const PERMISSION_SECTIONS: {
   labelKey: string;
@@ -195,7 +196,7 @@ export default function UsersPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-4xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("users.title") }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("admin") }, { label: t("users.title") }]} />
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground">{t("users.title")}</h1>
           <Button size="sm" className="gap-1.5" onClick={() => setDialogOpen(true)}>

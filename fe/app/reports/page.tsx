@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { FileText, Download, Search, Filter } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 type EntityType =
   | "persons"
@@ -294,7 +295,7 @@ export default function ReportsPage() {
       <Header />
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
         <Breadcrumb
-          items={[{ label: t("dashboard.title"), href: "/" }, { label: t("reports.title") }]}
+          items={[{ label: t("dashboard.title"), href: dashboardFlowHref("reports") }, { label: t("reports.title") }]}
         />
 
         <div className="flex items-center justify-between mb-5">

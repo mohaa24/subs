@@ -38,6 +38,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import {
   RecordPaymentDialog,
@@ -925,7 +926,7 @@ export default function MembershipDetailPage() {
         <div className="print:hidden">
           <Breadcrumb
             items={[
-              { label: "Dashboard", href: "/" },
+              { label: "Dashboard", href: dashboardFlowHref("membership") },
               { label: "Members", href: "/members" },
               { label: membership.membershipNo },
             ]}

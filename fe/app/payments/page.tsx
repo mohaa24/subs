@@ -35,6 +35,7 @@ import { ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle } f
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import {
   getPaymentDuePeriodLine,
   getPaymentDueSubtitle,
@@ -413,7 +414,7 @@ export default function PaymentsPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("reports.payments") }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: t("reports.payments") }]} />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
           <h1 className="text-xl font-semibold text-foreground">{t("payments.title")}</h1>

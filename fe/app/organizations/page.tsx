@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Plus, Eye, Pencil } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 type OrgRow = {
   id: string;
@@ -122,7 +123,7 @@ export default function OrganizationsPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-7xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("organizations.title") }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("admin") }, { label: t("organizations.title") }]} />
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground">{t("organizations.title")}</h1>
           {isSuperUser && (

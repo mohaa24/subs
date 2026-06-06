@@ -44,6 +44,7 @@ import {
   Filter,
 } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 type Freq = "Once" | "Daily" | "Monthly" | "Yearly";
 
@@ -391,7 +392,7 @@ export default function DistributionsPage() {
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
         <Breadcrumb
           items={[
-            { label: t("dashboard.title"), href: "/" },
+            { label: t("dashboard.title"), href: dashboardFlowHref("distributions") },
             ...(selectedId
               ? [{ label: t("distributions.title"), href: "/distributions" }, { label: detail?.name ?? t("distributions.detail") }]
               : [{ label: t("distributions.title") }]),

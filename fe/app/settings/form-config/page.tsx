@@ -18,6 +18,7 @@ import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Settings, Save } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 const PERSON_FIELDS = [
   "title", "nameWithInitials", "fullName", "preferredName", "residentType", "gender",
@@ -164,7 +165,7 @@ export default function FormConfigPage() {
       <AbstractBg />
       <Header />
       <main className="relative p-6 max-w-4xl mx-auto">
-        <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Settings" }, { label: "Form Configuration" }]} />
+        <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("admin") }, { label: "Settings" }, { label: "Form Configuration" }]} />
         <div className="flex items-center gap-2 mb-5">
           <Settings className="h-5 w-5 text-muted-foreground" />
           <h1 className="text-xl font-semibold text-foreground">Form Configuration</h1>

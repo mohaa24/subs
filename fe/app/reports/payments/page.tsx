@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { FileText, Download, Printer } from "lucide-react";
 
 interface PeriodicPayment {
@@ -140,7 +141,7 @@ export default function PeriodicPaymentReportPage() {
       <Header />
       <main className="relative p-6 max-w-5xl mx-auto print:p-0 print:max-w-none">
         <div className="print:hidden">
-          <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Reports", href: "/reports" }, { label: "Periodic Payment Report" }]} />
+          <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("reports") }, { label: "Reports", href: dashboardFlowHref("reports") }, { label: "Periodic Payment Report" }]} />
         </div>
 
         <div className="hidden print:block mb-4 pb-3 border-b-2 border-foreground/20">
@@ -244,20 +245,20 @@ export default function PeriodicPaymentReportPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-t">
-                          <td className="p-2.5">Active</td>
-                          <td className="p-2.5 text-right tabular-nums">{report.activePayments}</td>
-                          <td className="p-2.5 text-right tabular-nums">{formatRs(report.netCollected)}</td>
+                        <tr className="border-t bg-muted/30 font-semibold">
+                          <td className="p-2.5">Transactions</td>
+                          <td className="p-2.5 text-right tabular-nums">{report.totalPayments}</td>
+                          <td className="p-2.5 text-right tabular-nums">{formatRs(report.totalCollected)}</td>
                         </tr>
                         <tr className="border-t">
                           <td className="p-2.5">Reversed</td>
                           <td className="p-2.5 text-right tabular-nums">{report.reversedPayments}</td>
                           <td className="p-2.5 text-right tabular-nums">{formatRs(report.totalReversed)}</td>
                         </tr>
-                        <tr className="border-t bg-muted/30 font-semibold">
-                          <td className="p-2.5">Total</td>
-                          <td className="p-2.5 text-right tabular-nums">{report.totalPayments}</td>
-                          <td className="p-2.5 text-right tabular-nums">{formatRs(report.totalCollected)}</td>
+                        <tr className="border-t">
+                          <td className="p-2.5">Active</td>
+                          <td className="p-2.5 text-right tabular-nums">{report.activePayments}</td>
+                          <td className="p-2.5 text-right tabular-nums">{formatRs(report.netCollected)}</td>
                         </tr>
                       </tbody>
                     </table>
