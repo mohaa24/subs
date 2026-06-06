@@ -33,6 +33,7 @@ const permanentDisabilityOptions = [
     "More than one disability",
     "Other",
 ];
+const maxZoneCode = 9;
 const createSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
     title: zod_1.z.enum(titles),
@@ -48,6 +49,7 @@ const createSchema = zod_1.z.object({
     bloodGroup: zod_1.z.enum(bloodGroups).optional(),
     maritalStatus: zod_1.z.enum(maritalStatuses),
     address: zod_1.z.string().min(1),
+    areaCode: zod_1.z.number().int().min(1).max(maxZoneCode).optional().nullable(),
     mobileNumber: zod_1.z.string().optional(),
     whatsAppNumber: zod_1.z.string().optional(),
     email: zod_1.z.string().email().optional().or(zod_1.z.literal("")),
@@ -71,9 +73,33 @@ exports.personsRouter.get("/", async (req, res) => {
     const q = req.query.q?.trim() || "";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
+    const includeArchived = req.query.includeArchived === "true";
+    const residentType = req.query.residentType?.trim() || "";
+    const livingStatus = req.query.livingStatus?.trim() || "";
+    const areaCode = Number.parseInt(String(req.query.areaCode ?? ""), 10);
+    const isMadarasaStudent = req.query.isMadarasaStudent?.trim() || "";
+    const hasMembership = req.query.hasMembership?.trim() || "";
     const where = {};
     if (orgId)
         where.organizationId = orgId;
+    if (!includeArchived)
+        where.isArchived = false;
+    if (residentType && residentTypes.includes(residentType)) {
+        where.residentType = residentType;
+    }
+    if (livingStatus && livingStatuses.includes(livingStatus)) {
+        where.livingStatus = livingStatus;
+    }
+    if (Number.isInteger(areaCode) && areaCode > 0 && areaCode <= maxZoneCode)
+        where.areaCode = areaCode;
+    if (isMadarasaStudent === "true")
+        where.isMadarasaStudent = true;
+    if (isMadarasaStudent === "false")
+        where.isMadarasaStudent = false;
+    if (hasMembership === "true")
+        where.membershipId = { not: null };
+    if (hasMembership === "false")
+        where.membershipId = null;
     if (q) {
         where.OR = [
             { fullName: { contains: q, mode: "insensitive" } },
@@ -151,4 +177,19 @@ exports.personsRouter.patch("/:id", async (req, res) => {
         data,
     });
     return res.json(person);
+});
+exports.personsRouter.patch("/:id/archive", async (req, res) => {
+    const person = await prisma_js_1.prisma.person.findFirst({ where: { id: req.params.id } });
+    if (!person)
+        return res.status(404).json({ error: "Person not found" });
+    const orgId = getOrgId(req);
+    if (orgId && person.organizationId !== orgId && req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const isArchived = req.body.isArchived === true;
+    const updated = await prisma_js_1.prisma.person.update({
+        where: { id: req.params.id },
+        data: { isArchived },
+    });
+    return res.json(updated);
 });

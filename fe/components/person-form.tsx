@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { type Zone } from "@/lib/api";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PhoneInput } from "react-international-phone";
 import {
   Select,
   SelectContent,
@@ -26,10 +28,20 @@ import {
 } from "@/lib/constants";
 
 // Input sanitizers - only allow valid characters
-const onlyPhone = (v: string) => v.replace(/[^\d+\s\-]/g, "");
 const onlyNIC = (v: string) => v.replace(/[^\dVAva]/g, "").toUpperCase();
 const onlyAlphanumeric = (v: string) => v.replace(/[^\w\s\-]/g, "");
 const onlyLettersAndSpaces = (v: string) => v.replace(/[^\w\s.'\-]/g, "").replace(/\s{2,}/g, " ");
+const intlPhoneRegex = /^\+[1-9]\d{7,14}$/;
+
+function normalizeToInternationalPhone(raw: string): string {
+  const compact = raw.trim().replace(/[\s\-]/g, "");
+  if (!compact) return "";
+  if (intlPhoneRegex.test(compact)) return compact;
+  if (/^0\d{9}$/.test(compact)) return `+94${compact.slice(1)}`; // Sri Lanka local mobile format
+  if (/^94\d{9}$/.test(compact)) return `+${compact}`;
+  if (/^[1-9]\d{7,14}$/.test(compact)) return `+${compact}`;
+  return "";
+}
 
 const MARITAL_OPTIONS = [
   { value: "single", label: "Single" },
@@ -52,6 +64,7 @@ export interface PersonFormData {
   bloodGroup: string;
   maritalStatus: string;
   address: string;
+  areaCode: string;
   mobileNumber: string;
   whatsAppNumber: string;
   email: string;
@@ -78,6 +91,7 @@ const defaultPerson: PersonFormData = {
   bloodGroup: "",
   maritalStatus: "",
   address: "",
+  areaCode: "",
   mobileNumber: "",
   whatsAppNumber: "",
   email: "",
@@ -126,18 +140,27 @@ function Section({
 
 export function PersonForm({
   initial,
+  zones = [],
   onSubmit,
   onCancel,
   submitLabel = "Save",
   disabled = false,
 }: {
   initial?: Partial<PersonFormData>;
+  zones?: Zone[];
   onSubmit: (data: PersonFormData) => void;
   onCancel?: () => void;
   submitLabel?: string;
   disabled?: boolean;
 }) {
-  const [form, setForm] = useState<PersonFormData>({ ...defaultPerson, ...initial });
+  const [form, setForm] = useState<PersonFormData>(() => {
+    const merged = { ...defaultPerson, ...initial };
+    return {
+      ...merged,
+      mobileNumber: normalizeToInternationalPhone(merged.mobileNumber),
+      whatsAppNumber: normalizeToInternationalPhone(merged.whatsAppNumber),
+    };
+  });
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const getAgeFromDob = (dob: string) => {
@@ -165,6 +188,15 @@ export function PersonForm({
     }
   }, [form.dateOfBirth]);
 
+  useEffect(() => {
+    const merged = { ...defaultPerson, ...initial };
+    setForm({
+      ...merged,
+      mobileNumber: normalizeToInternationalPhone(merged.mobileNumber),
+      whatsAppNumber: normalizeToInternationalPhone(merged.whatsAppNumber),
+    });
+  }, [initial]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setValidationError(null);
@@ -184,13 +216,12 @@ export function PersonForm({
       return;
     }
     // Format validations for optional fields when provided
-    const digitCount = (s: string) => (s.match(/\d/g) || []).length;
-    if (form.mobileNumber.trim() && digitCount(form.mobileNumber) < 9) {
-      setValidationError("Mobile number must contain at least 9 digits");
+    if (form.mobileNumber.trim() && !intlPhoneRegex.test(form.mobileNumber.trim())) {
+      setValidationError("Mobile number must be in international format (e.g. +94771234567)");
       return;
     }
-    if (form.whatsAppNumber.trim() && digitCount(form.whatsAppNumber) < 9) {
-      setValidationError("WhatsApp number must contain at least 9 digits");
+    if (form.whatsAppNumber.trim() && !intlPhoneRegex.test(form.whatsAppNumber.trim())) {
+      setValidationError("WhatsApp number must be in international format (e.g. +94771234567)");
       return;
     }
     if (form.dateOfBirth && new Date(form.dateOfBirth) > new Date()) {
@@ -202,10 +233,17 @@ export function PersonForm({
       setValidationError("Please enter a valid email address");
       return;
     }
-    onSubmit(form);
+    onSubmit({
+      ...form,
+      mobileNumber: form.mobileNumber.trim(),
+      whatsAppNumber: form.whatsAppNumber.trim(),
+    });
   }
 
   const isNIC = form.identityType === "NIC";
+  const zoneOptions = zones.filter(
+    (zone) => zone.code >= 1 && zone.code <= 9 && (zone.isActive || String(zone.code) === form.areaCode)
+  );
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -364,6 +402,25 @@ export function PersonForm({
             placeholder="Street, city, postal code"
           />
         </div>
+        <div className="space-y-2">
+          <Label>Zone</Label>
+          <Select
+            value={form.areaCode || "unset"}
+            onValueChange={(v) => setForm((f) => ({ ...f, areaCode: v === "unset" ? "" : v }))}
+          >
+            <SelectTrigger disabled={disabled}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unset">Not Set</SelectItem>
+              {zoneOptions.map((zone) => (
+                <SelectItem key={zone.id} value={String(zone.code)}>
+                  {zone.code} - {zone.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </Section>
 
       <Section title="Identity" variant="default">
@@ -418,25 +475,37 @@ export function PersonForm({
       <Section title="Contact" variant="alt">
         <div className="space-y-2">
           <Label>Mobile Number</Label>
-          <Input
-            value={form.mobileNumber}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, mobileNumber: onlyPhone(e.target.value) }))
-            }
-            inputMode="tel"
-            placeholder="e.g. 0771234567"
-          />
+          <div className="phone-field">
+            <PhoneInput
+              defaultCountry="lk"
+              disableDialCodePrefill
+              value={form.mobileNumber}
+              onChange={(phone) =>
+                setForm((f) => ({ ...f, mobileNumber: phone }))
+              }
+              inputProps={{ id: "mobileNumber", name: "mobileNumber" }}
+              placeholder="e.g. +94 77 123 4567"
+              disabled={disabled}
+            />
+          </div>
+         
         </div>
         <div className="space-y-2">
           <Label>WhatsApp Number</Label>
-          <Input
-            value={form.whatsAppNumber}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, whatsAppNumber: onlyPhone(e.target.value) }))
-            }
-            inputMode="tel"
-            placeholder="e.g. 0771234567"
-          />
+          <div className="phone-field">
+            <PhoneInput
+              defaultCountry="lk"
+              disableDialCodePrefill
+              value={form.whatsAppNumber}
+              onChange={(phone) =>
+                setForm((f) => ({ ...f, whatsAppNumber: phone }))
+              }
+              inputProps={{ id: "whatsAppNumber", name: "whatsAppNumber" }}
+              placeholder="e.g. +94 77 123 4567"
+              disabled={disabled}
+            />
+          </div>
+          
         </div>
         <div className="space-y-2 md:col-span-2">
           <Label>Email</Label>
@@ -449,7 +518,7 @@ export function PersonForm({
         </div>
       </Section>
 
-      <Section title="Employment & Education" variant="default">
+      <Section title="Employment Details" variant="default">
         <div className="space-y-2">
           <Label>Occupation {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
@@ -486,6 +555,9 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
+      </Section>
+
+      <Section title="Education Details" variant="alt">
         <div className="space-y-2">
           <Label>Highest Qualification Type</Label>
           <Select
@@ -514,27 +586,17 @@ export function PersonForm({
             placeholder="e.g. BSc in Computer Science"
           />
         </div>
-        <div className="space-y-2">
-          <Label>Permanent Disability</Label>
-          <Select
-            value={form.permanentDisability || undefined}
-            onValueChange={(v) => setForm((f) => ({ ...f, permanentDisability: v }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              {PERMANENT_DISABILITY_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center space-x-2 md:col-span-2">
+          <Checkbox
+            id="madarasa"
+            checked={form.isMadarasaStudent}
+            onCheckedChange={(c) => setForm((f) => ({ ...f, isMadarasaStudent: !!c }))}
+          />
+          <Label htmlFor="madarasa">Local Madrasa Student</Label>
         </div>
       </Section>
 
-      <Section title="Other Details" variant="alt">
+      <Section title="Other Details" variant="default">
         <div className="space-y-2">
           <Label>Living Status</Label>
           <Select
@@ -553,13 +615,23 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center space-x-2 md:col-span-2">
-          <Checkbox
-            id="madarasa"
-            checked={form.isMadarasaStudent}
-            onCheckedChange={(c) => setForm((f) => ({ ...f, isMadarasaStudent: !!c }))}
-          />
-          <Label htmlFor="madarasa">Local Madarasa Student</Label>
+        <div className="space-y-2">
+          <Label>Permanent Disability</Label>
+          <Select
+            value={form.permanentDisability || undefined}
+            onValueChange={(v) => setForm((f) => ({ ...f, permanentDisability: v }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent>
+              {PERMANENT_DISABILITY_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </Section>
 

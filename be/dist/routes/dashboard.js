@@ -17,45 +17,79 @@ exports.dashboardRouter.get("/", async (req, res) => {
         return res.status(400).json({ error: "Organization scope required" });
     const orgFilter = orgId ? { organizationId: orgId } : {};
     const now = new Date();
-    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const parsedWindowDays = Number(req.query?.windowDays);
+    const windowDays = [1, 7, 14, 30].includes(parsedWindowDays) ? parsedWindowDays : 30;
+    const rangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (windowDays - 1));
     const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
-    const eightYearsAgo = new Date(now.getFullYear() - 8, now.getMonth(), now.getDate());
-    const [totalMembers, childrenCount, teenagerCount, currentMonthDues, currentMonthPayments,] = await Promise.all([
-        prisma_js_1.prisma.person.count({ where: orgFilter }),
+    const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
+    const activePersonFilter = {
+        isArchived: false,
+        OR: [{ livingStatus: "Active" }, { livingStatus: null }],
+    };
+    const [totalHouseholds, totalHeadcount, adultsCount, youthCount, childrenCount, currentMonthDues, currentMonthPayments, currentMonthOverpayments,] = await Promise.all([
+        prisma_js_1.prisma.membership.count({ where: { ...orgFilter, isArchived: false } }),
+        prisma_js_1.prisma.person.count({ where: { ...orgFilter, ...activePersonFilter } }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
-                dateOfBirth: { gt: eightYearsAgo },
+                ...activePersonFilter,
+                dateOfBirth: { lte: eighteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.person.count({
             where: {
                 ...orgFilter,
-                dateOfBirth: { gt: eighteenYearsAgo, lte: eightYearsAgo },
+                ...activePersonFilter,
+                dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo },
+            },
+        }),
+        prisma_js_1.prisma.person.count({
+            where: {
+                ...orgFilter,
+                ...activePersonFilter,
+                dateOfBirth: { gt: thirteenYearsAgo },
             },
         }),
         prisma_js_1.prisma.paymentDue.findMany({
-            where: { ...orgFilter, period: currentPeriod },
+            where: {
+                ...orgFilter,
+                dueDate: { gte: rangeStart, lt: rangeEnd },
+            },
             select: { amountDue: true, amountPaid: true },
         }),
         prisma_js_1.prisma.payment.aggregate({
             where: {
                 ...orgFilter,
-                paymentDate: { gte: monthStart, lt: monthEnd },
+                paymentDate: { gte: rangeStart, lt: rangeEnd },
             },
             _sum: { amount: true },
         }),
+        prisma_js_1.prisma.membershipCreditLedger.aggregate({
+            where: {
+                ...orgFilter,
+                entryType: "credit_overpayment",
+                createdAt: { gte: rangeStart, lt: rangeEnd },
+            },
+            _sum: { amountDelta: true },
+        }),
     ]);
     const totalDue = currentMonthDues.reduce((sum, d) => sum.add(d.amountDue), new library_1.Decimal(0));
+    const outstandingThisMonth = currentMonthDues.reduce((sum, d) => sum.add(d.amountDue.sub(d.amountPaid)), new library_1.Decimal(0));
     const collectedThisMonth = currentMonthPayments._sum.amount ?? new library_1.Decimal(0);
+    const overpaymentsThisMonth = currentMonthOverpayments._sum.amountDelta ?? new library_1.Decimal(0);
     return res.json({
-        totalMembers,
+        totalHouseholds,
+        totalHeadcount,
+        adults: adultsCount,
+        youth: youthCount,
         children: childrenCount,
-        teenagers: teenagerCount,
         totalDueThisMonth: totalDue.toNumber(),
         collectedThisMonth: new library_1.Decimal(collectedThisMonth.toString()).toNumber(),
-        period: currentPeriod,
+        outstandingThisMonth: outstandingThisMonth.toNumber(),
+        overpaymentsThisMonth: new library_1.Decimal(overpaymentsThisMonth.toString()).toNumber(),
+        period: `${rangeStart.toISOString().slice(0, 10)}:${new Date(rangeEnd.getTime() - 1)
+            .toISOString()
+            .slice(0, 10)}`,
     });
 });

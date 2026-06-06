@@ -17,12 +17,34 @@ Database name: `membership_db`.
    ```bash
    npm install
    npx prisma generate
-   npx prisma db push
+   npm run db:migrate
    npx prisma db seed
    ```
 4. Run: `npm run dev` (port 4000)
 
 Seed creates super user: **super@example.com** / **admin123**
+
+## Local server database profiles
+
+Local development can use the server PostgreSQL through an SSH tunnel. By default, use
+the staging database so test writes do not touch production data.
+
+1. Open the tunnel in one terminal:
+   ```bash
+   npm run db:tunnel
+   ```
+2. Choose the backend DB profile:
+   ```bash
+   npm run db:use:stg
+   ```
+3. Run the app in another terminal:
+   ```bash
+   npm run dev
+   ```
+
+Use `npm run db:use:prd` only for production debugging where writes are not expected.
+Both profiles connect through `localhost:5433`; the selected database name in
+`be/.env` decides whether the backend uses `subs_stg` or `subs_prod`.
 
 ## Frontend (fe)
 
@@ -52,6 +74,7 @@ Uses **Neon** for PostgreSQL. Create a project at [neon.tech](https://neon.tech)
    ```bash
    docker compose up -d --build
    ```
+   The backend container applies committed Prisma migrations automatically on startup.
 4. Seed the database (optional):
    ```bash
    docker compose exec be npx prisma db seed

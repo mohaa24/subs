@@ -1,10 +1,19 @@
 "use client";
 
+import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type PaymentDue, type DueStatus } from "@/lib/api";
+import {
+  api,
+  type DueStatus,
+  type DueType,
+  type Payment,
+  type PaymentDue,
+  type PaymentReceipt,
+  type Zone,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,9 +31,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { toast } from "@/hooks/use-toast";
+import {
+  getPaymentDuePeriodLine,
+  getPaymentDueSubtitle,
+  getPaymentDueTitle,
+} from "@/lib/payment-due";
+import {
+  RecordPaymentDialog,
+  type PaymentMethod,
+} from "@/components/record-payment-dialog";
+import {
+  PaymentReceiptDialog,
+  type PaymentReceiptData,
+} from "@/components/payment-receipt-dialog";
 
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800",
@@ -33,7 +56,36 @@ const statusColors: Record<string, string> = {
   overdue: "bg-red-100 text-red-800",
 };
 
+function getPaymentPeriodLabel(payment: Payment | null) {
+  if (!payment) return "—";
+  return payment.paymentDue?.period ?? (payment.paymentKind === "credit" ? "Credit Payment" : "—");
+}
+
+function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
+  return {
+    paymentKind: receipt.paymentKind,
+    organizationName: receipt.organizationName,
+    membershipNo: receipt.membershipNo,
+    membershipId: receipt.membershipId,
+    memberName: receipt.memberName,
+    paymentId: receipt.paymentId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.paymentDate,
+    paymentMethod: receipt.paymentMethod || null,
+    paidAmount: receipt.paidAmount,
+    appliedToDue: receipt.appliedToDue,
+    overpaymentToCredit: receipt.overpaymentToCredit,
+    remainingAfter: receipt.remainingAfter,
+    outstandingAfterPayment: receipt.outstandingAfterPayment,
+    creditBalanceAfterPayment: receipt.creditBalanceAfterPayment,
+    note: receipt.note || null,
+    collectedBy: receipt.collectedBy,
+    memberQrValue: "",
+  };
+}
+
 export default function PaymentsPage() {
+  const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
 
@@ -43,6 +95,16 @@ export default function PaymentsPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
   const [statusFilter, setStatusFilter] = useState<DueStatus | "all">("all");
+  const [dueTypeFilter, setDueTypeFilter] = useState<string>("all");
+  const [searchQ, setSearchQ] = useState("");
+  const [dueTypes, setDueTypes] = useState<DueType[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [history, setHistory] = useState<Payment[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyLimit = 20;
+  const [historySearchQ, setHistorySearchQ] = useState("");
 
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState("");
@@ -50,13 +112,41 @@ export default function PaymentsPage() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<PaymentReceiptData | null>(null);
+
+  const [reverseTarget, setReverseTarget] = useState<Payment | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reverseSubmitting, setReverseSubmitting] = useState(false);
+
+  const [editDueTarget, setEditDueTarget] = useState<PaymentDue | null>(null);
+  const [editDueAmount, setEditDueAmount] = useState("");
+  const [editDueReason, setEditDueReason] = useState("");
+  const [editDueSubmitting, setEditDueSubmitting] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!user?.organizationId) {
+      setDueTypes([]);
+      setZones([]);
+      return;
+    }
+
+    api<DueType[]>("/due-types")
+      .then((items) => setDueTypes(items.filter((item) => item.isActive)))
+      .catch(() => setDueTypes([]));
+
+    api<Zone[]>("/zones", { params: { includeInactive: "true" } })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [user?.organizationId]);
 
   function loadDues() {
     if (!user) return;
@@ -65,6 +155,8 @@ export default function PaymentsPage() {
       limit: String(limit),
     };
     if (statusFilter !== "all") params.status = statusFilter;
+    if (dueTypeFilter !== "all") params.dueTypeId = dueTypeFilter;
+    if (searchQ.trim()) params.q = searchQ.trim();
     setLoading(true);
     api<{ items: PaymentDue[]; total: number }>("/payments/dues", { params })
       .then((r) => {
@@ -77,7 +169,50 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadDues();
-  }, [user, page, statusFilter]);
+  }, [user, page, statusFilter, dueTypeFilter, searchQ]);
+
+  function loadHistory() {
+    if (!user) return;
+    setHistoryLoading(true);
+    api<{ items: Payment[]; total: number }>("/payments/history", {
+      params: {
+        page: String(historyPage),
+        limit: String(historyLimit),
+        ...(historySearchQ.trim() ? { q: historySearchQ.trim() } : {}),
+      },
+    })
+      .then((r) => {
+        setHistory(r.items);
+        setHistoryTotal(r.total);
+      })
+      .catch(() => {
+        setHistory([]);
+        setHistoryTotal(0);
+      })
+      .finally(() => setHistoryLoading(false));
+  }
+
+  useEffect(() => {
+    loadHistory();
+  }, [user, historyPage, historySearchQ]);
+
+  async function openReceiptForPayment(paymentId: string) {
+    try {
+      const receipt = await api<PaymentReceipt>(`/payments/receipt/${paymentId}`);
+      setReceiptData({
+        ...toReceiptData(receipt),
+        memberQrValue: `${window.location.origin}/members/${receipt.membershipId}`,
+      });
+      setReceiptOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load receipt";
+      toast({
+        variant: "destructive",
+        title: "Failed to load receipt",
+        description: msg,
+      });
+    }
+  }
 
   async function handleGenerateDues() {
     setGenerating(true);
@@ -87,10 +222,21 @@ export default function PaymentsPage() {
         "/payments/generate-dues",
         { method: "POST" }
       );
-      setGenResult(`${r.period}: ${r.created} created, ${r.skipped} skipped`);
+      setGenResult(`${r.period}: ${r.created} ${t("payments.created")}, ${r.skipped} ${t("payments.skipped")}`);
+      toast({
+        title: "Dues generated",
+        description: `${r.period}: ${r.created} created, ${r.skipped} skipped.`,
+      });
       loadDues();
+      loadHistory();
     } catch (err) {
-      setGenResult(err instanceof Error ? err.message : "Failed");
+      const msg = err instanceof Error ? err.message : t("common.saveFailed");
+      setGenResult(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to generate dues",
+        description: msg,
+      });
     } finally {
       setGenerating(false);
     }
@@ -101,10 +247,20 @@ export default function PaymentsPage() {
       const r = await api<{ updated: number }>("/payments/mark-overdue", {
         method: "POST",
       });
-      setGenResult(`${r.updated} dues marked overdue`);
+      setGenResult(`${r.updated} ${t("payments.duesMarkedOverdue")}`);
+      toast({
+        title: "Overdue updated",
+        description: `${r.updated} dues marked overdue.`,
+      });
       loadDues();
-    } catch {
-      setGenResult("Failed to mark overdue");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("payments.failedToMarkOverdue");
+      setGenResult(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to mark overdue",
+        description: msg,
+      });
     }
   }
 
@@ -112,6 +268,7 @@ export default function PaymentsPage() {
     const remaining = Number(due.amountDue) - Number(due.amountPaid);
     setPayDue(due);
     setPayAmount(String(remaining > 0 ? remaining.toFixed(2) : "0"));
+    setPayMethod("cash");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -123,31 +280,132 @@ export default function PaymentsPage() {
     setPayError("");
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) {
-      setPayError("Enter a valid amount.");
+      const msg = t("payments.enterValidAmount");
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Invalid payment amount",
+        description: msg,
+      });
       return;
     }
     setPaySubmitting(true);
     try {
-      await api("/payments", {
+      const payment = await api<{ id: string; paymentDate: string }>("/payments", {
         method: "POST",
         body: JSON.stringify({
           paymentDueId: payDue.id,
           amount: amt,
-          note: payNote || undefined,
+          paymentMethod: payMethod,
+          note: payNote.trim() || undefined,
         }),
       });
+      await openReceiptForPayment(payment.id);
       setPayDialogOpen(false);
+      toast({
+        title: "Payment recorded",
+        description: "Payment has been saved successfully.",
+      });
       loadDues();
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : "Failed to record payment");
+      const msg = err instanceof Error ? err.message : t("payments.failedToRecord");
+      setPayError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to record payment",
+        description: msg,
+      });
     } finally {
       setPaySubmitting(false);
     }
   }
 
-  const totalPages = Math.ceil(total / limit) || 1;
+  async function handleReversePayment() {
+    if (!reverseTarget || !reverseReason.trim()) return;
+    setReverseSubmitting(true);
+    try {
+      await api(`/payments/${reverseTarget.id}/reverse`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reverseReason.trim() }),
+      });
+      toast({ title: "Payment reversed", description: "The payment has been reversed successfully." });
+      setReverseTarget(null);
+      setReverseReason("");
+      loadDues();
+      loadHistory();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to reverse",
+        description: err instanceof Error ? err.message : "Failed to reverse payment",
+      });
+    } finally {
+      setReverseSubmitting(false);
+    }
+  }
 
-  if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
+  function openEditDue(due: PaymentDue) {
+    setEditDueTarget(due);
+    setEditDueAmount(String(Number(due.amountDue)));
+    setEditDueReason("");
+  }
+
+  async function handleEditDue() {
+    if (!editDueTarget || !editDueReason.trim()) return;
+    const amt = parseFloat(editDueAmount);
+    if (isNaN(amt) || amt < 0) return;
+    setEditDueSubmitting(true);
+    try {
+      await api(`/payments/dues/${editDueTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ amountDue: amt, reason: editDueReason.trim() }),
+      });
+      toast({ title: "Due updated", description: "The due amount has been updated." });
+      setEditDueTarget(null);
+      loadDues();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to update due",
+        description: err instanceof Error ? err.message : "Failed to update",
+      });
+    } finally {
+      setEditDueSubmitting(false);
+    }
+  }
+
+  const totalPages = Math.ceil(total / limit) || 1;
+  const historyTotalPages = Math.ceil(historyTotal / historyLimit) || 1;
+  const zoneLabel = (areaCode?: number | null) => {
+    if (areaCode === undefined || areaCode === null) return null;
+    const zone = zones.find((item) => item.code === areaCode);
+    return zone ? `${zone.code} - ${zone.name}` : String(areaCode);
+  };
+  const dueMemberDisplayName = (due: PaymentDue) =>
+    due.membership?.hod?.nameWithInitials ?? due.membership?.hod?.fullName ?? due.membership?.membershipNo ?? due.membershipId;
+  const dueMemberFullName = (due: PaymentDue) =>
+    due.membership?.hod?.fullName ?? due.membership?.hod?.nameWithInitials ?? due.membershipId;
+  const dueMemberMeta = (due: PaymentDue) => {
+    const zone = zoneLabel(due.membership?.areaCode);
+    return [zone ? `Zone: ${zone}` : null, due.membership?.membershipNo].filter(Boolean).join(" • ");
+  };
+  const paymentMemberDisplayName = (payment: Payment) =>
+    payment.membership?.hod?.nameWithInitials ??
+    payment.membership?.hod?.fullName ??
+    payment.membership?.membershipNo ??
+    payment.membershipId;
+  const paymentMemberFullName = (payment: Payment) =>
+    payment.membership?.hod?.fullName ??
+    payment.membership?.hod?.nameWithInitials ??
+    payment.membershipId;
+  const paymentMemberMeta = (payment: Payment) => {
+    const zone = zoneLabel(payment.membership?.areaCode);
+    return [zone ? `Zone: ${zone}` : null, payment.membership?.membershipNo]
+      .filter(Boolean)
+      .join(" • ");
+  };
+
+  if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
   const canManage = user.role === "admin" || user.role === "super_user";
 
@@ -155,17 +413,17 @@ export default function PaymentsPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
-        <Breadcrumb items={[{ label: "Dashboard", href: "/" }, { label: "Payments" }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: "/" }, { label: t("reports.payments") }]} />
 
-        <div className="flex items-center justify-between mb-5">
-          <h1 className="text-xl font-semibold text-foreground">Payments &amp; Dues</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <h1 className="text-xl font-semibold text-foreground">{t("payments.title")}</h1>
           {canManage && (
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={handleMarkOverdue}>
-                Mark overdue
+                {t("payments.markOverdue")}
               </Button>
               <Button size="sm" onClick={handleGenerateDues} disabled={generating}>
-                {generating ? "Generating…" : "Generate monthly dues"}
+                {generating ? t("payments.generating") : t("payments.generateDues")}
               </Button>
             </div>
           )}
@@ -177,47 +435,144 @@ export default function PaymentsPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Dues Overview</CardTitle>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as DueStatus | "all");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-36 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="overdue">Overdue</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Select
+                  value={statusFilter}
+                  onValueChange={(v) => {
+                    setStatusFilter(v as DueStatus | "all");
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("payments.allStatuses")}</SelectItem>
+                    <SelectItem value="pending">{t("payments.pending")}</SelectItem>
+                    <SelectItem value="partial">{t("payments.partial")}</SelectItem>
+                    <SelectItem value="paid">{t("payments.paid")}</SelectItem>
+                    <SelectItem value="overdue">{t("payments.overdue")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={dueTypeFilter}
+                  onValueChange={(value) => {
+                    setDueTypeFilter(value);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-40">
+                    <SelectValue placeholder="All due types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Due Types</SelectItem>
+                    {dueTypes.map((dueType) => (
+                      <SelectItem key={dueType.id} value={dueType.id}>
+                        {dueType.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            <form
+              className="flex gap-2 mt-2"
+              onSubmit={(e) => { e.preventDefault(); setPage(1); }}
+            >
+              <Input
+                placeholder="Search by member, membership no, or due type..."
+                value={searchQ}
+                onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
+                className="max-w-sm"
+              />
+            </form>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
             ) : dues.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No dues found. Use "Generate monthly dues" to create dues for the current month.
+                {t("payments.noDuesFound")}
               </p>
             ) : (
               <>
-                <div className="rounded-md border overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="space-y-3 md:hidden">
+                  {dues.map((d) => {
+                    const remaining = Number(d.amountDue) - Number(d.amountPaid);
+                    return (
+                      <div key={d.id} className="rounded-md border p-3 bg-card">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/members/${d.membershipId}`}
+                              className="font-medium text-primary hover:underline break-words"
+                            >
+                              {dueMemberDisplayName(d)}
+                            </Link>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {dueMemberMeta(d)}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
+                          >
+                            {t(`payments.${d.status}`)}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                          <div>
+                            <p className="text-muted-foreground">Description</p>
+                            <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                            {getPaymentDueSubtitle(d) && (
+                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                            )}
+                            {getPaymentDuePeriodLine(d) && (
+                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Full Name</p>
+                            <p className="font-medium break-words">{dueMemberFullName(d)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("payments.amountDue")}</p>
+                            <p className="font-medium tabular-nums">{Number(d.amountDue).toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">{t("payments.paid")}</p>
+                            <p className="font-medium tabular-nums">{Number(d.amountPaid).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          {d.status !== "paid" && remaining > 0 && (
+                            <Button size="sm" onClick={() => openPayDialog(d)}>
+                              {t("payments.makePayment")}
+                            </Button>
+                          )}
+                          {canManage && d.status !== "paid" && (
+                            <Button size="sm" onClick={() => openEditDue(d)}>
+                              <Pencil className="h-3.5 w-3.5 mr-1" />
+                              Edit Due
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden md:block rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[900px]">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left p-2.5 font-medium">Member</th>
-                        <th className="text-left p-2.5 font-medium">Period</th>
-                        <th className="text-right p-2.5 font-medium">Due</th>
-                        <th className="text-right p-2.5 font-medium">Paid</th>
-                        <th className="text-right p-2.5 font-medium">Remaining</th>
-                        <th className="text-center p-2.5 font-medium">Status</th>
+                        <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
+                        <th className="text-left p-2.5 font-medium">Full Name</th>
+                        <th className="text-left p-2.5 font-medium">Description</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
+                        <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
                         <th className="p-2.5"></th>
                       </tr>
                     </thead>
@@ -229,43 +584,50 @@ export default function PaymentsPage() {
                             <td className="p-2.5">
                               <Link
                                 href={`/members/${d.membershipId}`}
-                                className="text-primary hover:underline"
+                                className="font-medium text-primary hover:underline"
                               >
-                                {d.membership?.membershipNo ?? d.membershipId}
+                                {dueMemberDisplayName(d)}
                               </Link>
-                              {d.membership?.hod && (
-                                <span className="text-muted-foreground ml-1 text-xs">
-                                  ({d.membership.hod.fullName})
-                                </span>
+                              <p className="text-muted-foreground text-xs">
+                                {dueMemberMeta(d)}
+                              </p>
+                            </td>
+                            <td className="p-2.5">{dueMemberFullName(d)}</td>
+                            <td className="p-2.5">
+                              <p className="font-medium">{getPaymentDueTitle(d)}</p>
+                              {getPaymentDueSubtitle(d) && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
+                              )}
+                              {getPaymentDuePeriodLine(d) && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
                               )}
                             </td>
-                            <td className="p-2.5">{d.period}</td>
                             <td className="p-2.5 text-right tabular-nums">
                               {Number(d.amountDue).toFixed(2)}
                             </td>
                             <td className="p-2.5 text-right tabular-nums">
                               {Number(d.amountPaid).toFixed(2)}
                             </td>
-                            <td className="p-2.5 text-right tabular-nums font-medium">
-                              {remaining.toFixed(2)}
-                            </td>
                             <td className="p-2.5 text-center">
                               <span
                                 className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
                               >
-                                {d.status}
+                                {t(`payments.${d.status}`)}
                               </span>
                             </td>
                             <td className="p-2.5 text-right">
-                              {d.status !== "paid" && remaining > 0 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => openPayDialog(d)}
-                                >
-                                  Pay
-                                </Button>
-                              )}
+                              <div className="flex items-center justify-end gap-1">
+                                {d.status !== "paid" && remaining > 0 && (
+                                  <Button size="sm" onClick={() => openPayDialog(d)}>
+                                    {t("payments.makePayment")}
+                                  </Button>
+                                )}
+                                {canManage && d.status !== "paid" && (
+                                  <Button size="sm" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -275,7 +637,7 @@ export default function PaymentsPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">
-                  <span>{total} dues</span>
+                  <span>{total} {t("payments.dues")}</span>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -286,7 +648,7 @@ export default function PaymentsPage() {
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
                     <span>
-                      Page {page} of {totalPages}
+                      {t("distributions.page")} {page} {t("distributions.of")} {totalPages}
                     </span>
                     <Button
                       variant="outline"
@@ -302,51 +664,321 @@ export default function PaymentsPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="mt-6">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Payment History</CardTitle>
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setHistoryPage(1);
+              }}
+            >
+              <Input
+                placeholder="Search by member, membership no, or period..."
+                value={historySearchQ}
+                onChange={(e) => {
+                  setHistorySearchQ(e.target.value);
+                  setHistoryPage(1);
+                }}
+                className="max-w-sm"
+              />
+            </form>
+          </CardHeader>
+          <CardContent>
+            {historyLoading ? (
+              <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+            ) : (
+              <>
+                <div className="space-y-3 md:hidden">
+                  {history.map((p) => (
+                    <div key={p.id} className="rounded-md border p-3 bg-card">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/members/${p.membershipId}`}
+                            className="font-medium text-primary hover:underline break-words"
+                          >
+                            {paymentMemberDisplayName(p)}
+                          </Link>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {paymentMemberMeta(p)}
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(p.paymentDate).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">{t("payments.period")}</p>
+                          <p className="font-medium">{getPaymentPeriodLabel(p)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Full Name</p>
+                          <p className="font-medium break-words">{paymentMemberFullName(p)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">{t("payments.amount")}</p>
+                          <p className="font-medium tabular-nums">{Number(p.amount).toFixed(2)}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-muted-foreground">User ID</p>
+                          <p className="font-medium">{p.collectedBy?.email ?? "—"}</p>
+                        </div>
+                      </div>
+                      {(p as any).isReversed && (
+                        <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
+                          <RotateCcw className="h-3 w-3" />
+                          Reversed{(p as any).reversalReason ? `: ${(p as any).reversalReason}` : ""}
+                        </div>
+                      )}
+                      <div className="mt-3 flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
+                          View Receipt
+                        </Button>
+                        {canManage && !(p as any).isReversed && (
+                          <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
+                            <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                            Reverse
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block rounded-md border overflow-x-auto">
+                  <table className="w-full text-sm min-w-[940px]">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left p-2.5 font-medium">Date</th>
+                        <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
+                        <th className="text-left p-2.5 font-medium">Full Name</th>
+                        <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
+                        <th className="text-right p-2.5 font-medium">{t("payments.amount")}</th>
+                        <th className="text-left p-2.5 font-medium">User ID</th>
+                        <th className="text-center p-2.5 font-medium">Status</th>
+                        <th className="text-right p-2.5 font-medium">Receipt</th>
+                        <th className="text-center p-2.5 font-medium w-16">Reverse</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((p) => (
+                        <tr key={p.id} className={`border-t ${(p as any).isReversed ? "opacity-50" : ""}`}>
+                          <td className="p-2.5">
+                            {new Date(p.paymentDate).toLocaleDateString()}
+                          </td>
+                          <td className="p-2.5">
+                            <Link
+                              href={`/members/${p.membershipId}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {paymentMemberDisplayName(p)}
+                            </Link>
+                            <p className="text-muted-foreground text-xs">
+                              {paymentMemberMeta(p)}
+                            </p>
+                          </td>
+                          <td className="p-2.5">{paymentMemberFullName(p)}</td>
+                          <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>
+                          <td className={`p-2.5 text-right tabular-nums ${(p as any).isReversed ? "line-through" : ""}`}>
+                            {Number(p.amount).toFixed(2)}
+                          </td>
+                          <td className="p-2.5 text-muted-foreground">
+                            {p.collectedBy?.email ?? "—"}
+                          </td>
+                          <td className="p-2.5">
+                            {(p as any).isReversed ? (
+                              <span className="text-xs text-red-600 flex items-center gap-1">
+                                <RotateCcw className="h-3 w-3" />
+                                Reversed
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="p-2.5 text-right">
+                            <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
+                              Receipt
+                            </Button>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            {canManage && !(p as any).isReversed ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-red-600 h-8 w-8 p-0"
+                                onClick={() => { setReverseTarget(p); setReverseReason(""); }}
+                                title="Reverse Payment"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">
+                  <span>{historyTotal} payments</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage <= 1}
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span>
+                      {t("distributions.page")} {historyPage} {t("distributions.of")} {historyTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage >= historyTotalPages}
+                      onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </main>
 
-      {/* Record payment dialog */}
-      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
+      <RecordPaymentDialog
+        open={payDialogOpen}
+        onOpenChange={setPayDialogOpen}
+        due={payDue}
+        amount={payAmount}
+        onAmountChange={setPayAmount}
+        paymentMethod={payMethod}
+        onPaymentMethodChange={setPayMethod}
+        note={payNote}
+        onNoteChange={setPayNote}
+        error={payError}
+        submitting={paySubmitting}
+        onSubmit={handleRecordPayment}
+        title={t("payments.recordPayment")}
+        submitLabel={t("payments.recordPayment")}
+        submittingLabel={t("payments.recording")}
+        cancelLabel={t("common.cancel")}
+      />
+
+      <PaymentReceiptDialog
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receiptData}
+      />
+
+      {/* Reverse Payment Dialog */}
+      <Dialog open={!!reverseTarget} onOpenChange={(open) => !open && setReverseTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              Record Payment – {payDue?.membership?.membershipNo} ({payDue?.period})
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Reverse Payment
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleRecordPayment} className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              Due: {payDue ? Number(payDue.amountDue).toFixed(2) : ""} | Paid so far:{" "}
-              {payDue ? Number(payDue.amountPaid).toFixed(2) : ""} | Remaining:{" "}
-              {payDue ? (Number(payDue.amountDue) - Number(payDue.amountPaid)).toFixed(2) : ""}
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/50 border p-4 space-y-1">
+              <p className="text-sm font-semibold">
+                {reverseTarget?.membership?.hod?.fullName ?? reverseTarget?.membership?.membershipNo ?? "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {reverseTarget?.membership?.membershipNo} · {getPaymentPeriodLabel(reverseTarget)}
+              </p>
+              <p className="text-sm font-bold tabular-nums mt-1">
+                Amount: {reverseTarget ? Number(reverseTarget.amount).toFixed(2) : ""}
+              </p>
             </div>
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label>Reason for reversal *</Label>
+              <Input
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                placeholder="e.g. Wrong member, duplicate entry..."
+                required
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This will undo the payment and adjust the due balance. This action is recorded in the audit trail.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                onClick={handleReversePayment}
+                disabled={reverseSubmitting || !reverseReason.trim()}
+                className="flex-1"
+              >
+                {reverseSubmitting ? "Reversing…" : "Confirm Reversal"}
+              </Button>
+              <Button variant="outline" onClick={() => setReverseTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Due Dialog */}
+      <Dialog open={!!editDueTarget} onOpenChange={(open) => !open && setEditDueTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Edit Due Amount
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/50 border p-4 space-y-1">
+              <p className="text-sm font-semibold">
+                {editDueTarget?.membership?.hod?.fullName ?? editDueTarget?.membership?.membershipNo ?? "—"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Period: {editDueTarget?.period} · Current Due: {editDueTarget ? Number(editDueTarget.amountDue).toFixed(2) : ""} · Paid: {editDueTarget ? Number(editDueTarget.amountPaid).toFixed(2) : ""}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>New Due Amount *</Label>
               <Input
                 type="number"
                 min={0}
                 step="0.01"
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
+                value={editDueAmount}
+                onChange={(e) => setEditDueAmount(e.target.value)}
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label>Note (optional)</Label>
+              <Label>Reason for change *</Label>
               <Input
-                value={payNote}
-                onChange={(e) => setPayNote(e.target.value)}
-                placeholder="e.g. Cash, bank transfer…"
+                value={editDueReason}
+                onChange={(e) => setEditDueReason(e.target.value)}
+                placeholder="e.g. Fee adjustment, correction..."
+                required
               />
             </div>
-            {payError && <p className="text-sm text-destructive">{payError}</p>}
             <div className="flex gap-2">
-              <Button type="submit" disabled={paySubmitting}>
-                {paySubmitting ? "Recording…" : "Record Payment"}
+              <Button
+                onClick={handleEditDue}
+                disabled={editDueSubmitting || !editDueReason.trim() || !editDueAmount}
+                className="flex-1"
+              >
+                {editDueSubmitting ? "Saving…" : "Update Due"}
               </Button>
-              <Button type="button" variant="outline" onClick={() => setPayDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setEditDueTarget(null)}>
                 Cancel
               </Button>
             </div>
-          </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

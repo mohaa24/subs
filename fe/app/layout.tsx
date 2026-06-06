@@ -2,10 +2,17 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { I18nProvider } from "@/lib/i18n";
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "Membership",
+  title: "Civica",
   description: "Organization membership management",
+  icons: {
+    icon: "/img/favicon.ico",
+    shortcut: "/img/favicon.ico",
+    apple: "/img/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -33,7 +40,12 @@ export default function RootLayout({
             style={{ display: "none", visibility: "hidden" }}
           />
         </noscript>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <I18nProvider>
+            {children}
+            <Toaster />
+          </I18nProvider>
+        </AuthProvider>
       </body>
     </html>
   );

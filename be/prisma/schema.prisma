@@ -8,21 +8,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  defaultMembershipFee Decimal @db.Decimal(12, 2) @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+// ─── Organization ────────────────────────────────────────────────
 
-  users       User[]
-  persons     Person[]
-  memberships Membership[]
-  paymentDues PaymentDue[]
-  payments    Payment[]
+model Organization {
+  id                   String   @id @default(cuid())
+  name                 String
+  slug                 String   @unique
+  defaultMembershipFee Decimal  @db.Decimal(12, 2) @default(0)
+  isActive             Boolean  @default(true)
+  logoUrl              String?
+  contactPersonName    String?
+  contactPersonPhone   String?
+  whatsAppSenderNumber String?
+  address              String?
+  joinDate             DateTime?
+  proRataMonthly       Boolean  @default(false)
+  proRataQuarterly     Boolean  @default(false)
+  proRataYearly        Boolean  @default(false)
+  lateFeePercentage    Decimal  @db.Decimal(5, 2) @default(5.0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  users              User[]
+  persons            Person[]
+  memberships        Membership[]
+  paymentDues        PaymentDue[]
+  payments           Payment[]
+  membershipCreditEntries MembershipCreditLedger[]
+  membershipCreditAllocations MembershipCreditAllocation[]
+  billing            OrganizationBilling[]
+  formFieldConfigs   FormFieldConfig[]
+  announcementGroups AnnouncementGroup[]
+  announcements      Announcement[]
+  messageQueue       MessageQueue[]
+  distributions      Distribution[]
+  zones              Zone[]
+  activityFeedItems  ActivityFeedItem[]
+  paymentDueAdjustments PaymentDueAdjustment[]
+  dueTypes           DueType[]
 }
+
+// ─── Organization Billing ────────────────────────────────────────
+
+model OrganizationBilling {
+  id             String    @id @default(cuid())
+  organizationId String
+  year           Int
+  isPaid         Boolean   @default(false)
+  paidAt         DateTime?
+  markedByUserId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  markedBy     User?        @relation("BillingMarkedBy", fields: [markedByUserId], references: [id])
+
+  @@unique([organizationId, year])
+}
+
+// ─── User ────────────────────────────────────────────────────────
 
 model User {
   id             String   @id @default(cuid())
@@ -30,13 +74,26 @@ model User {
   passwordHash   String
   role           UserRole
   organizationId String?
+  phoneNumber    String?
+  locale         String   @default("en")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  createdMemberships Membership[]  @relation("CreatedByUser")
-  collectedPayments  Payment[]     @relation("CollectedByUser")
+  createdMemberships  Membership[]          @relation("CreatedByUser")
+  collectedPayments   Payment[]             @relation("CollectedByUser")
+  reversedPayments    Payment[]             @relation("ReversedByUser")
+  permissions         UserPermission[]
+  bookmarks           UserBookmark[]
+  billingMarks        OrganizationBilling[] @relation("BillingMarkedBy")
+  distributionRecords DistributionRecord[]  @relation("DistributedByUser")
+  createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
+  createdCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationCreatedBy")
+  reversedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationReversedBy")
+  createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
+  createdPaymentDues  PaymentDue[]            @relation("PaymentDueCreatedBy")
+  createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
 }
 
 enum UserRole {
@@ -44,6 +101,72 @@ enum UserRole {
   admin
   user
 }
+
+// ─── User Permissions ────────────────────────────────────────────
+
+enum Permission {
+  MANAGE_PERSONS
+  VIEW_PERSONS
+  MANAGE_MEMBERSHIPS
+  VIEW_MEMBERSHIPS
+  COLLECT_PAYMENTS
+  VIEW_PAYMENTS
+  MANAGE_ANNOUNCEMENTS
+  MANAGE_DISTRIBUTIONS
+  VIEW_REPORTS
+}
+
+model UserPermission {
+  id         String     @id @default(cuid())
+  userId     String
+  permission Permission
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permission])
+}
+
+// ─── User Bookmarks ──────────────────────────────────────────────
+
+model UserBookmark {
+  id           String   @id @default(cuid())
+  userId       String
+  actionKey    String
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, actionKey])
+}
+
+// ─── Form Field Configuration ────────────────────────────────────
+
+enum FormType {
+  Person
+  Membership
+}
+
+enum FieldVisibility {
+  Required
+  Optional
+  Hidden
+}
+
+model FormFieldConfig {
+  id             String          @id @default(cuid())
+  organizationId String
+  formType       FormType
+  fieldName      String
+  visibility     FieldVisibility @default(Optional)
+  displayOrder   Int             @default(0)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, formType, fieldName])
+}
+
+// ─── Person ──────────────────────────────────────────────────────
 
 enum ResidentType {
   ResidentSinceBirth
@@ -62,43 +185,48 @@ enum LivingStatus {
 }
 
 model Person {
-  id                       String         @id @default(cuid())
-  organizationId           String
-  membershipId             String?
-  title                    PersonTitle?
-  nameWithInitials         String
-  fullName                 String
-  preferredName            String?
-  residentType             ResidentType?
-  gender                   String?
-  nicNumber                String?
-  identityType             IdentityType?
-  idNumber                 String?
-  dateOfBirth              DateTime?
-  bloodGroup               BloodGroup?
-  maritalStatus            MaritalStatus?
-  address                  String?
-  mobileNumber             String?
-  whatsAppNumber           String?
-  email                    String?
-  occupation               String?
-  placeOfWork              String?
-  highestQualificationType String?
+  id                        String         @id @default(cuid())
+  organizationId            String
+  membershipId              String?
+  title                     PersonTitle?
+  nameWithInitials          String
+  fullName                  String
+  preferredName             String?
+  residentType              ResidentType?
+  gender                    String?
+  nicNumber                 String?
+  identityType              IdentityType?
+  idNumber                  String?
+  dateOfBirth               DateTime?
+  bloodGroup                BloodGroup?
+  maritalStatus             MaritalStatus?
+  address                   String?
+  areaCode                  Int?
+  mobileNumber              String?
+  whatsAppNumber            String?
+  email                     String?
+  occupation                String?
+  placeOfWork               String?
+  highestQualificationType  String?
   highestQualificationTitle String?
-  permanentDisability      String?
-  schoolName               String?
-  relationToHOH            RelationToHOH?
-  livingStatus             LivingStatus?   @default(Active)
-  isMadarasaStudent        Boolean         @default(false)
-  isDisabled               Boolean         @default(false)
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  permanentDisability       String?
+  schoolName                String?
+  relationToHOH             RelationToHOH?
+  livingStatus              LivingStatus?  @default(Active)
+  isMadarasaStudent         Boolean        @default(false)
+  isDisabled                Boolean        @default(false)
+  isArchived                Boolean        @default(false)
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  membership           Membership?           @relation("MembershipPersons", fields: [membershipId], references: [id], onDelete: SetNull)
-  membershipsAsHod     Membership[]          @relation("HOD")
-  membershipsAsSpouse  Membership[]          @relation("Spouse")
-  membershipDependents MembershipDependent[]
+  organization            Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership              Membership?               @relation("MembershipPersons", fields: [membershipId], references: [id], onDelete: SetNull)
+  membershipsAsHod        Membership[]              @relation("HOD")
+  membershipsAsSpouse     Membership[]              @relation("Spouse")
+  membershipDependents    MembershipDependent[]
+  announcementGroupMember AnnouncementGroupMember[]
+  distributionRecords     DistributionRecord[]
+  activityFeedItems       ActivityFeedItem[]
 }
 
 enum PersonTitle {
@@ -165,42 +293,70 @@ enum MaritalStatus {
   widow
 }
 
-model Membership {
-  id                          String   @id @default(cuid())
-  membershipNo                 String   // system-generated, unique per org
-  organizationId               String
-  dateOfRegistration           DateTime
-  membershipType               MembershipType
-  membershipStatus             String
-  hodPersonId                  String
-  spousePersonId               String?
-  isZakathEligible             Boolean?
-  areaCode                     Int?
-  land                         Boolean  @default(false)
-  houseOwnership               Boolean  @default(false)
-  commercialProperties         Boolean  @default(false)
-  toiletFacility               Boolean  @default(false)
-  vehicleOwnership             Boolean  @default(false)
-  waterAccessibility           Boolean  @default(false)
-  electricity                  Boolean  @default(false)
-  paymentPeriod                PaymentPeriod
-  membershipFee                Decimal  @db.Decimal(12, 2)
-  additionalVoluntaryContributions Decimal @db.Decimal(12, 2) @default(0)
-  membershipFeeDiscount        Decimal  @db.Decimal(12, 2) @default(0)
-  totalContribution            Decimal  @db.Decimal(12, 2)
-  disability                   Boolean  @default(false)
-  createdByUserId              String?
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+enum MembershipStatus {
+  Active
+  Inactive
+}
+
+// ─── Zone ────────────────────────────────────────────────────────
+
+model Zone {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  hod          Person       @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
-  spouse       Person?      @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
-  persons      Person[]     @relation("MembershipPersons")
-  createdBy    User?        @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+
+  @@unique([organizationId, code])
+}
+
+// ─── Membership ──────────────────────────────────────────────────
+
+model Membership {
+  id                               String        @id @default(cuid())
+  membershipNo                     String
+  organizationId                   String
+  dateOfRegistration               DateTime
+  membershipType                   MembershipType
+  membershipStatus                 MembershipStatus @default(Active)
+  hodPersonId                      String
+  spousePersonId                   String?
+  isZakathEligible                 Boolean?
+  areaCode                         Int?
+  land                             Boolean       @default(false)
+  houseOwnership                   Boolean       @default(false)
+  commercialProperties             Boolean       @default(false)
+  toiletFacility                   Boolean       @default(false)
+  vehicleOwnership                 Boolean       @default(false)
+  waterAccessibility               Boolean       @default(false)
+  electricity                      Boolean       @default(false)
+  paymentPeriod                    PaymentPeriod
+  membershipFee                    Decimal       @db.Decimal(12, 2)
+  additionalVoluntaryContributions Decimal       @db.Decimal(12, 2) @default(0)
+  membershipFeeDiscount            Decimal       @db.Decimal(12, 2) @default(0)
+  totalContribution                Decimal       @db.Decimal(12, 2)
+  disability                       Boolean       @default(false)
+  isArchived                       Boolean       @default(false)
+  createdByUserId                  String?
+  createdAt                        DateTime      @default(now())
+  updatedAt                        DateTime      @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  hod          Person                @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
+  spouse       Person?               @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
+  persons      Person[]              @relation("MembershipPersons")
+  createdBy    User?                 @relation("CreatedByUser", fields: [createdByUserId], references: [id])
   dependents   MembershipDependent[]
   dues         PaymentDue[]
   payments     Payment[]
+  creditLedgerEntries MembershipCreditLedger[]
+  creditAllocations MembershipCreditAllocation[]
+  activityFeedItems    ActivityFeedItem[]
+  dueAdjustments       PaymentDueAdjustment[]
 }
 
 enum DependentGroup {
@@ -209,11 +365,11 @@ enum DependentGroup {
 }
 
 model MembershipDependent {
-  id           String @id @default(cuid())
+  id           String         @id @default(cuid())
   membershipId String
   personId     String
   group        DependentGroup @default(other)
-  order        Int    @default(0)
+  order        Int            @default(0)
 
   membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   person     Person     @relation(fields: [personId], references: [id], onDelete: Cascade)
@@ -234,6 +390,8 @@ enum PaymentPeriod {
   Annually
 }
 
+// ─── Payment ─────────────────────────────────────────────────────
+
 enum DueStatus {
   pending
   partial
@@ -241,38 +399,330 @@ enum DueStatus {
   overdue
 }
 
+enum PaymentKind {
+  due
+  credit
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card
+  other
+}
+
+enum PaymentDueAdjustmentType {
+  due_edit
+  late_fee
+}
+
+model DueType {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  systemKey      String?
+  autoAllocate   Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentDues   PaymentDue[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, systemKey])
+}
+
 model PaymentDue {
   id             String    @id @default(cuid())
   membershipId   String
   organizationId String
+  dueTypeId      String
+  createdByUserId String?
   dueDate        DateTime
-  period         String    // "YYYY-MM" e.g. "2026-02"
+  period         String
+  isManual       Boolean   @default(false)
+  isSystemAdjustment Boolean   @default(false)
+  reason         String?   @db.Text
+  periodStart    DateTime?
+  periodEnd      DateTime?
   amountDue      Decimal   @db.Decimal(12, 2)
   amountPaid     Decimal   @db.Decimal(12, 2) @default(0)
+  lateFeeApplied Decimal   @db.Decimal(12, 2) @default(0)
+  lateFeeDate    DateTime?
   status         DueStatus @default(pending)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dueType      DueType      @relation(fields: [dueTypeId], references: [id], onDelete: Restrict)
+  createdBy    User?        @relation("PaymentDueCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   payments     Payment[]
+  creditEntries MembershipCreditLedger[]
+  creditAllocations MembershipCreditAllocation[]
+  adjustments  PaymentDueAdjustment[]
 
-  @@unique([membershipId, period])
+  @@index([membershipId, period])
+  @@index([createdByUserId])
+  @@index([dueTypeId, dueDate])
+}
+
+model PaymentDueAdjustment {
+  id              String                   @id @default(cuid())
+  paymentDueId     String
+  membershipId     String
+  organizationId   String
+  amountDelta      Decimal                  @db.Decimal(12, 2)
+  adjustmentType   PaymentDueAdjustmentType
+  reason           String?                  @db.Text
+  createdByUserId  String?
+  createdAt        DateTime                 @default(now())
+
+  paymentDue    PaymentDue    @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  membership    Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy     User?         @relation("DueAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([paymentDueId, createdAt])
+  @@index([membershipId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 model Payment {
-  id                String   @id @default(cuid())
-  paymentDueId      String
+  id                String    @id @default(cuid())
+  paymentDueId      String?
   membershipId      String
   organizationId    String
-  amount            Decimal  @db.Decimal(12, 2)
-  paymentDate       DateTime @default(now())
+  receiptNumber     String?
+  paymentKind       PaymentKind @default(due)
+  paymentMethod     PaymentMethod?
+  amount            Decimal   @db.Decimal(12, 2)
+  paymentDate       DateTime  @default(now())
   collectedByUserId String
   note              String?
-  createdAt         DateTime @default(now())
+  outstandingAfterPayment Decimal? @db.Decimal(12, 2)
+  creditBalanceAfterPayment Decimal? @db.Decimal(12, 2)
+  isReversed        Boolean   @default(false)
+  reversedAt        DateTime?
+  reversedByUserId  String?
+  reversalReason    String?
+  createdAt         DateTime  @default(now())
 
-  paymentDue   PaymentDue   @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  paymentDue   PaymentDue?  @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
   membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   collectedBy  User         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
+  reversedBy   User?        @relation("ReversedByUser", fields: [reversedByUserId], references: [id])
+  creditEntries MembershipCreditLedger[]
+  sourcedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationSourcePayment")
+
+  @@unique([organizationId, receiptNumber])
+}
+
+enum MembershipCreditEntryType {
+  credit_overpayment
+  debit_auto_apply
+  credit_adjustment
+  debit_adjustment
+}
+
+enum ActivityFeedEntryType {
+  remark
+  document_generated
+  image_added
+  system_event
+}
+
+enum ActivityFeedActorType {
+  user
+  system
+}
+
+model ActivityFeedItem {
+  id              String                @id @default(cuid())
+  organizationId  String
+  personId        String?
+  membershipId    String?
+  entryType       ActivityFeedEntryType
+  actorType       ActivityFeedActorType
+  body            String?               @db.Text
+  metadata        Json?
+  createdByUserId String?
+  createdAt       DateTime              @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  person       Person?      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  membership   Membership?  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("ActivityFeedCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([personId, createdAt])
+  @@index([membershipId, createdAt])
+}
+
+model MembershipCreditLedger {
+  id              String                    @id @default(cuid())
+  membershipId    String
+  organizationId  String
+  paymentId       String?
+  paymentDueId    String?
+  amountDelta     Decimal                   @db.Decimal(12, 2)
+  entryType       MembershipCreditEntryType
+  note            String?
+  createdByUserId String?
+  createdAt       DateTime                  @default(now())
+
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  paymentDue   PaymentDue?  @relation(fields: [paymentDueId], references: [id], onDelete: SetNull)
+  createdBy    User?        @relation("CreditEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([membershipId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model MembershipCreditAllocation {
+  id               String    @id @default(cuid())
+  membershipId     String
+  organizationId   String
+  paymentDueId     String
+  sourcePaymentId  String?
+  amount           Decimal   @db.Decimal(12, 2)
+  createdByUserId  String?
+  createdAt        DateTime  @default(now())
+  reversedAt       DateTime?
+  reversedByUserId String?
+  reversalReason   String?   @db.Text
+
+  membership    Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentDue    PaymentDue   @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  sourcePayment Payment?     @relation("CreditAllocationSourcePayment", fields: [sourcePaymentId], references: [id], onDelete: SetNull)
+  createdBy     User?        @relation("CreditAllocationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  reversedBy    User?        @relation("CreditAllocationReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([membershipId, createdAt])
+  @@index([paymentDueId, createdAt])
+  @@index([sourcePaymentId, createdAt])
+}
+
+// ─── Announcements ───────────────────────────────────────────────
+
+model AnnouncementGroup {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  createdByUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      AnnouncementGroupMember[]
+  announcements Announcement[]
+}
+
+model AnnouncementGroupMember {
+  id       String @id @default(cuid())
+  groupId  String
+  personId String
+
+  group  AnnouncementGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  person Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, personId])
+}
+
+model Announcement {
+  id             String             @id @default(cuid())
+  groupId        String?
+  organizationId String
+  message        String
+  sentAt         DateTime?
+  sentByUserId   String?
+  status         AnnouncementStatus @default(draft)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  group        AnnouncementGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+enum AnnouncementStatus {
+  draft
+  sent
+  failed
+}
+
+// ─── Message Queue ───────────────────────────────────────────────
+
+enum MessageEventType {
+  DUE_GENERATED
+  PAYMENT_RECEIVED
+  PAYMENT_OVERDUE
+  LATE_FEE_APPLIED
+  ORG_BILLING_DUE
+  ANNOUNCEMENT
+}
+
+enum MessageStatus {
+  pending
+  sent
+  failed
+}
+
+model MessageQueue {
+  id             String           @id @default(cuid())
+  organizationId String
+  recipientPhone String
+  eventType      MessageEventType
+  messageBody    String
+  status         MessageStatus    @default(pending)
+  createdAt      DateTime         @default(now())
+  sentAt         DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ─── Distribution ────────────────────────────────────────────────
+
+enum DistributionFrequency {
+  Once
+  Daily
+  Monthly
+  Yearly
+}
+
+model Distribution {
+  id              String                @id @default(cuid())
+  name            String
+  description     String?
+  organizationId  String
+  frequency       DistributionFrequency
+  filterCriteria  Json?
+  isActive        Boolean               @default(true)
+  createdByUserId String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  records      DistributionRecord[]
+}
+
+model DistributionRecord {
+  id                String   @id @default(cuid())
+  distributionId    String
+  personId          String
+  distributedAt     DateTime @default(now())
+  distributedByUserId String?
+  distributionDate  String
+
+  distribution Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  person       Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  distributedBy User?       @relation("DistributedByUser", fields: [distributedByUserId], references: [id])
+
+  @@unique([distributionId, personId, distributionDate])
 }

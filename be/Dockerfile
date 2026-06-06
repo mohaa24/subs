@@ -34,5 +34,5 @@ USER expressjs
 
 EXPOSE 4000
 
-# Regenerate client in-container to guarantee engine matches runtime target, then sync schema.
-CMD ["sh", "-c", "npx prisma generate && npx prisma db push --skip-generate && node dist/index.js"]
+# Regenerate client in-container to guarantee engine matches runtime target, then apply committed migrations.
+CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && node dist/index.js"]

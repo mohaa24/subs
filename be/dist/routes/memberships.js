@@ -9,7 +9,15 @@ const auth_js_1 = require("../middleware/auth.js");
 exports.membershipsRouter = (0, express_1.Router)();
 exports.membershipsRouter.use(auth_js_1.requireAuth);
 exports.membershipsRouter.use(auth_js_1.withOrgScope);
+// Membership writes touch the membership row plus several linked people, so we
+// give those interactive transactions the same headroom as payment writes.
+const MEMBERSHIP_WRITE_TRANSACTION_OPTIONS = {
+    maxWait: 10000,
+    timeout: 10000,
+};
 const paymentPeriods = ["Monthly", "Quarterly", "Annually"];
+const membershipStatuses = ["Active", "Inactive"];
+const maxZoneCode = 9;
 const spouseRelations = ["Wife"];
 const relationToHohOptions = [
     "Husband",
@@ -48,13 +56,13 @@ const baseSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
     dateOfRegistration: zod_1.z.string(),
     membershipType: zod_1.z.enum(["Resident", "NonResident", "Widow", "Widower"]),
-    membershipStatus: zod_1.z.string().min(1),
+    membershipStatus: zod_1.z.enum(membershipStatuses),
     hodPersonId: zod_1.z.string(),
     spousePersonId: zod_1.z.string().optional().nullable(),
     spouseRelationToHOH: zod_1.z.enum(spouseRelations).optional().nullable(),
     dependentPersons: zod_1.z.array(dependentSchema).optional(),
     isZakathEligible: zod_1.z.boolean().optional().nullable(),
-    areaCode: zod_1.z.number().int().min(1).max(6).optional().nullable(),
+    areaCode: zod_1.z.number().int().min(1).max(maxZoneCode),
     land: zod_1.z.boolean().optional(),
     houseOwnership: zod_1.z.boolean().optional(),
     commercialProperties: zod_1.z.boolean().optional(),
@@ -148,14 +156,46 @@ async function ensurePeopleAssignable(orgId, assignments, currentMembershipId) {
         }
     }
 }
-async function nextMembershipNo(organizationId) {
+function formatMembershipZoneSegment(areaCode) {
+    return String(areaCode);
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+async function ensureZoneExists(organizationId, areaCode) {
+    const org = await prisma_js_1.prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org) {
+        throw new Error("Organization not found");
+    }
+    const zone = await prisma_js_1.prisma.zone.findFirst({
+        where: { organizationId, code: areaCode },
+        select: { id: true },
+    });
+    if (!zone) {
+        throw new Error("Selected zone was not found");
+    }
+}
+async function nextMembershipNo(organizationId, areaCode) {
     const org = await prisma_js_1.prisma.organization.findUnique({ where: { id: organizationId } });
     const slug = org?.slug ?? "ORG";
-    const year = new Date().getFullYear();
-    const count = await prisma_js_1.prisma.membership.count({
-        where: { organizationId, membershipNo: { startsWith: `${slug}-${year}-` } },
+    const zoneSegment = formatMembershipZoneSegment(areaCode);
+    const prefix = `${slug}-${zoneSegment}`;
+    const membershipNos = await prisma_js_1.prisma.membership.findMany({
+        where: {
+            organizationId,
+            membershipNo: { startsWith: prefix },
+        },
+        select: { membershipNo: true },
     });
-    return `${slug}-${year}-${String(count + 1).padStart(5, "0")}`;
+    const regex = new RegExp(`^${escapeRegExp(prefix)}(\\d{3,})$`);
+    const maxSequence = membershipNos.reduce((highest, membership) => {
+        const match = regex.exec(membership.membershipNo);
+        if (!match)
+            return highest;
+        const sequence = Number.parseInt(match[1], 10);
+        return Number.isNaN(sequence) ? highest : Math.max(highest, sequence);
+    }, 0);
+    return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
 }
 async function applyPersonLinks(tx, membershipId, oldPersonIds, assignments) {
     const newIds = assignments.map((a) => a.personId);
@@ -166,12 +206,31 @@ async function applyPersonLinks(tx, membershipId, oldPersonIds, assignments) {
             data: { membershipId: null, relationToHOH: null },
         });
     }
+    if (newIds.length === 0)
+        return;
+    // Most people in the household receive the same membership link, so write
+    // that shared state once and then apply the smaller set of relation changes.
+    // This avoids one person.update call per member, which was timing out on prod.
+    await tx.person.updateMany({
+        where: { id: { in: newIds } },
+        data: {
+            membershipId,
+            relationToHOH: null,
+        },
+    });
+    const personIdsByRelation = new Map();
     for (const assignment of assignments) {
-        await tx.person.update({
-            where: { id: assignment.personId },
+        if (!assignment.relationToHOH)
+            continue;
+        const ids = personIdsByRelation.get(assignment.relationToHOH) ?? [];
+        ids.push(assignment.personId);
+        personIdsByRelation.set(assignment.relationToHOH, ids);
+    }
+    for (const [relationToHOH, personIds] of personIdsByRelation) {
+        await tx.person.updateMany({
+            where: { id: { in: personIds } },
             data: {
-                membershipId,
-                relationToHOH: assignment.relationToHOH,
+                relationToHOH,
             },
         });
     }
@@ -181,11 +240,60 @@ exports.membershipsRouter.get("/", async (req, res) => {
     if (!orgId && req.auth.role !== "super_user")
         return res.status(400).json({ error: "Organization scope required" });
     const q = req.query.q?.trim() || "";
+    const includeArchived = req.query.includeArchived === "true";
+    const membershipType = req.query.membershipType?.trim() || "";
+    const membershipStatus = req.query.membershipStatus?.trim() || "";
+    const paymentPeriod = req.query.paymentPeriod?.trim() || "";
+    const areaCode = Number.parseInt(String(req.query.areaCode ?? ""), 10);
+    const zakathEligible = req.query.isZakathEligible?.trim() || "";
+    const disability = req.query.disability?.trim() || "";
+    const registeredFrom = req.query.registeredFrom?.trim() || "";
+    const registeredTo = req.query.registeredTo?.trim() || "";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
     const where = {};
     if (orgId)
         where.organizationId = orgId;
+    if (!includeArchived)
+        where.isArchived = false;
+    if (membershipType && ["Resident", "NonResident", "Widow", "Widower"].includes(membershipType)) {
+        where.membershipType = membershipType;
+    }
+    if (membershipStatus && membershipStatuses.includes(membershipStatus)) {
+        where.membershipStatus = membershipStatus;
+    }
+    if (paymentPeriod && paymentPeriods.includes(paymentPeriod)) {
+        where.paymentPeriod = paymentPeriod;
+    }
+    if (Number.isInteger(areaCode) && areaCode > 0 && areaCode <= maxZoneCode)
+        where.areaCode = areaCode;
+    if (zakathEligible === "true")
+        where.isZakathEligible = true;
+    if (zakathEligible === "false")
+        where.isZakathEligible = false;
+    if (zakathEligible === "unset")
+        where.isZakathEligible = null;
+    if (disability === "true")
+        where.disability = true;
+    if (disability === "false")
+        where.disability = false;
+    if (registeredFrom || registeredTo) {
+        const dateFilter = {};
+        if (registeredFrom) {
+            const from = new Date(registeredFrom);
+            if (!Number.isNaN(from.getTime()))
+                dateFilter.gte = from;
+        }
+        if (registeredTo) {
+            const to = new Date(registeredTo);
+            if (!Number.isNaN(to.getTime())) {
+                to.setDate(to.getDate() + 1);
+                dateFilter.lt = to;
+            }
+        }
+        if (Object.keys(dateFilter).length > 0)
+            where.dateOfRegistration = dateFilter;
+    }
     if (q) {
         where.OR = [
             { membershipNo: { contains: q, mode: "insensitive" } },
@@ -232,7 +340,7 @@ exports.membershipsRouter.get("/:id", async (req, res) => {
             hod: true,
             spouse: true,
             dependents: { orderBy: { order: "asc" }, include: { person: true } },
-            organization: { select: { id: true, name: true, slug: true } },
+            organization: { select: { id: true, name: true, slug: true, address: true } },
             createdBy: { select: { id: true, email: true } },
         },
     });
@@ -261,11 +369,12 @@ exports.membershipsRouter.post("/", async (req, res) => {
     try {
         validateNoRoleDuplicates(assignments);
         await ensurePeopleAssignable(orgId, assignments, null);
+        await ensureZoneExists(orgId, parsed.data.areaCode);
     }
     catch (err) {
         return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
     }
-    const membershipNo = await nextMembershipNo(orgId);
+    const membershipNo = await nextMembershipNo(orgId, parsed.data.areaCode);
     const payload = {
         organizationId: orgId,
         membershipNo,
@@ -275,7 +384,7 @@ exports.membershipsRouter.post("/", async (req, res) => {
         hodPersonId: parsed.data.hodPersonId,
         spousePersonId,
         isZakathEligible: parsed.data.isZakathEligible ?? null,
-        areaCode: parsed.data.areaCode ?? null,
+        areaCode: parsed.data.areaCode,
         land: parsed.data.land ?? false,
         houseOwnership: parsed.data.houseOwnership ?? false,
         commercialProperties: parsed.data.commercialProperties ?? false,
@@ -311,7 +420,7 @@ exports.membershipsRouter.post("/", async (req, res) => {
         });
         await applyPersonLinks(tx, created.id, [], assignments);
         return created;
-    });
+    }, MEMBERSHIP_WRITE_TRANSACTION_OPTIONS);
     return res.status(201).json(membership);
 });
 exports.membershipsRouter.patch("/:id", async (req, res) => {
@@ -348,6 +457,9 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
     try {
         validateNoRoleDuplicates(assignments);
         await ensurePeopleAssignable(existing.organizationId, assignments, existing.id);
+        if (parsed.data.areaCode !== undefined) {
+            await ensureZoneExists(existing.organizationId, parsed.data.areaCode);
+        }
     }
     catch (err) {
         return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
@@ -363,6 +475,8 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
     delete data.spouseRelationToHOH;
     if (data.dateOfRegistration)
         data.dateOfRegistration = new Date(data.dateOfRegistration);
+    if (data.membershipStatus !== undefined)
+        data.membershipStatus = data.membershipStatus;
     if (data.membershipFee !== undefined)
         data.membershipFee = toDecimal(data.membershipFee);
     if (data.additionalVoluntaryContributions !== undefined)
@@ -396,6 +510,24 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
         });
         await applyPersonLinks(tx, updated.id, oldPersonIds, assignments);
         return updated;
-    });
+    }, MEMBERSHIP_WRITE_TRANSACTION_OPTIONS);
     return res.json(membership);
+});
+exports.membershipsRouter.patch("/:id/archive", async (req, res) => {
+    const membership = await prisma_js_1.prisma.membership.findUnique({ where: { id: req.params.id } });
+    if (!membership)
+        return res.status(404).json({ error: "Membership not found" });
+    const orgId = getOrgId(req);
+    if (orgId && membership.organizationId !== orgId && req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const isArchived = req.body.isArchived === true;
+    const updated = await prisma_js_1.prisma.membership.update({
+        where: { id: req.params.id },
+        data: { isArchived },
+        include: {
+            hod: { select: { id: true, nameWithInitials: true, fullName: true } },
+        },
+    });
+    return res.json(updated);
 });

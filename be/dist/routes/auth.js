@@ -91,7 +91,7 @@ exports.authRouter.post("/login", async (req, res) => {
 exports.authRouter.get("/me", auth_js_1.requireAuth, async (req, res) => {
     const user = await prisma_js_1.prisma.user.findUnique({
         where: { id: req.auth.userId },
-        include: { organization: true },
+        include: { organization: true, permissions: { select: { permission: true } } },
     });
     if (!user)
         return res.status(404).json({ error: "User not found" });
@@ -99,7 +99,10 @@ exports.authRouter.get("/me", auth_js_1.requireAuth, async (req, res) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        locale: user.locale,
+        phoneNumber: user.phoneNumber,
         organizationId: user.organizationId,
+        permissions: user.permissions.map((p) => p.permission),
         organization: user.organization
             ? {
                 id: user.organization.id,

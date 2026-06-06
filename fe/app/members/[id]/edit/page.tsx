@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter, useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type DependentGroup, type Membership, type Person, type RelationToHOH } from "@/lib/api";
+import { api, type DependentGroup, type Membership, type MembershipStatus, type Person, type RelationToHOH, type Zone } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,9 +27,11 @@ import { PersonForm, type PersonFormData } from "@/components/person-form";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS } from "@/lib/constants";
+import { toast } from "@/hooks/use-toast";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+const MAX_ZONE_CODE = 9;
 type DependentEntry = {
   id: string;
   fullName: string;
@@ -72,7 +74,7 @@ export default function EditMembershipPage() {
 
   const [dateOfRegistration, setDateOfRegistration] = useState("");
   const [membershipType, setMembershipType] = useState("Resident");
-  const [membershipStatus, setMembershipStatus] = useState("Active");
+  const [membershipStatus, setMembershipStatus] = useState<MembershipStatus>("Active");
   const [land, setLand] = useState(false);
   const [houseOwnership, setHouseOwnership] = useState(false);
   const [commercialProperties, setCommercialProperties] = useState(false);
@@ -87,12 +89,22 @@ export default function EditMembershipPage() {
   const [disability, setDisability] = useState(false);
   const [isZakathEligible, setIsZakathEligible] = useState<boolean | null>(null);
   const [areaCode, setAreaCode] = useState("");
+  const [zones, setZones] = useState<Zone[]>([]);
 
   const orgId = membership?.organizationId ?? user?.organizationId ?? null;
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    const params: Record<string, string> = { includeInactive: "true" };
+    if (user?.role === "super_user") params.organizationId = orgId;
+    api<Zone[]>("/zones", { params })
+      .then(setZones)
+      .catch(() => setZones([]));
+  }, [orgId, user?.role]);
 
   useEffect(() => {
     if (!user || !id) return;
@@ -170,51 +182,66 @@ export default function EditMembershipPage() {
   const computedTotal = Math.max(0, fee + add - disc);
 
   async function handleCreatePerson(data: PersonFormData) {
-    const payload = {
-      organizationId: orgId,
-      title: data.title || undefined,
-      nameWithInitials: data.nameWithInitials,
-      fullName: data.fullName,
-      preferredName: data.preferredName || undefined,
-      residentType: data.residentType || undefined,
-      gender: data.gender || undefined,
-      identityType: data.identityType || undefined,
-      nicNumber: data.identityType === "NIC" ? data.nicNumber || undefined : null,
-      idNumber: data.identityType && data.identityType !== "NIC" ? data.idNumber || undefined : null,
-      dateOfBirth: data.dateOfBirth || undefined,
-      bloodGroup: data.bloodGroup || undefined,
-      maritalStatus: data.maritalStatus || undefined,
-      address: data.address || undefined,
-      mobileNumber: data.mobileNumber || undefined,
-      whatsAppNumber: data.whatsAppNumber || undefined,
-      email: data.email || undefined,
-      occupation: data.occupation || undefined,
-      placeOfWork: data.placeOfWork || undefined,
-      highestQualificationType: data.highestQualificationType || undefined,
-      highestQualificationTitle: data.highestQualificationTitle || undefined,
-      permanentDisability: data.permanentDisability || undefined,
-      livingStatus: data.livingStatus || undefined,
-      isMadarasaStudent: data.isMadarasaStudent,
-    };
-    const created = await api<Person>("/persons", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    if (addPersonOpen === "hod") setHodPerson(created);
-    if (addPersonOpen === "spouse") setSpousePerson(created);
-    if (addPersonOpen === "dependent") {
-      setDependentPersons((prev) => [
-        ...prev,
-        {
-          id: created.id,
-          fullName: created.fullName,
-          nameWithInitials: created.nameWithInitials,
-          group: newDependentGroup,
-          relationToHOH: defaultDependentRelation(newDependentGroup),
-        },
-      ]);
+    try {
+      const payload = {
+        organizationId: orgId,
+        title: data.title || undefined,
+        nameWithInitials: data.nameWithInitials,
+        fullName: data.fullName,
+        preferredName: data.preferredName || undefined,
+        residentType: data.residentType || undefined,
+        gender: data.gender || undefined,
+        identityType: data.identityType || undefined,
+        nicNumber: data.identityType === "NIC" ? data.nicNumber || undefined : null,
+        idNumber: data.identityType && data.identityType !== "NIC" ? data.idNumber || undefined : null,
+        dateOfBirth: data.dateOfBirth || undefined,
+        bloodGroup: data.bloodGroup || undefined,
+        maritalStatus: data.maritalStatus || undefined,
+        address: data.address || undefined,
+        areaCode: data.areaCode ? Number(data.areaCode) : null,
+        mobileNumber: data.mobileNumber || undefined,
+        whatsAppNumber: data.whatsAppNumber || undefined,
+        email: data.email || undefined,
+        occupation: data.occupation || undefined,
+        placeOfWork: data.placeOfWork || undefined,
+        highestQualificationType: data.highestQualificationType || undefined,
+        highestQualificationTitle: data.highestQualificationTitle || undefined,
+        permanentDisability: data.permanentDisability || undefined,
+        livingStatus: data.livingStatus || undefined,
+        isMadarasaStudent: data.isMadarasaStudent,
+      };
+      const created = await api<Person>("/persons", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (addPersonOpen === "hod") setHodPerson(created);
+      if (addPersonOpen === "spouse") setSpousePerson(created);
+      if (addPersonOpen === "dependent") {
+        setDependentPersons((prev) => [
+          ...prev,
+          {
+            id: created.id,
+            fullName: created.fullName,
+            nameWithInitials: created.nameWithInitials,
+            group: newDependentGroup,
+            relationToHOH: defaultDependentRelation(newDependentGroup),
+          },
+        ]);
+      }
+      setAddPersonOpen(null);
+      toast({
+        title: "Person added",
+        description: "Person created successfully.",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create person";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to add person",
+        description: msg,
+      });
     }
-    setAddPersonOpen(null);
   }
 
   function personToFormData(p: Person): Partial<PersonFormData> {
@@ -232,6 +259,7 @@ export default function EditMembershipPage() {
       bloodGroup: p.bloodGroup ?? "",
       maritalStatus: p.maritalStatus ?? "",
       address: p.address ?? "",
+      areaCode: p.areaCode ? String(p.areaCode) : "",
       mobileNumber: p.mobileNumber ?? "",
       whatsAppNumber: p.whatsAppNumber ?? "",
       email: p.email ?? "",
@@ -249,8 +277,14 @@ export default function EditMembershipPage() {
     try {
       const p = await api<Person>(`/persons/${personId}`);
       setEditPerson({ id: personId, role, index, initial: personToFormData(p) });
-    } catch {
-      setError("Failed to load person details.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load person details.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to load person",
+        description: msg,
+      });
     }
   }
 
@@ -270,6 +304,7 @@ export default function EditMembershipPage() {
       bloodGroup: data.bloodGroup || undefined,
       maritalStatus: data.maritalStatus || undefined,
       address: data.address || undefined,
+      areaCode: data.areaCode ? Number(data.areaCode) : null,
       mobileNumber: data.mobileNumber || undefined,
       whatsAppNumber: data.whatsAppNumber || undefined,
       email: data.email || undefined,
@@ -281,27 +316,57 @@ export default function EditMembershipPage() {
       livingStatus: data.livingStatus || undefined,
       isMadarasaStudent: data.isMadarasaStudent,
     };
-    const updated = await api<Person>(`/persons/${editPerson.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-    if (editPerson.role === "hod") setHodPerson(updated);
-    if (editPerson.role === "spouse") setSpousePerson(updated);
-    if (editPerson.role === "dependent") {
-      setDependentPersons((prev) =>
-        prev.map((p) =>
-          p.id === updated.id ? { ...p, fullName: updated.fullName, nameWithInitials: updated.nameWithInitials } : p
-        )
-      );
+    try {
+      const updated = await api<Person>(`/persons/${editPerson.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      if (editPerson.role === "hod") setHodPerson(updated);
+      if (editPerson.role === "spouse") setSpousePerson(updated);
+      if (editPerson.role === "dependent") {
+        setDependentPersons((prev) =>
+          prev.map((p) =>
+            p.id === updated.id ? { ...p, fullName: updated.fullName, nameWithInitials: updated.nameWithInitials } : p
+          )
+        );
+      }
+      setEditPerson(null);
+      toast({
+        title: "Person updated",
+        description: "Person details updated successfully.",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update person";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to update person",
+        description: msg,
+      });
     }
-    setEditPerson(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!hodPerson) {
-      setError("Head of household is required.");
+      const msg = "Head of household is required.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Cannot update membership",
+        description: msg,
+      });
+      return;
+    }
+    if (!areaCode) {
+      const msg = "Zone is required.";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Cannot update membership",
+        description: msg,
+      });
       return;
     }
     setSaving(true);
@@ -334,12 +399,22 @@ export default function EditMembershipPage() {
           totalContribution: computedTotal,
           disability,
           isZakathEligible,
-          areaCode: areaCode ? Number(areaCode) : null,
+          areaCode: Number(areaCode),
         }),
+      });
+      toast({
+        title: "Membership updated",
+        description: "Membership changes saved successfully.",
       });
       router.push(`/members/${id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
+      const msg = err instanceof Error ? err.message : "Failed to update";
+      setError(msg);
+      toast({
+        variant: "destructive",
+        title: "Failed to update membership",
+        description: msg,
+      });
     } finally {
       setSaving(false);
     }
@@ -395,12 +470,12 @@ export default function EditMembershipPage() {
                   Head of Household <span className="text-destructive">*</span>
                 </Label>
                 {hodPerson ? (
-                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border">
-                    <span className="text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border">
+                    <span className="text-sm truncate">
                       {hodPerson.fullName}{" "}
                       <span className="text-muted-foreground text-xs">({hodPerson.nameWithInitials})</span>
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-shrink-0">
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(hodPerson.id, "hod")}>
                         Edit
                       </Button>
@@ -449,12 +524,12 @@ export default function EditMembershipPage() {
                   <span className="text-muted-foreground text-xs font-normal">(optional)</span>
                 </Label>
                 {spousePerson ? (
-                  <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border">
-                    <span className="text-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border">
+                    <span className="text-sm truncate">
                       {spousePerson.fullName}{" "}
                       <span className="text-muted-foreground text-xs">({spousePerson.nameWithInitials})</span>
                     </span>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-shrink-0">
                       <Button type="button" variant="ghost" size="sm" onClick={() => openEditPerson(spousePerson.id, "spouse")}>
                         Edit
                       </Button>
@@ -526,13 +601,13 @@ export default function EditMembershipPage() {
                           return (
                             <li
                               key={p.id}
-                              className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md border"
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 bg-muted/50 rounded-md border"
                             >
-                              <span className="text-sm">
+                              <span className="text-sm truncate">
                                 {p.fullName}{" "}
                                 <span className="text-muted-foreground text-xs">({p.nameWithInitials})</span>
                               </span>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-shrink-0">
                                 <Select
                                   value={p.relationToHOH}
                                   onValueChange={(value: RelationToHOH) =>
@@ -543,7 +618,7 @@ export default function EditMembershipPage() {
                                     )
                                   }
                                 >
-                                  <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                  <SelectTrigger className="h-8 w-36 sm:w-44"><SelectValue /></SelectTrigger>
                                   <SelectContent>
                                     {(p.group === "children" ? CHILD_RELATION_OPTIONS : OTHER_DEPENDENT_RELATION_OPTIONS).map((opt) => (
                                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
@@ -776,22 +851,27 @@ export default function EditMembershipPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Area Code</Label>
+                  <Label>Zone <span className="text-destructive">*</span></Label>
                   <Select
-                    value={areaCode || "unset"}
-                    onValueChange={(v) => setAreaCode(v === "unset" ? "" : v)}
+                    value={areaCode || undefined}
+                    onValueChange={setAreaCode}
                   >
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select zone" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="unset">Not Set</SelectItem>
-                      <SelectItem value="1">1</SelectItem>
-                      <SelectItem value="2">2</SelectItem>
-                      <SelectItem value="3">3</SelectItem>
-                      <SelectItem value="4">4</SelectItem>
-                      <SelectItem value="5">5</SelectItem>
-                      <SelectItem value="6">6</SelectItem>
+                      {zones
+                        .filter(
+                          (z) =>
+                            z.code >= 1 &&
+                            z.code <= MAX_ZONE_CODE &&
+                            (z.isActive || String(z.code) === areaCode)
+                        )
+                        .map((z) => (
+                          <SelectItem key={z.id} value={String(z.code)}>
+                            {z.code} — {z.name}{!z.isActive ? " (Inactive)" : ""}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -815,7 +895,7 @@ export default function EditMembershipPage() {
 
       {/* Add person dialog */}
       <Dialog open={!!addPersonOpen} onOpenChange={(open) => !open && setAddPersonOpen(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {addPersonOpen === "hod" && "Add Head of Household"}
@@ -824,6 +904,7 @@ export default function EditMembershipPage() {
             </DialogTitle>
           </DialogHeader>
           <PersonForm
+            zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={() => setAddPersonOpen(null)}
             submitLabel="Add Person"
@@ -833,13 +914,14 @@ export default function EditMembershipPage() {
 
       {/* Edit person dialog */}
       <Dialog open={!!editPerson} onOpenChange={(open) => !open && setEditPerson(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Person</DialogTitle>
           </DialogHeader>
           {editPerson?.initial && (
             <PersonForm
               initial={editPerson.initial}
+              zones={zones}
               onSubmit={handleEditPerson}
               onCancel={() => setEditPerson(null)}
               submitLabel="Save Changes"
