@@ -112,6 +112,19 @@ function getPaymentMethodLabel(method: ReceiptPaymentMethod | null | undefined) 
   return method ? PAYMENT_METHOD_LABELS[method] : null;
 }
 
+function formatZoneLabel(areaCode: number | null | undefined, zoneMap: Map<number, string>) {
+  if (areaCode === null || areaCode === undefined) return "";
+  const zoneName = zoneMap.get(areaCode);
+  return zoneName ? `${areaCode}-${zoneName}` : String(areaCode);
+}
+
+function extractMembershipId(membershipNo: string | null | undefined) {
+  const normalized = membershipNo?.trim();
+  if (!normalized) return "";
+  const match = normalized.match(/(\d+)\s*$/);
+  return match?.[1] ?? normalized;
+}
+
 function extractLegacyPaymentMethod(note: string | null | undefined): ReceiptPaymentMethod | null {
   const normalized = note?.trim();
   if (!normalized) return null;
@@ -1258,6 +1271,10 @@ paymentsRouter.get("/history", async (req, res) => {
         },
       },
       { paymentDue: { period: { contains: q, mode: "insensitive" } } },
+      { paymentDue: { dueType: { name: { contains: q, mode: "insensitive" } } } },
+      { receiptNumber: { contains: q, mode: "insensitive" } },
+      { note: { contains: q, mode: "insensitive" } },
+      { collectedBy: { email: { contains: q, mode: "insensitive" } } },
     ];
   }
 
@@ -1618,49 +1635,113 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
 
   const where: any = {
     paymentDate: { gte: from, lte: to },
-    paymentDue: { is: { isSystemAdjustment: false } },
+    ...nonSystemAdjustmentOrStandaloneCreditFilter(),
   };
   if (orgId) where.organizationId = orgId;
 
-  const payments = await prisma.payment.findMany({
-    where,
-    orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
-    include: {
-      membership: {
-        select: {
-          membershipNo: true,
-          hod: { select: { fullName: true, nameWithInitials: true } },
+  const [payments, zones] = await Promise.all([
+    prisma.payment.findMany({
+      where,
+      orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
+      include: {
+        membership: {
+          select: {
+            membershipNo: true,
+            areaCode: true,
+            hod: { select: { fullName: true, nameWithInitials: true } },
+          },
         },
+        paymentDue: { select: { period: true, dueType: { select: { name: true, sortOrder: true } } } },
+        collectedBy: { select: { email: true } },
+        reversedBy: { select: { email: true } },
       },
-      paymentDue: { select: { period: true } },
-      collectedBy: { select: { email: true } },
-      reversedBy: { select: { email: true } },
-    },
-  });
+    }),
+    prisma.zone.findMany({
+      where: orgId ? { organizationId: orgId } : {},
+      select: { code: true, name: true },
+    }),
+  ]);
+  const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
 
-  const totalCollected = payments
-    .filter((p) => !p.isReversed)
-    .reduce((sum, p) => sum.add(p.amount), new Decimal(0));
+  const grossCollected = payments.reduce((sum, p) => sum.add(p.amount), new Decimal(0));
   const totalReversed = payments
     .filter((p) => p.isReversed)
     .reduce((sum, p) => sum.add(p.amount), new Decimal(0));
+  const netCollected = grossCollected.sub(totalReversed);
+  const dueTypeTotals = new Map<string, { amount: Decimal; sortOrder: number }>();
+
+  for (const payment of payments) {
+    const dueTypeName =
+      payment.paymentKind === "credit" || !payment.paymentDueId
+        ? "Credit balance"
+        : payment.paymentDue?.dueType?.name ?? "Unknown";
+    const sortOrder =
+      payment.paymentKind === "credit" || !payment.paymentDueId
+        ? Number.MAX_SAFE_INTEGER
+        : payment.paymentDue?.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1;
+    const signedAmount = payment.isReversed ? new Decimal(payment.amount).neg() : new Decimal(payment.amount);
+    const existing = dueTypeTotals.get(dueTypeName);
+    if (existing) {
+      existing.amount = existing.amount.add(signedAmount);
+      existing.sortOrder = Math.min(existing.sortOrder, sortOrder);
+    } else {
+      dueTypeTotals.set(dueTypeName, { amount: signedAmount, sortOrder });
+    }
+  }
+
+  const dueTypeSummary = [...dueTypeTotals.entries()]
+    .map(([dueType, value]) => ({
+      dueType,
+      amount: value.amount.toNumber(),
+      sortOrder: value.sortOrder,
+    }))
+    .filter((item) => Math.abs(item.amount) > 0.000001)
+    .sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      if (a.dueType === "Credit balance") return 1;
+      if (b.dueType === "Credit balance") return -1;
+      return a.dueType.localeCompare(b.dueType);
+    });
 
   const format = req.query.format as string | undefined;
   if (format === "csv") {
-    const headers = ["Date", "Member", "Membership No", "Period", "Amount", "Method/Note", "User ID", "Status", "Reversal Reason"];
+    const headers = [
+      "Date",
+      "Name with Initials",
+      "Zone",
+      "Membership ID",
+      "Amount",
+      "Payment Method",
+      "Receipt No",
+      "Collected By",
+      "Status",
+      "Reversal Reason",
+      "Reversed By",
+      "Note",
+    ];
     const csvRows = payments.map((p) => {
+      const paymentMethod = getPaymentMethodLabel(p.paymentMethod ?? extractLegacyPaymentMethod(p.note));
+      const receiptNumber = p.receiptNumber ?? p.id.slice(-8).toUpperCase();
+      const membershipId = extractMembershipId(p.membership.membershipNo);
+      const zone = formatZoneLabel(p.membership.areaCode, zoneMap);
       const row = [
         p.paymentDate.toISOString().slice(0, 10),
-        p.membership.hod.fullName || p.membership.hod.nameWithInitials,
-        p.membership.membershipNo,
-        p.paymentDue?.period ?? (p.paymentKind === "credit" ? CREDIT_PAYMENT_REFERENCE : "—"),
+        p.membership.hod.nameWithInitials || p.membership.hod.fullName,
+        zone,
+        membershipId,
         Number(p.amount).toFixed(2),
-        (p.note ?? "").replace(/"/g, '""'),
+        paymentMethod ?? "",
+        receiptNumber,
         p.collectedBy.email,
         p.isReversed ? "Reversed" : "Active",
         p.isReversed ? (p.reversalReason ?? "").replace(/"/g, '""') : "",
+        p.isReversed ? (p.reversedBy?.email ?? "").replace(/"/g, '""') : "",
+        (p.note ?? "").replace(/"/g, '""'),
       ];
-      return row.map((v) => (v.includes(",") || v.includes('"') ? `"${v}"` : v)).join(",");
+      return row
+        .map((value) => String(value))
+        .map((v) => (v.includes(",") || v.includes('"') || v.includes("\n") ? `"${v.replace(/"/g, '""')}"` : v))
+        .join(",");
     });
     const csv = [headers.join(","), ...csvRows].join("\n");
     res.setHeader("Content-Type", "text/csv");
@@ -1674,16 +1755,26 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
     totalPayments: payments.length,
     activePayments: payments.filter((p) => !p.isReversed).length,
     reversedPayments: payments.filter((p) => p.isReversed).length,
-    totalCollected: totalCollected.toNumber(),
+    totalCollected: grossCollected.toNumber(),
     totalReversed: totalReversed.toNumber(),
-    netCollected: totalCollected.sub(totalReversed).toNumber(),
+    netCollected: netCollected.toNumber(),
+    dueTypeSummary,
     payments: payments.map((p) => ({
       id: p.id,
       paymentDate: p.paymentDate.toISOString(),
-      memberName: p.membership.hod.fullName || p.membership.hod.nameWithInitials,
+      memberName: p.membership.hod.nameWithInitials || p.membership.hod.fullName,
+      fullName: p.membership.hod.fullName,
       membershipNo: p.membership.membershipNo,
+      membershipId: extractMembershipId(p.membership.membershipNo),
+      zone: formatZoneLabel(p.membership.areaCode, zoneMap),
+      dueType:
+        p.paymentKind === "credit" || !p.paymentDueId
+          ? "Credit balance"
+          : p.paymentDue?.dueType?.name ?? "Unknown",
       period: p.paymentDue?.period ?? (p.paymentKind === "credit" ? CREDIT_PAYMENT_REFERENCE : "—"),
       amount: Number(p.amount),
+      paymentMethod: getPaymentMethodLabel(p.paymentMethod ?? extractLegacyPaymentMethod(p.note)),
+      receiptNumber: p.receiptNumber ?? p.id.slice(-8).toUpperCase(),
       note: p.note,
       collectedBy: p.collectedBy.email,
       isReversed: p.isReversed,
