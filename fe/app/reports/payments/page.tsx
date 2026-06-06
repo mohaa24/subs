@@ -245,7 +245,7 @@ export default function PeriodicPaymentReportPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-t bg-muted/30 font-semibold">
+                        <tr className="border-t font-semibold">
                           <td className="p-2.5">Transactions</td>
                           <td className="p-2.5 text-right tabular-nums">{report.totalPayments}</td>
                           <td className="p-2.5 text-right tabular-nums">{formatRs(report.totalCollected)}</td>
