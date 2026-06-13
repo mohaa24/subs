@@ -72,7 +72,7 @@ function installPaymentReportPrintStyle() {
   style.textContent = `
     @media print {
       @page {
-        size: A4 landscape;
+        size: A4 portrait;
         margin: 10mm;
       }
     }
@@ -180,16 +180,16 @@ export default function PeriodicPaymentReportPage() {
         </div>
 
         <div className="hidden print:block mb-4 pb-3 border-b-2 border-foreground/20">
-          <h2 className="text-lg font-bold">Periodic Payment Report</h2>
-          <p className="text-xs text-muted-foreground">
+          <h2 className="text-base font-bold">Periodic Payment Report</h2>
+          <p className="text-sm text-muted-foreground">
             {fromDate} to {toDate} · Printed on {new Date().toLocaleDateString()}
           </p>
         </div>
 
         {report && generatedAt && (
-          <div className="hidden print:block mb-4 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+          <div className="hidden print:block mb-4 rounded-lg border bg-muted/20 px-4 py-3 text-sm payment-report-summary-card">
             <p className="font-medium text-foreground mb-2">Report Details</p>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-muted-foreground">
+            <div className="payment-report-details-grid grid grid-cols-2 print:grid-cols-2 gap-x-8 print:gap-x-4 gap-y-1.5 text-muted-foreground">
               <p>
                 <span className="font-medium text-foreground">Entity:</span>{" "}
                 {user.organization?.name ?? "—"}
@@ -280,14 +280,14 @@ export default function PeriodicPaymentReportPage() {
 
         {report && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              <Card>
+            <div className="payment-report-kpi-grid grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-4 print:gap-3 mb-6">
+              <Card className="payment-report-summary-card">
                 <CardContent className="pt-4 pb-4 px-4 text-center">
                   <p className="text-xs text-muted-foreground">Active Payments</p>
                   <p className="text-2xl font-bold tabular-nums">{report.activePayments}</p>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="payment-report-summary-card">
                 <CardContent className="pt-4 pb-4 px-4 text-center">
                   <p className="text-xs text-muted-foreground">Total Collected</p>
                   <p className="text-2xl font-bold tabular-nums text-emerald-600">{formatRs(report.netCollected)}</p>
@@ -295,14 +295,14 @@ export default function PeriodicPaymentReportPage() {
               </Card>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 print:grid-cols-2 gap-6 print:gap-4 mb-6">
-              <Card>
+            <div className="payment-report-summary-grid grid grid-cols-1 xl:grid-cols-2 print:grid-cols-2 gap-6 print:gap-3 mb-6">
+              <Card className="payment-report-summary-card">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Audit Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-lg border overflow-x-auto">
-                    <table className="w-full text-sm min-w-[420px]">
+                    <table className="payment-report-summary-table w-full text-sm min-w-[420px]">
                       <thead className="bg-muted/50">
                         <tr>
                           <th className="text-left p-2.5 font-medium">Transaction Status</th>
@@ -321,7 +321,7 @@ export default function PeriodicPaymentReportPage() {
                           <td className="p-2.5 text-right tabular-nums">{report.reversedPayments}</td>
                           <td className="p-2.5 text-right tabular-nums">{formatRs(report.totalReversed)}</td>
                         </tr>
-                        <tr className="border-t">
+                        <tr className="border-t font-semibold">
                           <td className="p-2.5">Active</td>
                           <td className="p-2.5 text-right tabular-nums">{report.activePayments}</td>
                           <td className="p-2.5 text-right tabular-nums">{formatRs(report.netCollected)}</td>
@@ -332,13 +332,13 @@ export default function PeriodicPaymentReportPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="payment-report-summary-card">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">Due Type Summary</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-lg border overflow-x-auto">
-                    <table className="w-full text-sm min-w-[320px]">
+                    <table className="payment-report-summary-table w-full text-sm min-w-[320px]">
                       <thead className="bg-muted/50">
                         <tr>
                           <th className="text-left p-2.5 font-medium">Due Type</th>
@@ -402,7 +402,7 @@ export default function PeriodicPaymentReportPage() {
                           <th className="text-left p-2.5 font-medium">Collected By</th>
                           <th className="text-center p-2.5 font-medium">Status</th>
                           <th className="text-left p-2.5 font-medium">Reversal Reason</th>
-                        </tr>
+                         </tr>
                       </thead>
                       <tbody>
                         {report.payments.map((p) => (
@@ -410,27 +410,32 @@ export default function PeriodicPaymentReportPage() {
                             <td className="p-2.5">{new Date(p.paymentDate).toLocaleDateString()}</td>
                             <td className="p-2.5 align-top">
                               <div className="font-medium">{p.memberName}</div>
-                              <div className="text-muted-foreground">{p.zone || "—"}</div>
-                              <div className="text-muted-foreground">ID: {p.membershipId || p.membershipNo}</div>
+                              <div className="text-muted-foreground payment-report-member-meta">{p.zone || "—"}</div>
+                              <div className="text-muted-foreground payment-report-member-meta">ID: {p.membershipId || p.membershipNo}</div>
                             </td>
                             <td className={`p-2.5 text-right tabular-nums ${p.isReversed ? "line-through" : ""}`}>
                               {p.amount.toFixed(2)}
                             </td>
                             <td className="p-2.5">{p.paymentMethod ?? "—"}</td>
-                            <td className="p-2.5 font-mono text-xs">{p.receiptNumber ?? "—"}</td>
+                            <td className="p-2.5 font-mono text-xs payment-report-receipt">{p.receiptNumber ?? "—"}</td>
                             <td className="p-2.5 text-muted-foreground">{p.collectedBy}</td>
                             <td className="p-2.5 text-center">
-                              {p.isReversed ? (
-                                <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium border-red-200 bg-red-50 text-red-700">
-                                  <span className="h-2 w-2 rounded-full bg-red-500" />
-                                  Reversed
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
-                                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                                  Active
-                                </span>
-                              )}
+                              <span className="print:hidden">
+                                {p.isReversed ? (
+                                  <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium border-red-200 bg-red-50 text-red-700">
+                                    <span className="h-2 w-2 rounded-full bg-red-500" />
+                                    Reversed
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
+                                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                    Active
+                                  </span>
+                                )}
+                              </span>
+                              <span className="hidden print:inline font-medium">
+                                {p.isReversed ? "Reversed" : "Active"}
+                              </span>
                             </td>
                             <td className="p-2.5 align-top text-muted-foreground">
                               {p.isReversed ? (
