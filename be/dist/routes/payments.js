@@ -54,6 +54,36 @@ function nonSystemAdjustmentOrStandaloneCreditFilter() {
         ],
     };
 }
+function buildOrganizationPaymentHistoryWhere(options) {
+    const and = [nonSystemAdjustmentOrStandaloneCreditFilter()];
+    if (options.organizationId) {
+        and.push({ organizationId: options.organizationId });
+    }
+    if (options.membershipId) {
+        and.push({ membershipId: options.membershipId });
+    }
+    if (options.q) {
+        and.push({
+            OR: [
+                {
+                    membership: {
+                        OR: [
+                            { hod: { fullName: { contains: options.q, mode: "insensitive" } } },
+                            { hod: { nameWithInitials: { contains: options.q, mode: "insensitive" } } },
+                            { membershipNo: { contains: options.q, mode: "insensitive" } },
+                        ],
+                    },
+                },
+                { paymentDue: { period: { contains: options.q, mode: "insensitive" } } },
+                { paymentDue: { dueType: { name: { contains: options.q, mode: "insensitive" } } } },
+                { receiptNumber: { contains: options.q, mode: "insensitive" } },
+                { note: { contains: options.q, mode: "insensitive" } },
+                { collectedBy: { email: { contains: options.q, mode: "insensitive" } } },
+            ],
+        });
+    }
+    return { AND: and };
+}
 const CREDIT_PAYMENT_REFERENCE = "Credit Payment";
 const CREDIT_PAYMENT_LEDGER_NOTE = "Member payment added to credit before due allocation";
 const paymentMethodSchema = zod_1.z.enum(["cash", "bank_transfer", "card", "other"]);
@@ -1074,35 +1104,14 @@ exports.paymentsRouter.get("/history", async (req, res) => {
     const q = req.query.q?.trim() || "";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
-    const where = {};
-    if (orgId)
-        where.organizationId = orgId;
-    if (membershipId)
-        where.membershipId = membershipId;
-    if (q) {
-        where.OR = [
-            {
-                membership: {
-                    OR: [
-                        { hod: { fullName: { contains: q, mode: "insensitive" } } },
-                        { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
-                        { membershipNo: { contains: q, mode: "insensitive" } },
-                    ],
-                },
-            },
-            { paymentDue: { period: { contains: q, mode: "insensitive" } } },
-            { paymentDue: { dueType: { name: { contains: q, mode: "insensitive" } } } },
-            { receiptNumber: { contains: q, mode: "insensitive" } },
-            { note: { contains: q, mode: "insensitive" } },
-            { collectedBy: { email: { contains: q, mode: "insensitive" } } },
-        ];
-    }
+    const where = buildOrganizationPaymentHistoryWhere({
+        organizationId: orgId,
+        membershipId,
+        q: q || undefined,
+    });
     const [items, total] = await Promise.all([
         prisma_js_1.prisma.payment.findMany({
-            where: {
-                ...where,
-                ...nonSystemAdjustmentOrStandaloneCreditFilter(),
-            },
+            where,
             skip: (page - 1) * limit,
             take: limit,
             orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
@@ -1119,12 +1128,7 @@ exports.paymentsRouter.get("/history", async (req, res) => {
                 collectedBy: { select: { id: true, email: true } },
             },
         }),
-        prisma_js_1.prisma.payment.count({
-            where: {
-                ...where,
-                ...nonSystemAdjustmentOrStandaloneCreditFilter(),
-            },
-        }),
+        prisma_js_1.prisma.payment.count({ where }),
     ]);
     return res.json({ items, total, page, limit });
 });
