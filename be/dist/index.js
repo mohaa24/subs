@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const dotenv_1 = require("dotenv");
 const path_1 = require("path");
+const fs_1 = require("fs");
 (0, dotenv_1.config)({ path: (0, path_1.resolve)(process.cwd(), ".env") });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
@@ -32,6 +33,7 @@ const qz_js_1 = require("./routes/qz.js");
 const cron_js_1 = require("./lib/cron.js");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4000;
+const uploadsDir = process.env.UPLOADS_DIR || (0, path_1.resolve)(process.cwd(), "uploads");
 const allowedOrigins = process.env.FE_ORIGIN
     ? process.env.FE_ORIGIN.split(",").map((o) => o.trim())
     : ["http://localhost:3000", "http://localhost:3001"];
@@ -39,6 +41,8 @@ app.use((0, cors_1.default)({
     origin: allowedOrigins,
     credentials: true
 }));
+(0, fs_1.mkdirSync)(uploadsDir, { recursive: true });
+app.use("/uploads", express_1.default.static(uploadsDir));
 app.use(express_1.default.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/auth", auth_js_1.authRouter);

@@ -29,6 +29,31 @@ export async function api<T>(
   return res.json();
 }
 
+export function apiAssetUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (/^(https?:|data:|blob:)/i.test(path)) return path;
+  const normalizedBase = API_URL.replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+}
+
+export async function apiFormData<T>(path: string, formData: FormData): Promise<T> {
+  const url = new URL(path, API_URL);
+  const token = getToken();
+  const headers: HeadersInit = {};
+  if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(url.toString(), { method: "POST", headers, body: formData });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error || res.statusText);
+  }
+  return res.json();
+}
+
+export async function apiDelete<T>(path: string): Promise<T> {
+  return api<T>(path, { method: "DELETE" });
+}
+
 export type UserRole = "super_user" | "admin" | "user";
 
 export interface User {
@@ -189,6 +214,7 @@ export interface Organization {
   defaultMembershipFee?: number;
   isActive?: boolean;
   logoUrl?: string | null;
+  receiptLogoUrl?: string | null;
   contactPersonName?: string | null;
   contactPersonPhone?: string | null;
   whatsAppSenderNumber?: string | null;
@@ -280,6 +306,7 @@ export interface PaymentReceipt {
   memberName: string;
   organizationId: string;
   organizationName: string;
+  organizationReceiptLogoUrl?: string | null;
   collectedBy: string;
   paymentMethod?: string | null;
   paidAmount: number;

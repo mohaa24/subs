@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api,
+  apiAssetUrl,
   type DueStatus,
   type DueType,
   type Payment,
@@ -66,6 +67,7 @@ function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
   return {
     paymentKind: receipt.paymentKind,
     organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
     membershipNo: receipt.membershipNo,
     membershipId: receipt.membershipId,
     memberName: receipt.memberName,

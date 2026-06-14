@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { resolve } from "path";
+import { mkdirSync } from "fs";
 config({ path: resolve(process.cwd(), ".env") });
 
 import express from "express";
@@ -29,6 +30,7 @@ import { startCronJobs } from "./lib/cron.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const uploadsDir = process.env.UPLOADS_DIR || resolve(process.cwd(), "uploads");
 
 const allowedOrigins = process.env.FE_ORIGIN
   ? process.env.FE_ORIGIN.split(",").map((o) => o.trim())
@@ -38,6 +40,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true 
 }));
+mkdirSync(uploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));

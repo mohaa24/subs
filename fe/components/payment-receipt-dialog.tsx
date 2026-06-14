@@ -22,6 +22,7 @@ import { toast } from "@/hooks/use-toast";
 export interface PaymentReceiptData {
   paymentKind: "due" | "credit";
   organizationName: string;
+  organizationReceiptLogoUrl?: string | null;
   membershipNo: string;
   membershipId: string;
   memberName?: string;
@@ -54,6 +55,13 @@ type ReceiptEncoderInstance = {
     model?: number | { model?: number; size?: number; errorlevel?: "l" | "m" | "q" | "h" },
     size?: number,
     errorlevel?: "l" | "m" | "q" | "h"
+  ): ReceiptEncoderInstance;
+  image(
+    value: HTMLCanvasElement | HTMLImageElement | ImageData,
+    width?: number,
+    height?: number,
+    algorithm?: "threshold" | "bayer" | "floydsteinberg" | "atkinson",
+    threshold?: number
   ): ReceiptEncoderInstance;
   cut(value?: string): ReceiptEncoderInstance;
   encode(): Uint8Array;
@@ -121,6 +129,8 @@ type PrintMethod = "qz" | "rawbt" | "browser";
 const RECEIPT_WIDTH_INCHES = 2.8;
 const POS_COLUMNS = 44;
 const RECEIPT_QR_SIZE_PX = 96;
+const RECEIPT_LOGO_WIDTH_PX = 384;
+const RECEIPT_LOGO_HEIGHT_PX = 96;
 const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -178,6 +188,9 @@ function rowHtml(
 function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): string {
   const noteHtml = receipt.note ? rowHtml("Note", receipt.note) : "";
   const paymentMethodHtml = rowHtml("Payment Method", receipt.paymentMethod || "-");
+  const logoHtml = receipt.organizationReceiptLogoUrl
+    ? `<div class="logo-box"><img src="${escapeHtml(receipt.organizationReceiptLogoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
+    : "";
   const qrHtml = qrDataUrl
     ? `<div class="qr-wrap"><img src="${qrDataUrl}" alt="Member QR" /></div>`
     : "";
@@ -203,6 +216,19 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       }
       .centered { text-align: center; }
       .headings { font-size: 15px; font-weight: 700; text-transform: uppercase; }
+      .logo-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 0.68in;
+        margin-bottom: 4px;
+      }
+      .logo-box img {
+        max-width: 2.35in;
+        max-height: 0.58in;
+        object-fit: contain;
+      }
       .text-box { width: 100%; }
       .textbox-info {
         display: grid;
@@ -232,6 +258,7 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
   <body>
     <div class="ticket">
       <div class="text-box centered">
+        ${logoHtml}
         <div class="headings">${escapeHtml(receipt.organizationName)}</div>
         <div>PAYMENT RECEIPT</div>
       </div>
@@ -406,6 +433,37 @@ function formatCenteredLines(value: string, width = POS_COLUMNS): string[] {
   });
 }
 
+async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
+  const image = await new Promise<HTMLImageElement>((resolveImage, rejectImage) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolveImage(img);
+    img.onerror = () => rejectImage(new Error("Failed to load receipt logo"));
+    img.src = url;
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = RECEIPT_LOGO_WIDTH_PX;
+  canvas.height = RECEIPT_LOGO_HEIGHT_PX;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas is unavailable");
+
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const scale = Math.min(
+    canvas.width / image.naturalWidth,
+    canvas.height / image.naturalHeight
+  );
+  const drawWidth = Math.max(1, Math.round(image.naturalWidth * scale));
+  const drawHeight = Math.max(1, Math.round(image.naturalHeight * scale));
+  const x = Math.round((canvas.width - drawWidth) / 2);
+  const y = Math.round((canvas.height - drawHeight) / 2);
+  ctx.drawImage(image, x, y, drawWidth, drawHeight);
+
+  return canvas;
+}
+
 async function encodePosReceipt(
   receipt: PaymentReceiptData,
   profile: PosPrinterProfile
@@ -420,6 +478,16 @@ async function encodePosReceipt(
   });
 
   encoder.initialize();
+  if (receipt.organizationReceiptLogoUrl) {
+    try {
+      const logoCanvas = await loadReceiptLogoCanvas(receipt.organizationReceiptLogoUrl);
+      encoder.align("center");
+      encoder.image(logoCanvas, RECEIPT_LOGO_WIDTH_PX, RECEIPT_LOGO_HEIGHT_PX, "atkinson");
+      encoder.newline();
+    } catch (error) {
+      console.warn("Receipt logo could not be printed; falling back to text header.", error);
+    }
+  }
   encoder.align("left");
   encoder.bold(true).size(1, 2);
   for (const line of formatCenteredLines(receipt.organizationName.toUpperCase())) {
@@ -777,6 +845,15 @@ export function PaymentReceiptDialog({
               style={{ width: `${RECEIPT_WIDTH_INCHES}in` }}
             >
               <div className="text-center">
+                {receipt.organizationReceiptLogoUrl ? (
+                  <div className="mb-1 flex min-h-[0.68in] items-center justify-center">
+                    <img
+                      src={receipt.organizationReceiptLogoUrl}
+                      alt={`${receipt.organizationName} logo`}
+                      className="max-h-[0.58in] max-w-[2.35in] object-contain"
+                    />
+                  </div>
+                ) : null}
                 <p className="text-[15px] font-bold uppercase">{receipt.organizationName}</p>
                 <p>PAYMENT RECEIPT</p>
               </div>

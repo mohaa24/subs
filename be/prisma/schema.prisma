@@ -17,6 +17,7 @@ model Organization {
   defaultMembershipFee Decimal  @db.Decimal(12, 2) @default(0)
   isActive             Boolean  @default(true)
   logoUrl              String?
+  receiptLogoUrl       String?
   contactPersonName    String?
   contactPersonPhone   String?
   whatsAppSenderNumber String?

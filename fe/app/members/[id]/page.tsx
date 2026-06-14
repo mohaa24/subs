@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   api,
+  apiAssetUrl,
   type DueType,
   type Membership,
   type Person,
@@ -145,6 +146,7 @@ function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
   return {
     paymentKind: receipt.paymentKind,
     organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
     membershipNo: receipt.membershipNo,
     membershipId: receipt.membershipId,
     memberName: receipt.memberName,

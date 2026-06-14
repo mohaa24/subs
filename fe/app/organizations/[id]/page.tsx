@@ -8,6 +8,9 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   api,
+  apiAssetUrl,
+  apiDelete,
+  apiFormData,
   type Organization,
   type OrganizationBilling,
 } from "@/lib/api";
@@ -39,7 +42,9 @@ export default function OrganizationDetailPage() {
   const searchParams = useSearchParams();
   const id = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptLogoInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [receiptLogoUploading, setReceiptLogoUploading] = useState(false);
 
   const [org, setOrg] = useState<Organization | null>(null);
   const [billing, setBilling] = useState<OrganizationBilling[]>([]);
@@ -71,6 +76,7 @@ export default function OrganizationDetailPage() {
         name: data.name,
         slug: data.slug,
         logoUrl: data.logoUrl ?? "",
+        receiptLogoUrl: data.receiptLogoUrl ?? "",
         contactPersonName: data.contactPersonName ?? "",
         contactPersonPhone: data.contactPersonPhone ?? "",
         whatsAppSenderNumber: data.whatsAppSenderNumber ?? "",
@@ -127,6 +133,7 @@ export default function OrganizationDetailPage() {
         name: org.name,
         slug: org.slug,
         logoUrl: org.logoUrl ?? "",
+        receiptLogoUrl: org.receiptLogoUrl ?? "",
         contactPersonName: org.contactPersonName ?? "",
         contactPersonPhone: org.contactPersonPhone ?? "",
         whatsAppSenderNumber: org.whatsAppSenderNumber ?? "",
@@ -165,6 +172,40 @@ export default function OrganizationDetailPage() {
       setError(err instanceof Error ? err.message : "Failed to upload logo");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleReceiptLogoUpload(file: File) {
+    setReceiptLogoUploading(true);
+    setError("");
+    try {
+      if (file.type !== "image/png") {
+        throw new Error("Receipt logo must be a PNG image.");
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      const updated = await apiFormData<Organization>(`/organizations/${id}/receipt-logo`, formData);
+      setOrg(updated);
+      setEditForm((f) => ({ ...f, receiptLogoUrl: updated.receiptLogoUrl ?? "" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload receipt logo");
+    } finally {
+      setReceiptLogoUploading(false);
+      if (receiptLogoInputRef.current) receiptLogoInputRef.current.value = "";
+    }
+  }
+
+  async function handleRemoveReceiptLogo() {
+    setReceiptLogoUploading(true);
+    setError("");
+    try {
+      const updated = await apiDelete<Organization>(`/organizations/${id}/receipt-logo`);
+      setOrg(updated);
+      setEditForm((f) => ({ ...f, receiptLogoUrl: "" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove receipt logo");
+    } finally {
+      setReceiptLogoUploading(false);
     }
   }
 
@@ -468,7 +509,7 @@ export default function OrganizationDetailPage() {
                       <div className="flex items-center gap-4">
                         {editForm.logoUrl && (
                           <img
-                            src={editForm.logoUrl as string}
+                            src={apiAssetUrl(editForm.logoUrl as string) ?? ""}
                             alt="Logo"
                             className="h-16 w-16 rounded-lg object-cover border"
                           />
@@ -527,6 +568,66 @@ export default function OrganizationDetailPage() {
                     </div>
                   </>
                 )}
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Receipt Logo</Label>
+                  <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-muted/20 p-3 sm:flex-row sm:items-center">
+                    {editForm.receiptLogoUrl ? (
+                      <div className="flex h-20 w-56 items-center justify-center rounded-md border bg-white p-2">
+                        <img
+                          src={apiAssetUrl(editForm.receiptLogoUrl as string) ?? ""}
+                          alt="Receipt logo"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-20 w-56 items-center justify-center rounded-md border bg-white text-xs text-muted-foreground">
+                        No receipt logo
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <input
+                        ref={receiptLogoInputRef}
+                        type="file"
+                        accept="image/png"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleReceiptLogoUpload(f);
+                        }}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={receiptLogoUploading}
+                          onClick={() => receiptLogoInputRef.current?.click()}
+                        >
+                          {receiptLogoUploading
+                            ? "Uploading..."
+                            : editForm.receiptLogoUrl
+                              ? "Change Receipt Logo"
+                              : "Upload Receipt Logo"}
+                        </Button>
+                        {editForm.receiptLogoUrl && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={receiptLogoUploading}
+                            onClick={handleRemoveReceiptLogo}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            {t("common.remove")}
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Use a simple black-on-white PNG for clean thermal receipt printing.
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label>{t("organizations.contactPerson")}</Label>
                   <Input
@@ -664,10 +765,29 @@ export default function OrganizationDetailPage() {
                   <div>
                     <p className="text-xs text-muted-foreground">{t("organizations.logo")}</p>
                     {org.logoUrl ? (
-                      <img src={org.logoUrl} alt="Logo" className="h-20 w-20 rounded-lg object-cover border mt-1" />
+                      <img src={apiAssetUrl(org.logoUrl) ?? ""} alt="Logo" className="h-20 w-20 rounded-lg object-cover border mt-1" />
                     ) : (
                       <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center mt-1">
                         <Building2 className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 sm:col-span-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Receipt Logo</p>
+                    {org.receiptLogoUrl ? (
+                      <div className="mt-1 flex h-20 w-56 items-center justify-center rounded-md border bg-white p-2">
+                        <img
+                          src={apiAssetUrl(org.receiptLogoUrl) ?? ""}
+                          alt="Receipt logo"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-1 flex h-20 w-56 items-center justify-center rounded-md border bg-muted text-xs text-muted-foreground">
+                        No receipt logo
                       </div>
                     )}
                   </div>

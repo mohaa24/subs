@@ -1,5 +1,8 @@
-import { Router } from "express";
+import { Request, Response, Router } from "express";
 import { UserRole } from "@prisma/client";
+import multer from "multer";
+import { promises as fs } from "fs";
+import { dirname, join, resolve } from "path";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -8,6 +11,16 @@ import { ensureDefaultDueTypes } from "../lib/due-types.js";
 export const organizationsRouter = Router();
 
 organizationsRouter.use(requireAuth);
+
+const uploadsDir = process.env.UPLOADS_DIR || resolve(process.cwd(), "uploads");
+const receiptLogoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "image/png") return cb(null, true);
+    cb(new Error("Receipt logo must be a PNG image"));
+  },
+});
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -63,6 +76,7 @@ function toOrgPayload(org: any, counts?: { adminsCount?: number; usersCount?: nu
     defaultMembershipFee: Number(org.defaultMembershipFee),
     isActive: org.isActive,
     logoUrl: org.logoUrl ?? null,
+    receiptLogoUrl: org.receiptLogoUrl ?? null,
     contactPersonName: org.contactPersonName ?? null,
     contactPersonPhone: org.contactPersonPhone ?? null,
     whatsAppSenderNumber: org.whatsAppSenderNumber ?? null,
@@ -208,6 +222,90 @@ organizationsRouter.post("/", async (req, res) => {
     return created;
   });
   return res.status(201).json(toOrgPayload(org));
+});
+
+function canManageOrgReceiptLogo(req: Request, orgId: string) {
+  return req.auth!.role === UserRole.super_user ||
+    (req.auth!.role === UserRole.admin && req.auth!.organizationId === orgId);
+}
+
+function runReceiptLogoUpload(req: Request, res: Response) {
+  return new Promise<void>((resolveUpload, rejectUpload) => {
+    receiptLogoUpload.single("file")(req, res, (err) => {
+      if (err) rejectUpload(err);
+      else resolveUpload();
+    });
+  });
+}
+
+function receiptLogoPublicPath(orgId: string, version = Date.now()) {
+  return `/uploads/organizations/${orgId}/receipt-logo.png?v=${version}`;
+}
+
+function receiptLogoFilePath(orgId: string) {
+  return join(uploadsDir, "organizations", orgId, "receipt-logo.png");
+}
+
+function isPngBuffer(buffer: Buffer) {
+  return buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a;
+}
+
+organizationsRouter.post("/:id/receipt-logo", async (req, res) => {
+  if (!canManageOrgReceiptLogo(req, req.params.id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    await runReceiptLogoUpload(req, res);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to upload receipt logo";
+    return res.status(400).json({ error: message });
+  }
+
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "Receipt logo file is required" });
+  if (!isPngBuffer(file.buffer)) {
+    return res.status(400).json({ error: "Receipt logo must be a valid PNG image" });
+  }
+
+  const existing = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "Organization not found" });
+
+  const filePath = receiptLogoFilePath(req.params.id);
+  await fs.mkdir(dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, file.buffer);
+
+  const org = await prisma.organization.update({
+    where: { id: req.params.id },
+    data: { receiptLogoUrl: receiptLogoPublicPath(req.params.id) },
+  });
+
+  return res.json(toOrgPayload(org));
+});
+
+organizationsRouter.delete("/:id/receipt-logo", async (req, res) => {
+  if (!canManageOrgReceiptLogo(req, req.params.id)) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const existing = await prisma.organization.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: "Organization not found" });
+
+  await fs.rm(receiptLogoFilePath(req.params.id), { force: true });
+  const org = await prisma.organization.update({
+    where: { id: req.params.id },
+    data: { receiptLogoUrl: null },
+  });
+
+  return res.json(toOrgPayload(org));
 });
 
 organizationsRouter.patch("/:id", async (req, res) => {
