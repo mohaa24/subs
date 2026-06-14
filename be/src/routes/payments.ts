@@ -18,6 +18,10 @@ import {
   restoreAutoAppliedCreditForPaymentReversal,
 } from "../lib/membership-credit.js";
 import { getDueTypeBySystemKey } from "../lib/due-types.js";
+import {
+  postPaymentAccountingEntry,
+  postPaymentCorrectionEntries,
+} from "../lib/accounting.js";
 
 export const paymentsRouter = Router();
 
@@ -1159,6 +1163,18 @@ paymentsRouter.post("/", async (req, res) => {
             note: CREDIT_PAYMENT_LEDGER_NOTE,
           });
 
+          await postPaymentAccountingEntry(tx, {
+            paymentId: createdPayment.id,
+            organizationId: membership.organizationId,
+            paymentDate,
+            paymentMethod,
+            directDueTypeId: null,
+            directAppliedAmount: new Decimal(0),
+            creditAmount: paymentAmount,
+            createdByUserId: req.auth!.userId,
+            description: "Credit payment received",
+          });
+
           await applyAvailableCreditAcrossOutstandingDues(tx, {
             membershipId: membership.id,
             createdByUserId: req.auth!.userId,
@@ -1193,7 +1209,7 @@ paymentsRouter.post("/", async (req, res) => {
 
   const due = await prisma.paymentDue.findUnique({
     where: { id: parsed.data.paymentDueId! },
-    include: { membership: true },
+    include: { membership: true, dueType: true },
   });
   if (!due) return res.status(404).json({ error: "Payment due not found" });
   if (due.isSystemAdjustment) {
@@ -1250,7 +1266,21 @@ paymentsRouter.post("/", async (req, res) => {
           createdByUserId: req.auth!.userId,
           note: "Excess amount moved to member credit",
         });
+      }
 
+      await postPaymentAccountingEntry(tx, {
+        paymentId: createdPayment.id,
+        organizationId: due.organizationId,
+        paymentDate,
+        paymentMethod,
+        directDueTypeId: due.dueTypeId,
+        directAppliedAmount: appliedToDue,
+        creditAmount: overpaymentAmount,
+        createdByUserId: req.auth!.userId,
+        description: `Payment received for ${due.dueType?.name ?? "due"}`,
+      });
+
+      if (overpaymentAmount.gt(new Decimal(0))) {
         await applyAvailableCreditAcrossOutstandingDues(tx, {
           membershipId: due.membershipId,
           createdByUserId: req.auth!.userId,
@@ -1476,6 +1506,14 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
         createdByUserId: req.auth!.userId,
       });
     }
+
+    await postPaymentCorrectionEntries(tx, {
+      organizationId: payment.organizationId,
+      paymentId: payment.id,
+      entryDate: new Date(),
+      createdByUserId: req.auth!.userId,
+      reason: parsed.data.reason,
+    });
 
   }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
 

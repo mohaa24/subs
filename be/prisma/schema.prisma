@@ -47,6 +47,9 @@ model Organization {
   activityFeedItems  ActivityFeedItem[]
   paymentDueAdjustments PaymentDueAdjustment[]
   dueTypes           DueType[]
+  accountingAccounts AccountingAccount[]
+  accountingJournalEntries AccountingJournalEntry[]
+  accountingJournalLines AccountingJournalLine[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -95,6 +98,8 @@ model User {
   createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
   createdPaymentDues  PaymentDue[]            @relation("PaymentDueCreatedBy")
   createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
+  createdAccountingAccounts AccountingAccount[] @relation("AccountingAccountCreatedBy")
+  createdAccountingJournalEntries AccountingJournalEntry[] @relation("AccountingJournalEntryCreatedBy")
 }
 
 enum UserRole {
@@ -527,6 +532,88 @@ enum MembershipCreditEntryType {
   debit_auto_apply
   credit_adjustment
   debit_adjustment
+}
+
+enum AccountingAccountType {
+  asset
+  liability
+  equity
+  income
+  expense
+}
+
+enum AccountingJournalEntryType {
+  opening_balance
+  payment
+  payment_correction
+  credit_application
+  expense
+  transfer
+  manual_adjustment
+}
+
+enum AccountingJournalLineSide {
+  debit
+  credit
+}
+
+model AccountingAccount {
+  id              String                @id @default(cuid())
+  organizationId  String
+  name            String
+  accountType     AccountingAccountType
+  systemKey       String?
+  description     String?               @db.Text
+  isActive        Boolean               @default(true)
+  createdByUserId String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AccountingAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  journalLines AccountingJournalLine[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, systemKey])
+  @@index([organizationId, accountType])
+}
+
+model AccountingJournalEntry {
+  id              String                     @id @default(cuid())
+  organizationId  String
+  entryDate       DateTime
+  entryType       AccountingJournalEntryType
+  description     String
+  referenceType   String?
+  referenceId     String?
+  isSystemEntry   Boolean                    @default(false)
+  createdByUserId String?
+  createdAt       DateTime                   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("AccountingJournalEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  lines        AccountingJournalLine[]
+
+  @@index([organizationId, entryDate])
+  @@index([organizationId, referenceType, referenceId])
+}
+
+model AccountingJournalLine {
+  id             String                    @id @default(cuid())
+  organizationId String
+  journalEntryId String
+  accountId      String
+  side           AccountingJournalLineSide
+  amount         Decimal                   @db.Decimal(12, 2)
+  memo           String?                   @db.Text
+  createdAt      DateTime                  @default(now())
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journalEntry AccountingJournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      AccountingAccount       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, accountId, createdAt])
+  @@index([journalEntryId])
 }
 
 enum ActivityFeedEntryType {

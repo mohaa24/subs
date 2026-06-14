@@ -10,6 +10,7 @@ const auth_js_1 = require("../middleware/auth.js");
 const message_queue_js_1 = require("../lib/message-queue.js");
 const membership_credit_js_1 = require("../lib/membership-credit.js");
 const due_types_js_1 = require("../lib/due-types.js");
+const accounting_js_1 = require("../lib/accounting.js");
 exports.paymentsRouter = (0, express_1.Router)();
 exports.paymentsRouter.use(auth_js_1.requireAuth);
 exports.paymentsRouter.use(auth_js_1.withOrgScope);
@@ -996,6 +997,17 @@ exports.paymentsRouter.post("/", async (req, res) => {
                     createdByUserId: req.auth.userId,
                     note: CREDIT_PAYMENT_LEDGER_NOTE,
                 });
+                await (0, accounting_js_1.postPaymentAccountingEntry)(tx, {
+                    paymentId: createdPayment.id,
+                    organizationId: membership.organizationId,
+                    paymentDate,
+                    paymentMethod,
+                    directDueTypeId: null,
+                    directAppliedAmount: new library_1.Decimal(0),
+                    creditAmount: paymentAmount,
+                    createdByUserId: req.auth.userId,
+                    description: "Credit payment received",
+                });
                 await (0, membership_credit_js_1.applyAvailableCreditAcrossOutstandingDues)(tx, {
                     membershipId: membership.id,
                     createdByUserId: req.auth.userId,
@@ -1021,7 +1033,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
     }
     const due = await prisma_js_1.prisma.paymentDue.findUnique({
         where: { id: parsed.data.paymentDueId },
-        include: { membership: true },
+        include: { membership: true, dueType: true },
     });
     if (!due)
         return res.status(404).json({ error: "Payment due not found" });
@@ -1074,6 +1086,19 @@ exports.paymentsRouter.post("/", async (req, res) => {
                 createdByUserId: req.auth.userId,
                 note: "Excess amount moved to member credit",
             });
+        }
+        await (0, accounting_js_1.postPaymentAccountingEntry)(tx, {
+            paymentId: createdPayment.id,
+            organizationId: due.organizationId,
+            paymentDate,
+            paymentMethod,
+            directDueTypeId: due.dueTypeId,
+            directAppliedAmount: appliedToDue,
+            creditAmount: overpaymentAmount,
+            createdByUserId: req.auth.userId,
+            description: `Payment received for ${due.dueType?.name ?? "due"}`,
+        });
+        if (overpaymentAmount.gt(new library_1.Decimal(0))) {
             await (0, membership_credit_js_1.applyAvailableCreditAcrossOutstandingDues)(tx, {
                 membershipId: due.membershipId,
                 createdByUserId: req.auth.userId,
@@ -1268,6 +1293,13 @@ exports.paymentsRouter.post("/:id/reverse", async (req, res) => {
                 createdByUserId: req.auth.userId,
             });
         }
+        await (0, accounting_js_1.postPaymentCorrectionEntries)(tx, {
+            organizationId: payment.organizationId,
+            paymentId: payment.id,
+            entryDate: new Date(),
+            createdByUserId: req.auth.userId,
+            reason: parsed.data.reason,
+        });
     }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
     return res.json({ success: true, message: "Payment reversed" });
 });

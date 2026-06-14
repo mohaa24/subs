@@ -1,5 +1,6 @@
 import type { DueStatus, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { postCreditApplicationAccountingEntry } from "./accounting.js";
 import { getDueTypeBySystemKey } from "./due-types.js";
 
 const ZERO = new Decimal(0);
@@ -13,7 +14,7 @@ type CreditSweepDue = {
   period: string;
   reason: string | null;
   isManual: boolean;
-  dueType?: { name: string } | null;
+  dueType?: { id: string; name: string } | null;
   amountDue: Decimal;
   amountPaid: Decimal;
   status: DueStatus;
@@ -142,6 +143,25 @@ async function applyCreditLotsToDue(
     await tx.membershipCreditAllocation.createMany({ data: allocationRows });
   }
 
+  const appliedBySourcePaymentId = new Map<string, Decimal>();
+  for (const row of allocationRows) {
+    const sourceKey = row.sourcePaymentId ?? "";
+    appliedBySourcePaymentId.set(
+      sourceKey,
+      (appliedBySourcePaymentId.get(sourceKey) ?? ZERO).add(new Decimal(row.amount.toString()))
+    );
+  }
+  for (const [sourceKey, amount] of appliedBySourcePaymentId.entries()) {
+    await postCreditApplicationAccountingEntry(tx, {
+      organizationId: input.due.organizationId,
+      paymentDueId: input.due.id,
+      dueTypeId: input.due.dueType?.id ?? null,
+      amount,
+      sourcePaymentId: sourceKey || null,
+      createdByUserId: input.createdByUserId ?? null,
+    });
+  }
+
   input.due.amountPaid = nextPaid;
   input.due.status = nextStatus;
 
@@ -240,7 +260,7 @@ export async function applyAvailableCreditToDue(
       period: true,
       reason: true,
       isManual: true,
-      dueType: { select: { name: true } },
+      dueType: { select: { id: true, name: true } },
       amountDue: true,
       amountPaid: true,
       status: true,
@@ -292,7 +312,7 @@ export async function applyAvailableCreditAcrossOutstandingDues(
       period: true,
       reason: true,
       isManual: true,
-      dueType: { select: { name: true } },
+      dueType: { select: { id: true, name: true } },
       amountDue: true,
       amountPaid: true,
       status: true,

@@ -1,15 +1,115 @@
 "use client";
 
-import { useEffect } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { useAccountingPreviewUnlock } from "@/lib/accounting-preview";
-import { Landmark, Lock, ReceiptText, WalletCards } from "lucide-react";
+import { Landmark, Lock, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
+
+type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
+type LineSide = "debit" | "credit";
+
+type Account = {
+  id: string;
+  name: string;
+  accountType: AccountType;
+  systemKey?: string | null;
+  description?: string | null;
+  isActive: boolean;
+  balance?: number;
+};
+
+type JournalLine = {
+  id: string;
+  side: LineSide;
+  amount: number;
+  memo?: string | null;
+  account: Account;
+};
+
+type JournalEntry = {
+  id: string;
+  entryDate: string;
+  entryType: string;
+  description: string;
+  referenceType?: string | null;
+  referenceId?: string | null;
+  isSystemEntry: boolean;
+  createdBy?: { email: string } | null;
+  lines: JournalLine[];
+};
+
+type ProfitLossReport = {
+  income: Array<{ id: string; name: string; amount: number }>;
+  expenses: Array<{ id: string; name: string; amount: number }>;
+  incomeTotal: number;
+  expenseTotal: number;
+  netIncome: number;
+};
+
+type BalanceSheetReport = {
+  assets: Account[];
+  liabilities: Account[];
+  equity: Account[];
+  assetTotal: number;
+  liabilityTotal: number;
+  equityTotal: number;
+  liabilitiesAndEquityTotal: number;
+};
+
+const accountTypeLabels: Record<AccountType, string> = {
+  asset: "Asset",
+  liability: "Liability",
+  equity: "Equity",
+  income: "Income",
+  expense: "Expense",
+};
+
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function firstOfMonthString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function formatRs(n: number) {
+  return new Intl.NumberFormat("en-LK", {
+    style: "currency",
+    currency: "LKR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+    .format(n)
+    .replace("LKR", "Rs.");
+}
+
+function accountTone(accountType: AccountType) {
+  if (accountType === "asset") return "text-emerald-700";
+  if (accountType === "liability") return "text-amber-700";
+  if (accountType === "income") return "text-blue-700";
+  if (accountType === "expense") return "text-red-700";
+  return "text-foreground";
+}
 
 export default function AccountingPage() {
   const { user, loading } = useAuth();
@@ -18,9 +118,143 @@ export default function AccountingPage() {
   const canPreview =
     previewUnlocked && (user?.role === "admin" || user?.role === "super_user");
 
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
+  const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
+  const [fromDate, setFromDate] = useState(firstOfMonthString);
+  const [toDate, setToDate] = useState(todayString);
+  const [asOfDate, setAsOfDate] = useState(todayString);
+  const [loadingData, setLoadingData] = useState(false);
+  const [error, setError] = useState("");
+
+  const [newAccount, setNewAccount] = useState({
+    name: "",
+    accountType: "asset" as AccountType,
+    description: "",
+  });
+  const [expense, setExpense] = useState({
+    sourceAccountId: "",
+    expenseAccountId: "",
+    amount: "",
+    entryDate: todayString(),
+    description: "",
+    memo: "",
+  });
+  const [transfer, setTransfer] = useState({
+    fromAccountId: "",
+    toAccountId: "",
+    amount: "",
+    entryDate: todayString(),
+    description: "",
+  });
+
+  const assetAccounts = useMemo(
+    () => accounts.filter((account) => account.accountType === "asset" && account.isActive),
+    [accounts],
+  );
+  const expenseAccounts = useMemo(
+    () => accounts.filter((account) => account.accountType === "expense" && account.isActive),
+    [accounts],
+  );
+
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, router, user]);
+
+  useEffect(() => {
+    if (canPreview) void loadAccounting();
+  }, [canPreview, fromDate, toDate, asOfDate]);
+
+  async function loadAccounting() {
+    setLoadingData(true);
+    setError("");
+    try {
+      const [accountsData, journalData, plData, bsData] = await Promise.all([
+        api<Account[]>("/accounting/accounts", { params: { includeInactive: "true" } }),
+        api<{ items: JournalEntry[] }>("/accounting/journal", { params: { limit: "25" } }),
+        api<ProfitLossReport>("/accounting/reports/profit-loss", {
+          params: { fromDate, toDate },
+        }),
+        api<BalanceSheetReport>("/accounting/reports/balance-sheet", {
+          params: { asOfDate },
+        }),
+      ]);
+      setAccounts(accountsData);
+      setJournal(journalData.items);
+      setPlReport(plData);
+      setBalanceSheet(bsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load accounting");
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  async function handleCreateAccount(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await api<Account>("/accounting/accounts", {
+        method: "POST",
+        body: JSON.stringify(newAccount),
+      });
+      setNewAccount({ name: "", accountType: "asset", description: "" });
+      await loadAccounting();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create account");
+    }
+  }
+
+  async function handleExpense(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await api<JournalEntry>("/accounting/expenses", {
+        method: "POST",
+        body: JSON.stringify({
+          ...expense,
+          amount: Number(expense.amount),
+          memo: expense.memo || null,
+        }),
+      });
+      setExpense({
+        sourceAccountId: expense.sourceAccountId,
+        expenseAccountId: expense.expenseAccountId,
+        amount: "",
+        entryDate: todayString(),
+        description: "",
+        memo: "",
+      });
+      await loadAccounting();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to record expense");
+    }
+  }
+
+  async function handleTransfer(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await api<JournalEntry>("/accounting/transfers", {
+        method: "POST",
+        body: JSON.stringify({
+          ...transfer,
+          amount: Number(transfer.amount),
+        }),
+      });
+      setTransfer({
+        fromAccountId: transfer.fromAccountId,
+        toAccountId: transfer.toAccountId,
+        amount: "",
+        entryDate: todayString(),
+        description: "",
+      });
+      await loadAccounting();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to record transfer");
+    }
+  }
 
   if (loading || !user) {
     return <div className="p-8 text-muted-foreground">Loading…</div>;
@@ -30,7 +264,7 @@ export default function AccountingPage() {
     <div className="min-h-screen bg-background relative">
       <AbstractBg />
       <Header />
-      <main className="relative mx-auto max-w-5xl p-6">
+      <main className="relative mx-auto max-w-6xl p-6">
         <Breadcrumb
           items={[
             { label: "Dashboard", href: dashboardFlowHref("accounting") },
@@ -38,9 +272,17 @@ export default function AccountingPage() {
           ]}
         />
 
-        <div className="mb-6 flex items-center gap-2">
-          <Landmark className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-xl font-semibold text-foreground">Accounting</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Landmark className="h-5 w-5 text-muted-foreground" />
+            <h1 className="text-xl font-semibold text-foreground">Accounting</h1>
+          </div>
+          {canPreview && (
+            <Button type="button" variant="outline" size="sm" onClick={loadAccounting} disabled={loadingData}>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          )}
         </div>
 
         {!canPreview ? (
@@ -58,33 +300,317 @@ export default function AccountingPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                  <WalletCards className="h-4 w-4 text-primary" />
-                </div>
-                <CardTitle className="text-base">Accounts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">Beta preview</p>
-              </CardContent>
-            </Card>
+          <>
+            {error && (
+              <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
 
-            <Card>
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                  <ReceiptText className="h-4 w-4 text-primary" />
+            <div className="mb-5 grid gap-3 md:grid-cols-4">
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Assets</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums">{formatRs(balanceSheet?.assetTotal ?? 0)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Liabilities</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums">{formatRs(balanceSheet?.liabilityTotal ?? 0)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Net Income</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums">{formatRs(plReport?.netIncome ?? 0)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">Journal Entries</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums">{journal.length}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Tabs defaultValue="accounts" className="w-full">
+              <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+                <TabsTrigger value="accounts" className="rounded-md border border-border px-3 py-1.5">Accounts</TabsTrigger>
+                <TabsTrigger value="expenses" className="rounded-md border border-border px-3 py-1.5">Expenses</TabsTrigger>
+                <TabsTrigger value="transfers" className="rounded-md border border-border px-3 py-1.5">Transfers</TabsTrigger>
+                <TabsTrigger value="reports" className="rounded-md border border-border px-3 py-1.5">Reports</TabsTrigger>
+                <TabsTrigger value="journal" className="rounded-md border border-border px-3 py-1.5">Journal</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="accounts">
+                <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center gap-3 space-y-0">
+                      <WalletCards className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle className="text-base">Chart of Accounts</CardTitle>
+                    </CardHeader>
+                    <CardContent className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="p-2 text-left font-medium">Account</th>
+                            <th className="p-2 text-left font-medium">Type</th>
+                            <th className="p-2 text-left font-medium">Status</th>
+                            <th className="p-2 text-right font-medium">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {accounts.map((account) => (
+                            <tr key={account.id} className="border-t">
+                              <td className="p-2">
+                                <div className="font-medium">{account.name}</div>
+                                {account.description && <div className="text-xs text-muted-foreground">{account.description}</div>}
+                              </td>
+                              <td className={`p-2 font-medium ${accountTone(account.accountType)}`}>{accountTypeLabels[account.accountType]}</td>
+                              <td className="p-2 text-muted-foreground">{account.isActive ? "Active" : "Archived"}</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(account.balance ?? 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Create Account</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form className="space-y-3" onSubmit={handleCreateAccount}>
+                        <div className="space-y-1.5">
+                          <Label>Name</Label>
+                          <Input value={newAccount.name} onChange={(e) => setNewAccount((v) => ({ ...v, name: e.target.value }))} required />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Type</Label>
+                          <Select value={newAccount.accountType} onValueChange={(value) => setNewAccount((v) => ({ ...v, accountType: value as AccountType }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(accountTypeLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Description</Label>
+                          <Textarea value={newAccount.description} onChange={(e) => setNewAccount((v) => ({ ...v, description: e.target.value }))} />
+                        </div>
+                        <Button type="submit" className="w-full">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create
+                        </Button>
+                      </form>
+                    </CardContent>
+                  </Card>
                 </div>
-                <CardTitle className="text-base">Entries</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">Beta preview</p>
-              </CardContent>
-            </Card>
-          </div>
+              </TabsContent>
+
+              <TabsContent value="expenses">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Record Expense</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleExpense}>
+                      <div className="space-y-1.5">
+                        <Label>Paid From</Label>
+                        <Select value={expense.sourceAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, sourceAccountId: value }))}>
+                          <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
+                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Expense Account</Label>
+                        <Select value={expense.expenseAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, expenseAccountId: value }))}>
+                          <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
+                          <SelectContent>{expenseAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Amount</Label>
+                        <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Date</Label>
+                        <Input type="date" value={expense.entryDate} onChange={(e) => setExpense((v) => ({ ...v, entryDate: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label>Description</Label>
+                        <Input value={expense.description} onChange={(e) => setExpense((v) => ({ ...v, description: e.target.value }))} required />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label>Memo</Label>
+                        <Textarea value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} />
+                      </div>
+                      <Button type="submit" className="md:col-span-2">Record Expense</Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="transfers">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Transfer Between Asset Accounts</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleTransfer}>
+                      <div className="space-y-1.5">
+                        <Label>From</Label>
+                        <Select value={transfer.fromAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, fromAccountId: value }))}>
+                          <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>To</Label>
+                        <Select value={transfer.toAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, toAccountId: value }))}>
+                          <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Amount</Label>
+                        <Input type="number" min="0" step="0.01" value={transfer.amount} onChange={(e) => setTransfer((v) => ({ ...v, amount: e.target.value }))} required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Date</Label>
+                        <Input type="date" value={transfer.entryDate} onChange={(e) => setTransfer((v) => ({ ...v, entryDate: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5 md:col-span-2">
+                        <Label>Description</Label>
+                        <Input value={transfer.description} onChange={(e) => setTransfer((v) => ({ ...v, description: e.target.value }))} required />
+                      </div>
+                      <Button type="submit" className="md:col-span-2">Record Transfer</Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="reports">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Profit & Loss</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label>From</Label>
+                          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>To</Label>
+                          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                        </div>
+                      </div>
+                      <ReportRows title="Income" rows={plReport?.income ?? []} />
+                      <ReportRows title="Expenses" rows={plReport?.expenses ?? []} />
+                      <div className="mt-3 border-t pt-3 text-sm">
+                        <div className="flex justify-between"><span>Income</span><strong>{formatRs(plReport?.incomeTotal ?? 0)}</strong></div>
+                        <div className="flex justify-between"><span>Expenses</span><strong>{formatRs(plReport?.expenseTotal ?? 0)}</strong></div>
+                        <div className="flex justify-between text-base"><span>Net Income</span><strong>{formatRs(plReport?.netIncome ?? 0)}</strong></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Balance Sheet</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="mb-4 space-y-1.5">
+                        <Label>As Of</Label>
+                        <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+                      </div>
+                      <ReportRows title="Assets" rows={(balanceSheet?.assets ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
+                      <ReportRows title="Liabilities" rows={(balanceSheet?.liabilities ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
+                      <ReportRows title="Equity" rows={(balanceSheet?.equity ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
+                      <div className="mt-3 border-t pt-3 text-sm">
+                        <div className="flex justify-between"><span>Assets</span><strong>{formatRs(balanceSheet?.assetTotal ?? 0)}</strong></div>
+                        <div className="flex justify-between"><span>Liabilities + Equity</span><strong>{formatRs(balanceSheet?.liabilitiesAndEquityTotal ?? 0)}</strong></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="journal">
+                <Card>
+                  <CardHeader className="flex flex-row items-center gap-3 space-y-0">
+                    <ReceiptText className="h-5 w-5 text-muted-foreground" />
+                    <CardTitle className="text-base">Journal Entries</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {journal.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">No journal entries yet.</p>
+                    ) : (
+                      journal.map((entry) => (
+                        <div key={entry.id} className="rounded-md border p-3">
+                          <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium">{entry.description}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(entry.entryDate).toLocaleDateString()} · {entry.entryType.replace(/_/g, " ")}
+                                {entry.isSystemEntry ? " · System" : ""}
+                              </p>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{entry.createdBy?.email ?? ""}</p>
+                          </div>
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {entry.lines.map((line) => (
+                                <tr key={line.id} className="border-t">
+                                  <td className="py-1.5">{line.account.name}</td>
+                                  <td className="py-1.5 text-right text-muted-foreground">{line.side}</td>
+                                  <td className="py-1.5 text-right tabular-nums">{formatRs(line.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+          </>
         )}
       </main>
+    </div>
+  );
+}
+
+function ReportRows({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ id: string; name: string; amount: number }>;
+}) {
+  return (
+    <div className="mb-3">
+      <p className="mb-1 text-sm font-medium text-muted-foreground">{title}</p>
+      {rows.length === 0 ? (
+        <p className="rounded-md border border-dashed p-2 text-sm text-muted-foreground">No activity</p>
+      ) : (
+        <div className="rounded-md border">
+          {rows.map((row) => (
+            <div key={row.id} className="flex justify-between border-t px-3 py-2 text-sm first:border-t-0">
+              <span>{row.name}</span>
+              <span className="tabular-nums">{formatRs(row.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

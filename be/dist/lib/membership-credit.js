@@ -7,6 +7,7 @@ exports.applyAvailableCreditAcrossOutstandingDues = applyAvailableCreditAcrossOu
 exports.moveNegativeCreditBalanceToDue = moveNegativeCreditBalanceToDue;
 exports.restoreAutoAppliedCreditForPaymentReversal = restoreAutoAppliedCreditForPaymentReversal;
 const library_1 = require("@prisma/client/runtime/library");
+const accounting_js_1 = require("./accounting.js");
 const due_types_js_1 = require("./due-types.js");
 const ZERO = new library_1.Decimal(0);
 function maxDecimal(a, b) {
@@ -112,6 +113,21 @@ async function applyCreditLotsToDue(tx, input) {
     if (allocationRows.length > 0) {
         await tx.membershipCreditAllocation.createMany({ data: allocationRows });
     }
+    const appliedBySourcePaymentId = new Map();
+    for (const row of allocationRows) {
+        const sourceKey = row.sourcePaymentId ?? "";
+        appliedBySourcePaymentId.set(sourceKey, (appliedBySourcePaymentId.get(sourceKey) ?? ZERO).add(new library_1.Decimal(row.amount.toString())));
+    }
+    for (const [sourceKey, amount] of appliedBySourcePaymentId.entries()) {
+        await (0, accounting_js_1.postCreditApplicationAccountingEntry)(tx, {
+            organizationId: input.due.organizationId,
+            paymentDueId: input.due.id,
+            dueTypeId: input.due.dueType?.id ?? null,
+            amount,
+            sourcePaymentId: sourceKey || null,
+            createdByUserId: input.createdByUserId ?? null,
+        });
+    }
     input.due.amountPaid = nextPaid;
     input.due.status = nextStatus;
     return applyAmount;
@@ -182,7 +198,7 @@ async function applyAvailableCreditToDue(tx, input) {
             period: true,
             reason: true,
             isManual: true,
-            dueType: { select: { name: true } },
+            dueType: { select: { id: true, name: true } },
             amountDue: true,
             amountPaid: true,
             status: true,
@@ -225,7 +241,7 @@ async function applyAvailableCreditAcrossOutstandingDues(tx, input) {
             period: true,
             reason: true,
             isManual: true,
-            dueType: { select: { name: true } },
+            dueType: { select: { id: true, name: true } },
             amountDue: true,
             amountPaid: true,
             status: true,
