@@ -1682,24 +1682,100 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
     .reduce((sum, p) => sum.add(p.amount), new Decimal(0));
   const netCollected = grossCollected.sub(totalReversed);
   const dueTypeTotals = new Map<string, { amount: Decimal; sortOrder: number }>();
+  const activePayments = payments.filter((p) => !p.isReversed);
+  const activePaymentIds = activePayments.map((p) => p.id);
 
-  for (const payment of payments) {
-    const dueTypeName =
-      payment.paymentKind === "credit" || !payment.paymentDueId
-        ? "Credit balance"
-        : payment.paymentDue?.dueType?.name ?? "Unknown";
-    const sortOrder =
-      payment.paymentKind === "credit" || !payment.paymentDueId
-        ? Number.MAX_SAFE_INTEGER
-        : payment.paymentDue?.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1;
-    const signedAmount = payment.isReversed ? new Decimal(payment.amount).neg() : new Decimal(payment.amount);
+  function addDueTypeTotal(dueTypeName: string, amount: Decimal, sortOrder: number) {
+    if (!amount.gt(new Decimal(0))) return;
     const existing = dueTypeTotals.get(dueTypeName);
     if (existing) {
-      existing.amount = existing.amount.add(signedAmount);
+      existing.amount = existing.amount.add(amount);
       existing.sortOrder = Math.min(existing.sortOrder, sortOrder);
     } else {
-      dueTypeTotals.set(dueTypeName, { amount: signedAmount, sortOrder });
+      dueTypeTotals.set(dueTypeName, { amount, sortOrder });
     }
+  }
+
+  const [overpaymentRows, creditAllocations] = activePaymentIds.length > 0
+    ? await Promise.all([
+        prisma.membershipCreditLedger.groupBy({
+          by: ["paymentId"],
+          where: {
+            paymentId: { in: activePaymentIds },
+            entryType: "credit_overpayment",
+          },
+          _sum: { amountDelta: true },
+        }),
+        prisma.membershipCreditAllocation.findMany({
+          where: {
+            sourcePaymentId: { in: activePaymentIds },
+            reversedAt: null,
+          },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          select: {
+            sourcePaymentId: true,
+            amount: true,
+            paymentDue: {
+              select: {
+                dueType: { select: { name: true, sortOrder: true } },
+              },
+            },
+          },
+        }),
+      ])
+    : [[], []];
+
+  const overpaymentByPaymentId = new Map<string, Decimal>();
+  for (const row of overpaymentRows) {
+    if (!row.paymentId) continue;
+    overpaymentByPaymentId.set(
+      row.paymentId,
+      maxDecimal(row._sum.amountDelta ?? new Decimal(0), new Decimal(0))
+    );
+  }
+
+  const allocationsByPaymentId = new Map<string, typeof creditAllocations>();
+  for (const allocation of creditAllocations) {
+    if (!allocation.sourcePaymentId) continue;
+    const existing = allocationsByPaymentId.get(allocation.sourcePaymentId) ?? [];
+    existing.push(allocation);
+    allocationsByPaymentId.set(allocation.sourcePaymentId, existing);
+  }
+
+  for (const payment of activePayments) {
+    const paymentAmount = new Decimal(payment.amount);
+    const creditCreated = minDecimal(
+      overpaymentByPaymentId.get(payment.id) ??
+        (payment.paymentKind === "credit" || !payment.paymentDueId ? paymentAmount : new Decimal(0)),
+      paymentAmount
+    );
+    const directApplied =
+      payment.paymentKind === "credit" || !payment.paymentDueId
+        ? new Decimal(0)
+        : maxDecimal(paymentAmount.sub(creditCreated), new Decimal(0));
+
+    if (directApplied.gt(new Decimal(0))) {
+      addDueTypeTotal(
+        payment.paymentDue?.dueType?.name ?? "Unknown",
+        directApplied,
+        payment.paymentDue?.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1
+      );
+    }
+
+    let remainingCredit = maxDecimal(paymentAmount.sub(directApplied), new Decimal(0));
+    for (const allocation of allocationsByPaymentId.get(payment.id) ?? []) {
+      if (!remainingCredit.gt(new Decimal(0))) break;
+
+      const allocatedAmount = minDecimal(allocation.amount, remainingCredit);
+      addDueTypeTotal(
+        allocation.paymentDue.dueType?.name ?? "Unknown",
+        allocatedAmount,
+        allocation.paymentDue.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1
+      );
+      remainingCredit = remainingCredit.sub(allocatedAmount);
+    }
+
+    addDueTypeTotal("Credit balance", remainingCredit, Number.MAX_SAFE_INTEGER);
   }
 
   const dueTypeSummary = [...dueTypeTotals.entries()]

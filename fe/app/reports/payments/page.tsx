@@ -156,9 +156,9 @@ export default function PeriodicPaymentReportPage() {
           if (!report) return [];
           const totals = new Map<string, number>();
           for (const payment of report.payments) {
+            if (payment.isReversed) continue;
             const dueType = payment.dueType ?? "Unknown";
-            const signedAmount = payment.isReversed ? -payment.amount : payment.amount;
-            totals.set(dueType, (totals.get(dueType) ?? 0) + signedAmount);
+            totals.set(dueType, (totals.get(dueType) ?? 0) + payment.amount);
           }
           return Array.from(totals.entries())
             .map(([dueType, amount]) => ({ dueType, amount }))
@@ -169,6 +169,7 @@ export default function PeriodicPaymentReportPage() {
               return a.dueType.localeCompare(b.dueType);
             });
         })();
+  const dueTypeSummaryTotal = dueTypeSummary.reduce((sum, item) => sum + item.amount, 0);
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -353,12 +354,18 @@ export default function PeriodicPaymentReportPage() {
                             </td>
                           </tr>
                         ) : (
-                          dueTypeSummary.map((item) => (
-                            <tr key={item.dueType} className="border-t">
-                              <td className="p-2.5">{item.dueType}</td>
-                              <td className="p-2.5 text-right tabular-nums">{formatRs(item.amount)}</td>
+                          <>
+                            {dueTypeSummary.map((item) => (
+                              <tr key={item.dueType} className="border-t">
+                                <td className="p-2.5">{item.dueType}</td>
+                                <td className="p-2.5 text-right tabular-nums">{formatRs(item.amount)}</td>
+                              </tr>
+                            ))}
+                            <tr className="border-t font-semibold">
+                              <td className="p-2.5">Total</td>
+                              <td className="p-2.5 text-right tabular-nums">{formatRs(dueTypeSummaryTotal)}</td>
                             </tr>
-                          ))
+                          </>
                         )}
                       </tbody>
                     </table>
