@@ -105,11 +105,9 @@ async function ensureSystemAccount(tx, organizationId, account) {
         },
     });
     if (existingByKey) {
-        const safeName = await nextAvailableAccountName(tx, organizationId, account.name, existingByKey.id);
         return tx.accountingAccount.update({
             where: { id: existingByKey.id },
             data: {
-                name: safeName,
                 description: account.description,
                 isActive: account.isActive ?? true,
             },
@@ -120,30 +118,36 @@ async function ensureSystemAccount(tx, organizationId, account) {
             organizationId,
             name: { equals: account.name, mode: "insensitive" },
         },
+        select: { id: true },
     });
-    if (existingByName && !existingByName.systemKey && existingByName.accountType === account.accountType) {
-        return tx.accountingAccount.update({
-            where: { id: existingByName.id },
-            data: {
-                systemKey: account.systemKey,
-                description: account.description,
-                isActive: account.isActive ?? true,
+    const baseName = existingByName ? `${account.name} (System)` : account.name;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const name = await nextAvailableAccountName(tx, organizationId, baseName);
+        await tx.accountingAccount.createMany({
+            data: [
+                {
+                    organizationId,
+                    name,
+                    accountType: account.accountType,
+                    systemKey: account.systemKey,
+                    description: account.description,
+                    isActive: account.isActive ?? true,
+                },
+            ],
+            skipDuplicates: true,
+        });
+        const accountByKey = await tx.accountingAccount.findUnique({
+            where: {
+                organizationId_systemKey: {
+                    organizationId,
+                    systemKey: account.systemKey,
+                },
             },
         });
+        if (accountByKey)
+            return accountByKey;
     }
-    const name = existingByName
-        ? await nextAvailableAccountName(tx, organizationId, `${account.name} (System)`)
-        : account.name;
-    return tx.accountingAccount.create({
-        data: {
-            organizationId,
-            name,
-            accountType: account.accountType,
-            systemKey: account.systemKey,
-            description: account.description,
-            isActive: account.isActive ?? true,
-        },
-    });
+    throw new Error(`Unable to ensure accounting system account ${account.systemKey}`);
 }
 async function ensureDefaultAccountingAccounts(tx, organizationId) {
     for (const account of DEFAULT_ACCOUNTS) {
