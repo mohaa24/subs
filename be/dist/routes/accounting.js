@@ -21,6 +21,18 @@ function requireAccountingRole(req, res) {
     }
     return true;
 }
+function asyncRoute(handler) {
+    return (req, res, next) => {
+        Promise.resolve(handler(req, res, next)).catch((error) => {
+            console.error("[Accounting] Route error:", error);
+            if (!res.headersSent) {
+                res.status(500).json({ error: "Accounting request failed" });
+                return;
+            }
+            next(error);
+        });
+    };
+}
 function dateFromQuery(value, fallback) {
     if (typeof value !== "string" || !value.trim())
         return fallback;
@@ -86,7 +98,7 @@ exports.accountingRouter.use((req, res, next) => {
         return;
     next();
 });
-exports.accountingRouter.get("/accounts", async (req, res) => {
+exports.accountingRouter.get("/accounts", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -96,8 +108,8 @@ exports.accountingRouter.get("/accounts", async (req, res) => {
         return includeInactive ? balances : balances.filter((account) => account.isActive);
     });
     return res.json(accounts.map(serializeAccount));
-});
-exports.accountingRouter.post("/accounts", async (req, res) => {
+}));
+exports.accountingRouter.post("/accounts", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -126,8 +138,8 @@ exports.accountingRouter.post("/accounts", async (req, res) => {
         },
     });
     return res.status(201).json(account);
-});
-exports.accountingRouter.patch("/accounts/:id", async (req, res) => {
+}));
+exports.accountingRouter.patch("/accounts/:id", asyncRoute(async (req, res) => {
     const parsed = updateAccountSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -154,8 +166,8 @@ exports.accountingRouter.patch("/accounts/:id", async (req, res) => {
         },
     });
     return res.json(updated);
-});
-exports.accountingRouter.post("/expenses", async (req, res) => {
+}));
+exports.accountingRouter.post("/expenses", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -196,8 +208,8 @@ exports.accountingRouter.post("/expenses", async (req, res) => {
         });
     });
     return res.status(201).json(serializeJournalEntry(entry));
-});
-exports.accountingRouter.post("/transfers", async (req, res) => {
+}));
+exports.accountingRouter.post("/transfers", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -241,8 +253,8 @@ exports.accountingRouter.post("/transfers", async (req, res) => {
         });
     });
     return res.status(201).json(serializeJournalEntry(entry));
-});
-exports.accountingRouter.get("/journal", async (req, res) => {
+}));
+exports.accountingRouter.get("/journal", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -266,8 +278,8 @@ exports.accountingRouter.get("/journal", async (req, res) => {
         prisma_js_1.prisma.accountingJournalEntry.count({ where }),
     ]);
     return res.json({ items: items.map(serializeJournalEntry), total, page, limit });
-});
-exports.accountingRouter.get("/reports/profit-loss", async (req, res) => {
+}));
+exports.accountingRouter.get("/reports/profit-loss", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -319,8 +331,8 @@ exports.accountingRouter.get("/reports/profit-loss", async (req, res) => {
         expenseTotal: Number(expenseTotal.toFixed(2)),
         netIncome: Number((incomeTotal - expenseTotal).toFixed(2)),
     });
-});
-exports.accountingRouter.get("/reports/balance-sheet", async (req, res) => {
+}));
+exports.accountingRouter.get("/reports/balance-sheet", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
@@ -357,4 +369,4 @@ exports.accountingRouter.get("/reports/balance-sheet", async (req, res) => {
         equityTotal: Number(equityTotal.toFixed(2)),
         liabilitiesAndEquityTotal: Number((liabilityTotal + equityTotal).toFixed(2)),
     });
-});
+}));

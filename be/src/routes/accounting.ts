@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import type { AccountingAccountType } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -28,6 +29,19 @@ function requireAccountingRole(req: any, res: any) {
     return false;
   }
   return true;
+}
+
+function asyncRoute(handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(handler(req, res, next)).catch((error) => {
+      console.error("[Accounting] Route error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Accounting request failed" });
+        return;
+      }
+      next(error);
+    });
+  };
 }
 
 function dateFromQuery(value: unknown, fallback: Date) {
@@ -104,7 +118,7 @@ accountingRouter.use((req, res, next) => {
   next();
 });
 
-accountingRouter.get("/accounts", async (req, res) => {
+accountingRouter.get("/accounts", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -115,9 +129,9 @@ accountingRouter.get("/accounts", async (req, res) => {
   });
 
   return res.json(accounts.map(serializeAccount));
-});
+}));
 
-accountingRouter.post("/accounts", async (req, res) => {
+accountingRouter.post("/accounts", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -148,9 +162,9 @@ accountingRouter.post("/accounts", async (req, res) => {
   });
 
   return res.status(201).json(account);
-});
+}));
 
-accountingRouter.patch("/accounts/:id", async (req, res) => {
+accountingRouter.patch("/accounts/:id", asyncRoute(async (req, res) => {
   const parsed = updateAccountSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -180,9 +194,9 @@ accountingRouter.patch("/accounts/:id", async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-accountingRouter.post("/expenses", async (req, res) => {
+accountingRouter.post("/expenses", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -227,9 +241,9 @@ accountingRouter.post("/expenses", async (req, res) => {
   });
 
   return res.status(201).json(serializeJournalEntry(entry));
-});
+}));
 
-accountingRouter.post("/transfers", async (req, res) => {
+accountingRouter.post("/transfers", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -277,9 +291,9 @@ accountingRouter.post("/transfers", async (req, res) => {
   });
 
   return res.status(201).json(serializeJournalEntry(entry));
-});
+}));
 
-accountingRouter.get("/journal", async (req, res) => {
+accountingRouter.get("/journal", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -304,9 +318,9 @@ accountingRouter.get("/journal", async (req, res) => {
   ]);
 
   return res.json({ items: items.map(serializeJournalEntry), total, page, limit });
-});
+}));
 
-accountingRouter.get("/reports/profit-loss", async (req, res) => {
+accountingRouter.get("/reports/profit-loss", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -361,9 +375,9 @@ accountingRouter.get("/reports/profit-loss", async (req, res) => {
     expenseTotal: Number(expenseTotal.toFixed(2)),
     netIncome: Number((incomeTotal - expenseTotal).toFixed(2)),
   });
-});
+}));
 
-accountingRouter.get("/reports/balance-sheet", async (req, res) => {
+accountingRouter.get("/reports/balance-sheet", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -402,4 +416,4 @@ accountingRouter.get("/reports/balance-sheet", async (req, res) => {
     equityTotal: Number(equityTotal.toFixed(2)),
     liabilitiesAndEquityTotal: Number((liabilityTotal + equityTotal).toFixed(2)),
   });
-});
+}));

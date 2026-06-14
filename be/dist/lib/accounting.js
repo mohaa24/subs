@@ -79,49 +79,87 @@ function accountNormalBalance(accountType) {
 function accountBalanceExpression(accountType, debit, credit) {
     return accountNormalBalance(accountType) === "debit" ? debit.sub(credit) : credit.sub(debit);
 }
-async function ensureDefaultAccountingAccounts(tx, organizationId) {
-    for (const account of DEFAULT_ACCOUNTS) {
-        await tx.accountingAccount.upsert({
+async function nextAvailableAccountName(tx, organizationId, baseName, excludeId) {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+        const candidate = attempt === 0 ? baseName : `${baseName} ${attempt + 1}`;
+        const existing = await tx.accountingAccount.findFirst({
             where: {
-                organizationId_systemKey: {
-                    organizationId,
-                    systemKey: account.systemKey,
-                },
-            },
-            update: {},
-            create: {
                 organizationId,
-                name: account.name,
-                accountType: account.accountType,
+                name: { equals: candidate, mode: "insensitive" },
+                ...(excludeId ? { id: { not: excludeId } } : {}),
+            },
+            select: { id: true },
+        });
+        if (!existing)
+            return candidate;
+    }
+    return `${baseName} ${Date.now()}`;
+}
+async function ensureSystemAccount(tx, organizationId, account) {
+    const existingByKey = await tx.accountingAccount.findUnique({
+        where: {
+            organizationId_systemKey: {
+                organizationId,
                 systemKey: account.systemKey,
+            },
+        },
+    });
+    if (existingByKey) {
+        const safeName = await nextAvailableAccountName(tx, organizationId, account.name, existingByKey.id);
+        return tx.accountingAccount.update({
+            where: { id: existingByKey.id },
+            data: {
+                name: safeName,
                 description: account.description,
+                isActive: account.isActive ?? true,
             },
         });
+    }
+    const existingByName = await tx.accountingAccount.findFirst({
+        where: {
+            organizationId,
+            name: { equals: account.name, mode: "insensitive" },
+        },
+    });
+    if (existingByName && !existingByName.systemKey && existingByName.accountType === account.accountType) {
+        return tx.accountingAccount.update({
+            where: { id: existingByName.id },
+            data: {
+                systemKey: account.systemKey,
+                description: account.description,
+                isActive: account.isActive ?? true,
+            },
+        });
+    }
+    const name = existingByName
+        ? await nextAvailableAccountName(tx, organizationId, `${account.name} (System)`)
+        : account.name;
+    return tx.accountingAccount.create({
+        data: {
+            organizationId,
+            name,
+            accountType: account.accountType,
+            systemKey: account.systemKey,
+            description: account.description,
+            isActive: account.isActive ?? true,
+        },
+    });
+}
+async function ensureDefaultAccountingAccounts(tx, organizationId) {
+    for (const account of DEFAULT_ACCOUNTS) {
+        await ensureSystemAccount(tx, organizationId, account);
     }
     const dueTypes = await tx.dueType.findMany({
         where: { organizationId },
         select: { id: true, name: true, isActive: true },
     });
     for (const dueType of dueTypes) {
-        await tx.accountingAccount.upsert({
-            where: {
-                organizationId_systemKey: {
-                    organizationId,
-                    systemKey: dueTypeIncomeSystemKey(dueType.id),
-                },
-            },
-            update: {
-                name: `${dueType.name} Income`,
-                isActive: dueType.isActive,
-            },
-            create: {
-                organizationId,
-                name: `${dueType.name} Income`,
-                accountType: "income",
-                systemKey: dueTypeIncomeSystemKey(dueType.id),
-                description: `Income recognized from ${dueType.name} dues`,
-                isActive: dueType.isActive,
-            },
+        await ensureSystemAccount(tx, organizationId, {
+            name: `${dueType.name} Income`,
+            accountType: "income",
+            systemKey: dueTypeIncomeSystemKey(dueType.id),
+            description: `Income recognized from ${dueType.name} dues`,
+            isActive: dueType.isActive,
         });
     }
 }

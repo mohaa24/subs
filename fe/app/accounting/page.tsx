@@ -164,7 +164,7 @@ export default function AccountingPage() {
 
   useEffect(() => {
     if (canPreview) void loadAccounting();
-  }, [canPreview, fromDate, toDate, asOfDate]);
+  }, [canPreview]);
 
   async function loadAccounting() {
     setLoadingData(true);
@@ -510,6 +510,14 @@ export default function AccountingPage() {
                           <Label>To</Label>
                           <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
                         </div>
+                        <Button
+                          type="button"
+                          className="sm:col-span-2"
+                          onClick={loadAccounting}
+                          disabled={loadingData}
+                        >
+                          Generate Profit &amp; Loss
+                        </Button>
                       </div>
                       <ReportRows title="Income" rows={plReport?.income ?? []} />
                       <ReportRows title="Expenses" rows={plReport?.expenses ?? []} />
@@ -529,6 +537,14 @@ export default function AccountingPage() {
                       <div className="mb-4 space-y-1.5">
                         <Label>As Of</Label>
                         <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
+                        <Button
+                          type="button"
+                          className="mt-3 w-full"
+                          onClick={loadAccounting}
+                          disabled={loadingData}
+                        >
+                          Generate Balance Sheet
+                        </Button>
                       </div>
                       <ReportRows title="Assets" rows={(balanceSheet?.assets ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
                       <ReportRows title="Liabilities" rows={(balanceSheet?.liabilities ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
@@ -550,7 +566,9 @@ export default function AccountingPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {journal.length === 0 ? (
-                      <p className="py-8 text-center text-sm text-muted-foreground">No journal entries yet.</p>
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        No journal entries yet. New payments, expenses, transfers, and credit allocations will appear here.
+                      </p>
                     ) : (
                       journal.map((entry) => (
                         <div key={entry.id} className="rounded-md border p-3">
