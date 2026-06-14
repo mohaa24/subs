@@ -13,14 +13,55 @@ function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
 
+function getStringFilterValues(
+  filters: Record<string, unknown>,
+  key: string,
+  legacyKey?: string,
+) {
+  const raw = filters[key] ?? (legacyKey ? filters[legacyKey] : undefined);
+  if (Array.isArray(raw)) {
+    return raw.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  }
+  if (typeof raw === "string" && raw.trim()) return [raw.trim()];
+  return [];
+}
+
+function getNumberFilterValues(
+  filters: Record<string, unknown>,
+  key: string,
+  legacyKey?: string,
+) {
+  const raw = filters[key] ?? (legacyKey ? filters[legacyKey] : undefined);
+  const values = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+  return values
+    .map((value) => {
+      if (typeof value === "number") return value;
+      if (typeof value === "string" && value.trim()) return Number.parseInt(value, 10);
+      return Number.NaN;
+    })
+    .filter((value) => Number.isInteger(value));
+}
+
+function buildMembershipWhere(filters: Record<string, unknown>): Prisma.MembershipWhereInput {
+  const membershipWhere: Prisma.MembershipWhereInput = {};
+  const membershipTypes = getStringFilterValues(filters, "membershipTypes", "membershipType");
+  const membershipZones = getNumberFilterValues(filters, "membershipZones", "areaCode");
+  const membershipStatuses = getStringFilterValues(filters, "membershipStatuses", "membershipStatus");
+
+  if (membershipTypes.length > 0) membershipWhere.membershipType = { in: membershipTypes as any[] };
+  if (membershipZones.length > 0) membershipWhere.areaCode = { in: membershipZones };
+  if (membershipStatuses.length > 0) membershipWhere.membershipStatus = { in: membershipStatuses as any[] };
+
+  return membershipWhere;
+}
+
 function buildPersonWhere(orgId: string, filters: Record<string, unknown>): Prisma.PersonWhereInput {
   const where: Prisma.PersonWhereInput = { organizationId: orgId };
+  const membershipWhere = buildMembershipWhere(filters);
 
   if (typeof filters.isDisabled === "boolean") where.isDisabled = filters.isDisabled;
   if (typeof filters.isMadarasaStudent === "boolean") where.isMadarasaStudent = filters.isMadarasaStudent;
-  if (typeof filters.membershipType === "string" && filters.membershipType) {
-    where.membership = { membershipType: filters.membershipType as any };
-  }
+  if (Object.keys(membershipWhere).length > 0) where.membership = membershipWhere as any;
   if (typeof filters.minAge === "number" || typeof filters.maxAge === "number") {
     const now = new Date();
     const dob: { gte?: Date; lte?: Date } = {};
@@ -70,10 +111,10 @@ type MembershipReportPerson = {
 };
 
 async function getMembershipDataRows(orgId: string, filters: Record<string, unknown>) {
-  const where: Prisma.MembershipWhereInput = { organizationId: orgId };
-  if (typeof filters.membershipType === "string" && filters.membershipType) {
-    where.membershipType = filters.membershipType as any;
-  }
+  const where: Prisma.MembershipWhereInput = {
+    organizationId: orgId,
+    ...buildMembershipWhere(filters),
+  };
 
   const [memberships, zones] = await Promise.all([
     prisma.membership.findMany({

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,97 @@ type EntityType =
   | "outstandingBreakdown";
 
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
+const MEMBERSHIP_STATUSES = ["Active", "Inactive"];
+
+type MultiSelectOption = {
+  value: string;
+  label: string;
+};
+
+function MultiSelectFilter({
+  label,
+  options,
+  selectedValues,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  options: MultiSelectOption[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+  placeholder: string;
+}) {
+  const selectedLabels = options
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+  const summary =
+    selectedLabels.length > 2
+      ? `${selectedLabels.slice(0, 2).join(", ")} +${selectedLabels.length - 2} more`
+      : selectedLabels.join(", ");
+
+  function toggleValue(value: string, checked: boolean) {
+    onChange(
+      checked
+        ? [...selectedValues, value]
+        : selectedValues.filter((selectedValue) => selectedValue !== value),
+    );
+  }
+
+  return (
+    <div className="relative">
+      <label className="text-sm font-medium block mb-2">{label}</label>
+      <details className="group relative">
+        <summary className="flex h-10 w-full cursor-pointer list-none items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 [&::-webkit-details-marker]:hidden">
+          <span
+            className={cn(
+              "truncate",
+              selectedLabels.length === 0 && "text-muted-foreground",
+            )}
+          >
+            {selectedLabels.length ? summary : placeholder}
+          </span>
+          <span className="ml-2 text-xs text-muted-foreground transition-transform group-open:rotate-180">
+            v
+          </span>
+        </summary>
+        <div className="absolute z-30 mt-1 w-full rounded-md border bg-popover p-2 shadow-md">
+          <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+            {options.length === 0 && (
+              <p className="px-2 py-1.5 text-sm text-muted-foreground">No options available</p>
+            )}
+            {options.map((option) => {
+              const checkboxId = `report-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${option.value}`;
+              const checked = selectedValues.includes(option.value);
+              return (
+                <div key={option.value} className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-accent">
+                  <Checkbox
+                    id={checkboxId}
+                    checked={checked}
+                    onCheckedChange={(value) => toggleValue(option.value, value === true)}
+                  />
+                  <label htmlFor={checkboxId} className="flex-1 cursor-pointer text-sm">
+                    {option.label}
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+          {selectedValues.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mt-2 h-8 w-full"
+              onClick={() => onChange([])}
+            >
+              Clear selection
+            </Button>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+}
 
 const PAYMENT_STATUSES = [
   { value: "pending", label: "Pending" },
@@ -125,7 +217,9 @@ export default function ReportsPage() {
   const [entity, setEntity] = useState<EntityType>("persons");
 
   // Entity-specific filter state (kept in sync for controlled inputs)
-  const [membershipType, setMembershipType] = useState("__all__");
+  const [membershipTypes, setMembershipTypes] = useState<string[]>([]);
+  const [membershipZones, setMembershipZones] = useState<string[]>([]);
+  const [membershipStatuses, setMembershipStatuses] = useState<string[]>([]);
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
   const [isDisabled, setIsDisabled] = useState(false);
@@ -160,10 +254,15 @@ export default function ReportsPage() {
 
   function buildFilters(): Record<string, unknown> {
     const f: Record<string, unknown> = {};
-    const mt = membershipType !== "__all__" ? membershipType : "";
     const ps = paymentStatus !== "__all__" ? paymentStatus : "";
     if (entity === "persons") {
-      if (mt) f.membershipType = mt;
+      if (membershipTypes.length > 0) f.membershipTypes = membershipTypes;
+      if (membershipZones.length > 0) {
+        f.membershipZones = membershipZones
+          .map((zone) => Number.parseInt(zone, 10))
+          .filter((zone) => Number.isInteger(zone));
+      }
+      if (membershipStatuses.length > 0) f.membershipStatuses = membershipStatuses;
       const min = parseInt(minAge, 10);
       if (!isNaN(min)) f.minAge = min;
       const max = parseInt(maxAge, 10);
@@ -171,7 +270,13 @@ export default function ReportsPage() {
       if (isDisabledFilter) f.isDisabled = isDisabled;
       if (isMadarasaFilter) f.isMadarasaStudent = isMadarasaStudent;
     } else if (entity === "memberships") {
-      if (mt) f.membershipType = mt;
+      if (membershipTypes.length > 0) f.membershipTypes = membershipTypes;
+      if (membershipZones.length > 0) {
+        f.membershipZones = membershipZones
+          .map((zone) => Number.parseInt(zone, 10))
+          .filter((zone) => Number.isInteger(zone));
+      }
+      if (membershipStatuses.length > 0) f.membershipStatuses = membershipStatuses;
     } else if (entity === "payments") {
       if (ps) f.paymentStatus = ps;
     } else if (entity === "distributions") {
@@ -288,6 +393,18 @@ export default function ReportsPage() {
     (sum, row) => sum + Number(row.totalOutstanding || 0),
     0,
   );
+  const membershipTypeOptions = MEMBERSHIP_TYPES.map((membershipType) => ({
+    value: membershipType,
+    label: membershipType,
+  }));
+  const membershipStatusOptions = MEMBERSHIP_STATUSES.map((membershipStatus) => ({
+    value: membershipStatus,
+    label: membershipStatus,
+  }));
+  const membershipZoneOptions = zones.map((zone) => ({
+    value: String(zone.code),
+    label: `${zone.code} - ${zone.name}`,
+  }));
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -345,27 +462,27 @@ export default function ReportsPage() {
 
               {entity === "persons" && (
                 <>
-                  <div>
-                    <label className="text-sm font-medium block mb-2">
-                      {t("reports.membershipType")}
-                    </label>
-                    <Select
-                      value={membershipType}
-                      onValueChange={setMembershipType}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("reports.any")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__all__">{t("reports.any")}</SelectItem>
-                        {MEMBERSHIP_TYPES.map((mtype) => (
-                          <SelectItem key={mtype} value={mtype}>
-                            {mtype}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <MultiSelectFilter
+                    label={t("reports.membershipType")}
+                    options={membershipTypeOptions}
+                    selectedValues={membershipTypes}
+                    onChange={setMembershipTypes}
+                    placeholder={t("reports.any")}
+                  />
+                  <MultiSelectFilter
+                    label="Member Zone"
+                    options={membershipZoneOptions}
+                    selectedValues={membershipZones}
+                    onChange={setMembershipZones}
+                    placeholder={t("reports.any")}
+                  />
+                  <MultiSelectFilter
+                    label="Membership Status"
+                    options={membershipStatusOptions}
+                    selectedValues={membershipStatuses}
+                    onChange={setMembershipStatuses}
+                    placeholder={t("reports.any")}
+                  />
                   <div>
                     <label className="text-sm font-medium block mb-2">
                       {t("reports.minAge")}
@@ -452,27 +569,29 @@ export default function ReportsPage() {
               )}
 
               {entity === "memberships" && (
-                <div>
-                  <label className="text-sm font-medium block mb-2">
-                    {t("reports.membershipType")}
-                  </label>
-                  <Select
-                    value={membershipType}
-                    onValueChange={setMembershipType}
-                  >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("reports.any")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">{t("reports.any")}</SelectItem>
-                    {MEMBERSHIP_TYPES.map((mtype) => (
-                      <SelectItem key={mtype} value={mtype}>
-                        {mtype}
-                      </SelectItem>
-                    ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <MultiSelectFilter
+                    label={t("reports.membershipType")}
+                    options={membershipTypeOptions}
+                    selectedValues={membershipTypes}
+                    onChange={setMembershipTypes}
+                    placeholder={t("reports.any")}
+                  />
+                  <MultiSelectFilter
+                    label="Member Zone"
+                    options={membershipZoneOptions}
+                    selectedValues={membershipZones}
+                    onChange={setMembershipZones}
+                    placeholder={t("reports.any")}
+                  />
+                  <MultiSelectFilter
+                    label="Membership Status"
+                    options={membershipStatusOptions}
+                    selectedValues={membershipStatuses}
+                    onChange={setMembershipStatuses}
+                    placeholder={t("reports.any")}
+                  />
+                </>
               )}
 
               {entity === "payments" && (

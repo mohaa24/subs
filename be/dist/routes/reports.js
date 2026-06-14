@@ -11,15 +11,50 @@ exports.reportsRouter.use(auth_js_1.withOrgScope);
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
+function getStringFilterValues(filters, key, legacyKey) {
+    const raw = filters[key] ?? (legacyKey ? filters[legacyKey] : undefined);
+    if (Array.isArray(raw)) {
+        return raw.filter((value) => typeof value === "string" && value.trim().length > 0);
+    }
+    if (typeof raw === "string" && raw.trim())
+        return [raw.trim()];
+    return [];
+}
+function getNumberFilterValues(filters, key, legacyKey) {
+    const raw = filters[key] ?? (legacyKey ? filters[legacyKey] : undefined);
+    const values = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+    return values
+        .map((value) => {
+        if (typeof value === "number")
+            return value;
+        if (typeof value === "string" && value.trim())
+            return Number.parseInt(value, 10);
+        return Number.NaN;
+    })
+        .filter((value) => Number.isInteger(value));
+}
+function buildMembershipWhere(filters) {
+    const membershipWhere = {};
+    const membershipTypes = getStringFilterValues(filters, "membershipTypes", "membershipType");
+    const membershipZones = getNumberFilterValues(filters, "membershipZones", "areaCode");
+    const membershipStatuses = getStringFilterValues(filters, "membershipStatuses", "membershipStatus");
+    if (membershipTypes.length > 0)
+        membershipWhere.membershipType = { in: membershipTypes };
+    if (membershipZones.length > 0)
+        membershipWhere.areaCode = { in: membershipZones };
+    if (membershipStatuses.length > 0)
+        membershipWhere.membershipStatus = { in: membershipStatuses };
+    return membershipWhere;
+}
 function buildPersonWhere(orgId, filters) {
     const where = { organizationId: orgId };
+    const membershipWhere = buildMembershipWhere(filters);
     if (typeof filters.isDisabled === "boolean")
         where.isDisabled = filters.isDisabled;
     if (typeof filters.isMadarasaStudent === "boolean")
         where.isMadarasaStudent = filters.isMadarasaStudent;
-    if (typeof filters.membershipType === "string" && filters.membershipType) {
-        where.membership = { membershipType: filters.membershipType };
-    }
+    if (Object.keys(membershipWhere).length > 0)
+        where.membership = membershipWhere;
     if (typeof filters.minAge === "number" || typeof filters.maxAge === "number") {
         const now = new Date();
         const dob = {};
@@ -58,10 +93,10 @@ function isCountableMember(person) {
     return !person.livingStatus || person.livingStatus === "Active";
 }
 async function getMembershipDataRows(orgId, filters) {
-    const where = { organizationId: orgId };
-    if (typeof filters.membershipType === "string" && filters.membershipType) {
-        where.membershipType = filters.membershipType;
-    }
+    const where = {
+        organizationId: orgId,
+        ...buildMembershipWhere(filters),
+    };
     const [memberships, zones] = await Promise.all([
         prisma_js_1.prisma.membership.findMany({
             where,
