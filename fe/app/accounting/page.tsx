@@ -27,6 +27,8 @@ type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type LineSide = "debit" | "credit";
 type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
 type JournalSortOrder = "desc" | "asc";
+type AccountingTab = "accounts" | "expenses" | "income" | "transfers" | "reports" | "journal";
+type JournalEntryKind = "all" | "payment" | "expense" | "income" | "transfer" | "credit_application";
 
 type Account = {
   id: string;
@@ -91,6 +93,15 @@ const accountingPeriodLabels: Record<AccountingPeriod, string> = {
   custom: "Custom",
 };
 
+const journalEntryKindLabels: Record<JournalEntryKind, string> = {
+  all: "All Types",
+  payment: "Payments",
+  expense: "Expenses",
+  income: "Income",
+  transfer: "Transfers",
+  credit_application: "Credit Applications",
+};
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -149,10 +160,12 @@ export default function AccountingPage() {
   const [journalTotal, setJournalTotal] = useState(0);
   const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
+  const [activeTab, setActiveTab] = useState<AccountingTab>("accounts");
   const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod>("this_month");
   const [fromDate, setFromDate] = useState(firstOfMonthString);
   const [toDate, setToDate] = useState(todayString);
   const [asOfDate, setAsOfDate] = useState(todayString);
+  const [journalEntryKind, setJournalEntryKind] = useState<JournalEntryKind>("all");
   const [journalSearch, setJournalSearch] = useState("");
   const [journalPeriod, setJournalPeriod] = useState<AccountingPeriod>("all_time");
   const [journalFromDate, setJournalFromDate] = useState("");
@@ -252,6 +265,7 @@ export default function AccountingPage() {
     toDate?: string;
     asOfDate?: string;
     journalSearch?: string;
+    journalEntryKind?: JournalEntryKind;
     journalFromDate?: string;
     journalToDate?: string;
     journalSortOrder?: JournalSortOrder;
@@ -260,6 +274,7 @@ export default function AccountingPage() {
     const profitLossToDate = overrides?.toDate ?? toDate;
     const balanceSheetAsOfDate = overrides?.asOfDate ?? asOfDate;
     const nextJournalSearch = (overrides?.journalSearch ?? journalSearch).trim();
+    const nextJournalEntryKind = overrides?.journalEntryKind ?? journalEntryKind;
     const nextJournalFromDate = overrides?.journalFromDate ?? journalFromDate;
     const nextJournalToDate = overrides?.journalToDate ?? journalToDate;
     const nextJournalSortOrder = overrides?.journalSortOrder ?? journalSortOrder;
@@ -268,6 +283,11 @@ export default function AccountingPage() {
       sortOrder: nextJournalSortOrder,
     };
     if (nextJournalSearch) journalParams.search = nextJournalSearch;
+    if (nextJournalEntryKind === "payment") journalParams.entryType = "payment";
+    if (nextJournalEntryKind === "expense") journalParams.entryType = "expense";
+    if (nextJournalEntryKind === "transfer") journalParams.entryType = "transfer";
+    if (nextJournalEntryKind === "credit_application") journalParams.entryType = "credit_application";
+    if (nextJournalEntryKind === "income") journalParams.referenceType = "manual_income";
     if (nextJournalFromDate) journalParams.fromDate = nextJournalFromDate;
     if (nextJournalToDate) journalParams.toDate = nextJournalToDate;
 
@@ -333,7 +353,20 @@ export default function AccountingPage() {
         description: "",
         memo: "",
       });
-      await loadAccounting();
+      setActiveTab("journal");
+      setJournalEntryKind("expense");
+      setJournalSearch("");
+      setJournalPeriod("all_time");
+      setJournalFromDate("");
+      setJournalToDate("");
+      setJournalSortOrder("desc");
+      await loadAccounting({
+        journalEntryKind: "expense",
+        journalSearch: "",
+        journalFromDate: "",
+        journalToDate: "",
+        journalSortOrder: "desc",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to record expense");
     }
@@ -359,7 +392,20 @@ export default function AccountingPage() {
         description: "",
         memo: "",
       });
-      await loadAccounting();
+      setActiveTab("journal");
+      setJournalEntryKind("income");
+      setJournalSearch("");
+      setJournalPeriod("all_time");
+      setJournalFromDate("");
+      setJournalToDate("");
+      setJournalSortOrder("desc");
+      await loadAccounting({
+        journalEntryKind: "income",
+        journalSearch: "",
+        journalFromDate: "",
+        journalToDate: "",
+        journalSortOrder: "desc",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to record income");
     }
@@ -383,7 +429,20 @@ export default function AccountingPage() {
         entryDate: todayString(),
         description: "",
       });
-      await loadAccounting();
+      setActiveTab("journal");
+      setJournalEntryKind("transfer");
+      setJournalSearch("");
+      setJournalPeriod("all_time");
+      setJournalFromDate("");
+      setJournalToDate("");
+      setJournalSortOrder("desc");
+      await loadAccounting({
+        journalEntryKind: "transfer",
+        journalSearch: "",
+        journalFromDate: "",
+        journalToDate: "",
+        journalSortOrder: "desc",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to record transfer");
     }
@@ -465,12 +524,12 @@ export default function AccountingPage() {
               <Card>
                 <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">Journal Entries</p>
-                  <p className="mt-1 text-xl font-semibold tabular-nums">{journal.length}</p>
+                  <p className="mt-1 text-xl font-semibold tabular-nums">{journalTotal}</p>
                 </CardContent>
               </Card>
             </div>
 
-            <Tabs defaultValue="accounts" className="w-full">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AccountingTab)} className="w-full">
               <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
                 <TabsTrigger value="accounts" className="rounded-md border border-border px-3 py-1.5">Accounts</TabsTrigger>
                 {canManageAccounting && (
@@ -777,11 +836,12 @@ export default function AccountingPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <form
-                      className="grid gap-3 rounded-md border bg-muted/20 p-3 lg:grid-cols-[1.4fr_160px_150px_150px_170px_auto]"
+                      className="grid gap-3 rounded-md border bg-muted/20 p-3 lg:grid-cols-[1.3fr_180px_160px_150px_150px_170px_auto]"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void loadAccounting({
                           journalSearch,
+                          journalEntryKind,
                           journalFromDate,
                           journalToDate,
                           journalSortOrder,
@@ -795,6 +855,19 @@ export default function AccountingPage() {
                           onChange={(event) => setJournalSearch(event.target.value)}
                           placeholder="Description, account, reference, user"
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Type</Label>
+                        <Select value={journalEntryKind} onValueChange={(value) => setJournalEntryKind(value as JournalEntryKind)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(journalEntryKindLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>{label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-1.5">
                         <Label>Period</Label>
@@ -854,8 +927,9 @@ export default function AccountingPage() {
                       <span>
                         Showing {journal.length} of {journalTotal} entries
                         {journalPeriodLabel ? ` · ${journalPeriodLabel}` : ""}
+                        {journalEntryKind !== "all" ? ` · ${journalEntryKindLabels[journalEntryKind]}` : ""}
                       </span>
-                      {(journalSearch || journalFromDate || journalToDate || journalPeriod !== "all_time") && (
+                      {(journalSearch || journalEntryKind !== "all" || journalFromDate || journalToDate || journalPeriod !== "all_time") && (
                         <Button
                           type="button"
                           variant="ghost"
@@ -863,11 +937,13 @@ export default function AccountingPage() {
                           className="h-7 px-2 text-xs"
                           onClick={() => {
                             setJournalSearch("");
+                            setJournalEntryKind("all");
                             setJournalPeriod("all_time");
                             setJournalFromDate("");
                             setJournalToDate("");
                             void loadAccounting({
                               journalSearch: "",
+                              journalEntryKind: "all",
                               journalFromDate: "",
                               journalToDate: "",
                             });

@@ -368,12 +368,14 @@ accountingRouter.get("/journal", asyncRoute(async (req, res) => {
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 25));
   const entryType = typeof req.query.entryType === "string" ? req.query.entryType : undefined;
+  const referenceType = typeof req.query.referenceType === "string" ? req.query.referenceType : undefined;
   const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
   const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
   const from = optionalDateFromQuery(req.query.fromDate);
   const to = optionalDateFromQuery(req.query.toDate);
   const where: any = { organizationId: orgId };
   if (entryType) where.entryType = entryType;
+  if (referenceType) where.referenceType = referenceType;
   if (from || to) {
     where.entryDate = {
       ...(from ? { gte: startOfDay(from) } : {}),
