@@ -25,7 +25,7 @@ function getOrgId(req: any): string | undefined {
 
 function requireAccountingRole(req: any, res: any) {
   if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
-    res.status(403).json({ error: "Only admins can access accounting" });
+    res.status(403).json({ error: "Only admins can manage accounting" });
     return false;
   }
   return true;
@@ -113,10 +113,10 @@ const transferSchema = z.object({
   description: z.string().trim().min(1).max(300),
 });
 
-accountingRouter.use((req, res, next) => {
+function requireAccountingAdmin(req: Request, res: Response, next: NextFunction) {
   if (!requireAccountingRole(req, res)) return;
   next();
-});
+}
 
 accountingRouter.get("/accounts", asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
@@ -131,7 +131,7 @@ accountingRouter.get("/accounts", asyncRoute(async (req, res) => {
   return res.json(accounts.map(serializeAccount));
 }));
 
-accountingRouter.post("/accounts", asyncRoute(async (req, res) => {
+accountingRouter.post("/accounts", requireAccountingAdmin, asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -164,7 +164,7 @@ accountingRouter.post("/accounts", asyncRoute(async (req, res) => {
   return res.status(201).json(account);
 }));
 
-accountingRouter.patch("/accounts/:id", asyncRoute(async (req, res) => {
+accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRoute(async (req, res) => {
   const parsed = updateAccountSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -196,7 +196,7 @@ accountingRouter.patch("/accounts/:id", asyncRoute(async (req, res) => {
   return res.json(updated);
 }));
 
-accountingRouter.post("/expenses", asyncRoute(async (req, res) => {
+accountingRouter.post("/expenses", requireAccountingAdmin, asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 
@@ -243,7 +243,7 @@ accountingRouter.post("/expenses", asyncRoute(async (req, res) => {
   return res.status(201).json(serializeJournalEntry(entry));
 }));
 
-accountingRouter.post("/transfers", asyncRoute(async (req, res) => {
+accountingRouter.post("/transfers", requireAccountingAdmin, asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
 

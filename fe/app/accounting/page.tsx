@@ -21,8 +21,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
-import { useAccountingPreviewUnlock } from "@/lib/accounting-preview";
-import { Landmark, Lock, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
+import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type LineSide = "debit" | "credit";
@@ -114,9 +113,7 @@ function accountTone(accountType: AccountType) {
 export default function AccountingPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const previewUnlocked = useAccountingPreviewUnlock();
-  const canPreview =
-    previewUnlocked && (user?.role === "admin" || user?.role === "super_user");
+  const canManageAccounting = user?.role === "admin" || user?.role === "super_user";
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
@@ -163,8 +160,8 @@ export default function AccountingPage() {
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (canPreview) void loadAccounting();
-  }, [canPreview]);
+    if (!loading && user) void loadAccounting();
+  }, [loading, user]);
 
   async function loadAccounting() {
     setLoadingData(true);
@@ -276,31 +273,17 @@ export default function AccountingPage() {
           <div className="flex items-center gap-2">
             <Landmark className="h-5 w-5 text-muted-foreground" />
             <h1 className="text-xl font-semibold text-foreground">Accounting</h1>
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              Beta
+            </span>
           </div>
-          {canPreview && (
-            <Button type="button" variant="outline" size="sm" onClick={loadAccounting} disabled={loadingData}>
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-          )}
+          <Button type="button" variant="outline" size="sm" onClick={loadAccounting} disabled={loadingData}>
+            <RefreshCcw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
         </div>
 
-        {!canPreview ? (
-          <Card className="border-dashed">
-            <CardContent className="flex min-h-[260px] flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                <Lock className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-medium text-foreground">Coming soon</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Accounting is not available yet.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
+        <>
             {error && (
               <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 {error}
@@ -337,14 +320,18 @@ export default function AccountingPage() {
             <Tabs defaultValue="accounts" className="w-full">
               <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
                 <TabsTrigger value="accounts" className="rounded-md border border-border px-3 py-1.5">Accounts</TabsTrigger>
-                <TabsTrigger value="expenses" className="rounded-md border border-border px-3 py-1.5">Expenses</TabsTrigger>
-                <TabsTrigger value="transfers" className="rounded-md border border-border px-3 py-1.5">Transfers</TabsTrigger>
+                {canManageAccounting && (
+                  <TabsTrigger value="expenses" className="rounded-md border border-border px-3 py-1.5">Expenses</TabsTrigger>
+                )}
+                {canManageAccounting && (
+                  <TabsTrigger value="transfers" className="rounded-md border border-border px-3 py-1.5">Transfers</TabsTrigger>
+                )}
                 <TabsTrigger value="reports" className="rounded-md border border-border px-3 py-1.5">Reports</TabsTrigger>
                 <TabsTrigger value="journal" className="rounded-md border border-border px-3 py-1.5">Journal</TabsTrigger>
               </TabsList>
 
               <TabsContent value="accounts">
-                <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+                <div className={canManageAccounting ? "grid gap-4 lg:grid-cols-[1fr_360px]" : "grid gap-4"}>
                   <Card>
                     <CardHeader className="flex flex-row items-center gap-3 space-y-0">
                       <WalletCards className="h-5 w-5 text-muted-foreground" />
@@ -377,122 +364,128 @@ export default function AccountingPage() {
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Create Account</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <form className="space-y-3" onSubmit={handleCreateAccount}>
-                        <div className="space-y-1.5">
-                          <Label>Name</Label>
-                          <Input value={newAccount.name} onChange={(e) => setNewAccount((v) => ({ ...v, name: e.target.value }))} required />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label>Type</Label>
-                          <Select value={newAccount.accountType} onValueChange={(value) => setNewAccount((v) => ({ ...v, accountType: value as AccountType }))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(accountTypeLabels).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>{label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label>Description</Label>
-                          <Textarea value={newAccount.description} onChange={(e) => setNewAccount((v) => ({ ...v, description: e.target.value }))} />
-                        </div>
-                        <Button type="submit" className="w-full">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Create
-                        </Button>
-                      </form>
-                    </CardContent>
-                  </Card>
+                  {canManageAccounting && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Create Account</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <form className="space-y-3" onSubmit={handleCreateAccount}>
+                          <div className="space-y-1.5">
+                            <Label>Name</Label>
+                            <Input value={newAccount.name} onChange={(e) => setNewAccount((v) => ({ ...v, name: e.target.value }))} required />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Type</Label>
+                            <Select value={newAccount.accountType} onValueChange={(value) => setNewAccount((v) => ({ ...v, accountType: value as AccountType }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(accountTypeLabels).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Description</Label>
+                            <Textarea value={newAccount.description} onChange={(e) => setNewAccount((v) => ({ ...v, description: e.target.value }))} />
+                          </div>
+                          <Button type="submit" className="w-full">
+                            <Plus className="mr-2 h-4 w-4" />
+                            Create
+                          </Button>
+                        </form>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </TabsContent>
 
-              <TabsContent value="expenses">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Record Expense</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleExpense}>
-                      <div className="space-y-1.5">
-                        <Label>Paid From</Label>
-                        <Select value={expense.sourceAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, sourceAccountId: value }))}>
-                          <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
-                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Expense Account</Label>
-                        <Select value={expense.expenseAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, expenseAccountId: value }))}>
-                          <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
-                          <SelectContent>{expenseAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Amount</Label>
-                        <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Date</Label>
-                        <Input type="date" value={expense.entryDate} onChange={(e) => setExpense((v) => ({ ...v, entryDate: e.target.value }))} />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2">
-                        <Label>Description</Label>
-                        <Input value={expense.description} onChange={(e) => setExpense((v) => ({ ...v, description: e.target.value }))} required />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2">
-                        <Label>Memo</Label>
-                        <Textarea value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} />
-                      </div>
-                      <Button type="submit" className="md:col-span-2">Record Expense</Button>
-                    </form>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+              {canManageAccounting && (
+                <TabsContent value="expenses">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Record Expense</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form className="grid gap-3 md:grid-cols-2" onSubmit={handleExpense}>
+                        <div className="space-y-1.5">
+                          <Label>Paid From</Label>
+                          <Select value={expense.sourceAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, sourceAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
+                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Expense Account</Label>
+                          <Select value={expense.expenseAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, expenseAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select expense account" /></SelectTrigger>
+                            <SelectContent>{expenseAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Amount</Label>
+                          <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Date</Label>
+                          <Input type="date" value={expense.entryDate} onChange={(e) => setExpense((v) => ({ ...v, entryDate: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <Label>Description</Label>
+                          <Input value={expense.description} onChange={(e) => setExpense((v) => ({ ...v, description: e.target.value }))} required />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <Label>Memo</Label>
+                          <Textarea value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} />
+                        </div>
+                        <Button type="submit" className="md:col-span-2">Record Expense</Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              )}
 
-              <TabsContent value="transfers">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Transfer Between Asset Accounts</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleTransfer}>
-                      <div className="space-y-1.5">
-                        <Label>From</Label>
-                        <Select value={transfer.fromAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, fromAccountId: value }))}>
-                          <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
-                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>To</Label>
-                        <Select value={transfer.toAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, toAccountId: value }))}>
-                          <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
-                          <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Amount</Label>
-                        <Input type="number" min="0" step="0.01" value={transfer.amount} onChange={(e) => setTransfer((v) => ({ ...v, amount: e.target.value }))} required />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Date</Label>
-                        <Input type="date" value={transfer.entryDate} onChange={(e) => setTransfer((v) => ({ ...v, entryDate: e.target.value }))} />
-                      </div>
-                      <div className="space-y-1.5 md:col-span-2">
-                        <Label>Description</Label>
-                        <Input value={transfer.description} onChange={(e) => setTransfer((v) => ({ ...v, description: e.target.value }))} required />
-                      </div>
-                      <Button type="submit" className="md:col-span-2">Record Transfer</Button>
-                    </form>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+              {canManageAccounting && (
+                <TabsContent value="transfers">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Transfer Between Asset Accounts</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form className="grid gap-3 md:grid-cols-2" onSubmit={handleTransfer}>
+                        <div className="space-y-1.5">
+                          <Label>From</Label>
+                          <Select value={transfer.fromAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, fromAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>To</Label>
+                          <Select value={transfer.toAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, toAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Amount</Label>
+                          <Input type="number" min="0" step="0.01" value={transfer.amount} onChange={(e) => setTransfer((v) => ({ ...v, amount: e.target.value }))} required />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Date</Label>
+                          <Input type="date" value={transfer.entryDate} onChange={(e) => setTransfer((v) => ({ ...v, entryDate: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <Label>Description</Label>
+                          <Input value={transfer.description} onChange={(e) => setTransfer((v) => ({ ...v, description: e.target.value }))} required />
+                        </div>
+                        <Button type="submit" className="md:col-span-2">Record Transfer</Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              )}
 
               <TabsContent value="reports">
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -600,8 +593,7 @@ export default function AccountingPage() {
                 </Card>
               </TabsContent>
             </Tabs>
-          </>
-        )}
+        </>
       </main>
     </div>
   );

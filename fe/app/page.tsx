@@ -47,7 +47,6 @@ import {
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { normalizeDashboardFlow } from "@/lib/dashboard-flows";
-import { useAccountingPreviewUnlock } from "@/lib/accounting-preview";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -139,7 +138,6 @@ function HomePageContent() {
   const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
-  const accountingPreviewUnlocked = useAccountingPreviewUnlock();
 
   const setActiveFlow = useCallback(
     (flow: string) => {
@@ -536,15 +534,11 @@ function HomePageContent() {
       actions: [
         {
           actionKey: "accounting-preview",
-          title: accountingPreviewUnlocked ? "Accounting Beta" : "Accounting",
-          description: accountingPreviewUnlocked
-            ? "Preview the accounting workspace foundation"
-            : "Coming soon",
+          title: "Accounting",
+          description: "Explore the accounting workspace foundation",
           icon: Landmark,
-          href: accountingPreviewUnlocked ? "/accounting" : undefined,
-          disabled: !accountingPreviewUnlocked,
-          badge: accountingPreviewUnlocked ? "Beta" : "Coming Soon",
-          roles: ["admin", "super_user"],
+          href: "/accounting",
+          badge: "Beta",
         },
       ],
     },
