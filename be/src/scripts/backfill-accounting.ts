@@ -24,6 +24,10 @@ function addMoney(summary: Record<string, Decimal>, key: string, amount: Decimal
   summary[key] = (summary[key] ?? ZERO).add(amount);
 }
 
+function addOrgMoney(summary: Map<string, Decimal>, organizationId: string, amount: Decimal) {
+  summary.set(organizationId, (summary.get(organizationId) ?? ZERO).add(amount));
+}
+
 function money(value: Decimal) {
   return Number(value.toFixed(2));
 }
@@ -47,7 +51,7 @@ async function existingHistoricalCreditApplication(input: {
 }
 
 async function loadSourceData() {
-  const [payments, allocations, creditAdjustments, currentEntries, currentLines] =
+  const [payments, allocations, creditLedger, creditLedgerByOrg, creditAdjustments, currentEntries, currentLines] =
     await Promise.all([
       prisma.payment.findMany({
         where: { isReversed: false },
@@ -80,6 +84,14 @@ async function loadSourceData() {
         },
       }),
       prisma.membershipCreditLedger.aggregate({
+        _count: true,
+        _sum: { amountDelta: true },
+      }),
+      prisma.membershipCreditLedger.groupBy({
+        by: ["organizationId"],
+        _sum: { amountDelta: true },
+      }),
+      prisma.membershipCreditLedger.aggregate({
         where: {
           entryType: { in: ["credit_adjustment", "debit_adjustment"] },
         },
@@ -90,7 +102,15 @@ async function loadSourceData() {
       prisma.accountingJournalLine.count(),
     ]);
 
-  return { payments, allocations, creditAdjustments, currentEntries, currentLines };
+  return {
+    payments,
+    allocations,
+    creditLedger,
+    creditLedgerByOrg,
+    creditAdjustments,
+    currentEntries,
+    currentLines,
+  };
 }
 
 function paymentSplit(payment: Awaited<ReturnType<typeof loadSourceData>>["payments"][number]) {
@@ -115,6 +135,9 @@ async function dryRun() {
   let paymentEntriesExisting = 0;
   let creditApplicationsToCreate = 0;
   let creditApplicationsExisting = 0;
+  let memberCreditReconciliationToCreate = 0;
+  let memberCreditReconciliationExisting = 0;
+  const plannedMemberCreditByOrg = new Map<string, Decimal>();
 
   const paymentEntryRows = await prisma.accountingJournalEntry.findMany({
     where: {
@@ -131,6 +154,7 @@ async function dryRun() {
     addMoney(totals, "paymentCashOrBankDebit", split.amount);
     addMoney(totals, "directIncomeCredit", split.directAppliedAmount);
     addMoney(totals, "memberCreditCredit", split.creditAmount);
+    addOrgMoney(plannedMemberCreditByOrg, payment.organizationId, split.creditAmount);
 
     if (existingPaymentIds.has(payment.id)) paymentEntriesExisting += 1;
     else paymentEntriesToCreate += 1;
@@ -154,9 +178,39 @@ async function dryRun() {
 
     addMoney(totals, "memberCreditDebit", amount);
     addMoney(totals, "creditApplicationIncomeCredit", amount);
+    addOrgMoney(plannedMemberCreditByOrg, allocation.organizationId, amount.neg());
 
     if (existing) creditApplicationsExisting += 1;
     else creditApplicationsToCreate += 1;
+  }
+
+  const actualMemberCreditByOrg = new Map(
+    data.creditLedgerByOrg.map((row) => [row.organizationId, row._sum.amountDelta ?? ZERO])
+  );
+  const orgIds = new Set([...plannedMemberCreditByOrg.keys(), ...actualMemberCreditByOrg.keys()]);
+  let plannedMemberCreditBalance = ZERO;
+  let actualMemberCreditBalance = ZERO;
+  let memberCreditReconciliationAmount = ZERO;
+  for (const organizationId of orgIds) {
+    const plannedForOrg = plannedMemberCreditByOrg.get(organizationId) ?? ZERO;
+    const actualForOrg = actualMemberCreditByOrg.get(organizationId) ?? ZERO;
+    const reconciliationForOrg = actualForOrg.sub(plannedForOrg);
+    plannedMemberCreditBalance = plannedMemberCreditBalance.add(plannedForOrg);
+    actualMemberCreditBalance = actualMemberCreditBalance.add(actualForOrg);
+    memberCreditReconciliationAmount = memberCreditReconciliationAmount.add(reconciliationForOrg);
+    if (reconciliationForOrg.equals(ZERO)) continue;
+
+    const existingReconciliation = await prisma.accountingJournalEntry.findFirst({
+      where: {
+        organizationId,
+        entryType: "manual_adjustment",
+        referenceType: "historical_member_credit_reconciliation",
+        referenceId: `membership-credit-ledger-total:${organizationId}`,
+      },
+      select: { id: true },
+    });
+    if (existingReconciliation) memberCreditReconciliationExisting += 1;
+    else memberCreditReconciliationToCreate += 1;
   }
 
   return {
@@ -166,6 +220,8 @@ async function dryRun() {
       activeCreditAllocations: data.allocations.length,
       existingAccountingEntries: data.currentEntries,
       existingAccountingLines: data.currentLines,
+      creditLedgerRows: data.creditLedger._count,
+      creditLedgerBalance: money(actualMemberCreditBalance),
       creditAdjustmentRows: data.creditAdjustments._count,
       creditAdjustmentNetAmount: money(data.creditAdjustments._sum.amountDelta ?? ZERO),
     },
@@ -174,11 +230,20 @@ async function dryRun() {
       paymentEntriesExisting,
       creditApplicationsToCreate,
       creditApplicationsExisting,
+      memberCreditReconciliationToCreate,
+      memberCreditReconciliationExisting,
     },
-    totals: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, money(value)])),
+    totals: {
+      ...Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, money(value)])),
+      plannedMemberCreditBalance: money(plannedMemberCreditBalance),
+      memberCreditReconciliationAmount: money(memberCreditReconciliationAmount),
+      finalMemberCreditBalanceAfterReconciliation: money(
+        plannedMemberCreditBalance.add(memberCreditReconciliationAmount)
+      ),
+    },
     warnings: [
       data.creditAdjustments._count > 0
-        ? "Credit adjustment ledger rows are reported but not backfilled by this first-pass script."
+        ? "Credit adjustment ledger rows are reconciled as one historical Fund Balance adjustment rather than guessed individually."
         : null,
     ].filter(Boolean),
   };
@@ -190,6 +255,8 @@ async function applyBackfill() {
   let paymentEntriesSkipped = 0;
   let creditApplicationsCreated = 0;
   let creditApplicationsSkipped = 0;
+  let memberCreditReconciliationCreated = 0;
+  let memberCreditReconciliationSkipped = 0;
 
   for (const payment of data.payments) {
     const split = paymentSplit(payment);
@@ -283,6 +350,91 @@ async function applyBackfill() {
     creditApplicationsCreated += 1;
   }
 
+  const [creditLedgerBalanceByOrg, memberCreditLines] = await Promise.all([
+    prisma.membershipCreditLedger.groupBy({
+      by: ["organizationId"],
+      _sum: { amountDelta: true },
+    }),
+    prisma.accountingJournalLine.findMany({
+      where: {
+        account: {
+          systemKey: ACCOUNTING_SYSTEM_KEYS.memberCredit,
+        },
+      },
+      select: { side: true, amount: true, organizationId: true },
+    }),
+  ]);
+  const accountingMemberCreditByOrg = new Map<string, Decimal>();
+  for (const line of memberCreditLines) {
+    addOrgMoney(
+      accountingMemberCreditByOrg,
+      line.organizationId,
+      line.side === "credit" ? line.amount : line.amount.neg()
+    );
+  }
+  const targetMemberCreditByOrg = new Map(
+    creditLedgerBalanceByOrg.map((row) => [row.organizationId, row._sum.amountDelta ?? ZERO])
+  );
+  const reconciliationOrgIds = new Set([
+    ...accountingMemberCreditByOrg.keys(),
+    ...targetMemberCreditByOrg.keys(),
+  ]);
+
+  for (const organizationId of reconciliationOrgIds) {
+    const reconciliationAmount = (targetMemberCreditByOrg.get(organizationId) ?? ZERO).sub(
+      accountingMemberCreditByOrg.get(organizationId) ?? ZERO
+    );
+    if (reconciliationAmount.equals(ZERO)) continue;
+
+    const existingReconciliation = await prisma.accountingJournalEntry.findFirst({
+      where: {
+        organizationId,
+        entryType: "manual_adjustment",
+        referenceType: "historical_member_credit_reconciliation",
+        referenceId: `membership-credit-ledger-total:${organizationId}`,
+      },
+      select: { id: true },
+    });
+
+    if (existingReconciliation) {
+      memberCreditReconciliationSkipped += 1;
+    } else {
+      await prisma.$transaction(async (tx) => {
+        const memberCreditAccount = await getSystemAccount(
+          tx,
+          organizationId,
+          ACCOUNTING_SYSTEM_KEYS.memberCredit
+        );
+        const fundBalanceAccount = await getSystemAccount(
+          tx,
+          organizationId,
+          ACCOUNTING_SYSTEM_KEYS.fundBalance
+        );
+        const amount = reconciliationAmount.abs();
+        await createJournalEntry(tx, {
+          organizationId: memberCreditAccount.organizationId,
+          entryDate: new Date(),
+          entryType: "manual_adjustment",
+          description: "Historical member credit ledger reconciliation",
+          referenceType: "historical_member_credit_reconciliation",
+          referenceId: `membership-credit-ledger-total:${organizationId}`,
+          isSystemEntry: true,
+          lines:
+            reconciliationAmount.gt(ZERO)
+              ? [
+                  { accountId: fundBalanceAccount.id, side: "debit", amount },
+                  { accountId: memberCreditAccount.id, side: "credit", amount },
+                ]
+              : [
+                  { accountId: memberCreditAccount.id, side: "debit", amount },
+                  { accountId: fundBalanceAccount.id, side: "credit", amount },
+                ],
+        });
+      });
+      memberCreditReconciliationCreated += 1;
+    }
+  }
+
   const [finalEntries, finalLines] = await Promise.all([
     prisma.accountingJournalEntry.count(),
     prisma.accountingJournalLine.count(),
@@ -293,10 +445,12 @@ async function applyBackfill() {
     created: {
       paymentEntriesCreated,
       creditApplicationsCreated,
+      memberCreditReconciliationCreated,
     },
     skipped: {
       paymentEntriesSkipped,
       creditApplicationsSkipped,
+      memberCreditReconciliationSkipped,
     },
     final: {
       accountingEntries: finalEntries,
