@@ -117,6 +117,15 @@ const expenseSchema = z.object({
   memo: z.string().trim().max(500).optional().nullable(),
 });
 
+const incomeSchema = z.object({
+  destinationAccountId: z.string().min(1),
+  incomeAccountId: z.string().min(1),
+  amount: moneySchema,
+  entryDate: z.string().optional(),
+  description: z.string().trim().min(1).max(300),
+  memo: z.string().trim().max(500).optional().nullable(),
+});
+
 const transferSchema = z.object({
   fromAccountId: z.string().min(1),
   toAccountId: z.string().min(1),
@@ -248,6 +257,53 @@ accountingRouter.post("/expenses", requireAccountingAdmin, asyncRoute(async (req
       lines: [
         { accountId: expenseAccount.id, side: "debit", amount, memo: parsed.data.memo ?? null },
         { accountId: sourceAccount.id, side: "credit", amount, memo: parsed.data.memo ?? null },
+      ],
+    });
+  });
+
+  return res.status(201).json(serializeJournalEntry(entry));
+}));
+
+accountingRouter.post("/income", requireAccountingAdmin, asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+
+  const parsed = incomeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+
+  const amount = new Decimal(parsed.data.amount);
+  const entryDate = parsed.data.entryDate ? new Date(parsed.data.entryDate) : new Date();
+  const [destinationAccount, incomeAccount] = await Promise.all([
+    prisma.accountingAccount.findFirst({
+      where: { id: parsed.data.destinationAccountId, organizationId: orgId, isActive: true },
+    }),
+    prisma.accountingAccount.findFirst({
+      where: { id: parsed.data.incomeAccountId, organizationId: orgId, isActive: true },
+    }),
+  ]);
+
+  if (!destinationAccount || destinationAccount.accountType !== "asset") {
+    return res.status(400).json({ error: "Destination account must be an active asset account" });
+  }
+  if (!incomeAccount || incomeAccount.accountType !== "income") {
+    return res.status(400).json({ error: "Income account must be an active income account" });
+  }
+
+  const entry = await prisma.$transaction(async (tx) => {
+    await ensureDefaultAccountingAccounts(tx, orgId);
+    return createJournalEntry(tx, {
+      organizationId: orgId,
+      entryDate,
+      entryType: "manual_adjustment",
+      description: parsed.data.description,
+      referenceType: "manual_income",
+      isSystemEntry: false,
+      createdByUserId: req.auth!.userId,
+      lines: [
+        { accountId: destinationAccount.id, side: "debit", amount, memo: parsed.data.memo ?? null },
+        { accountId: incomeAccount.id, side: "credit", amount, memo: parsed.data.memo ?? null },
       ],
     });
   });

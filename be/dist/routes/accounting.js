@@ -97,6 +97,14 @@ const expenseSchema = zod_1.z.object({
     description: zod_1.z.string().trim().min(1).max(300),
     memo: zod_1.z.string().trim().max(500).optional().nullable(),
 });
+const incomeSchema = zod_1.z.object({
+    destinationAccountId: zod_1.z.string().min(1),
+    incomeAccountId: zod_1.z.string().min(1),
+    amount: moneySchema,
+    entryDate: zod_1.z.string().optional(),
+    description: zod_1.z.string().trim().min(1).max(300),
+    memo: zod_1.z.string().trim().max(500).optional().nullable(),
+});
 const transferSchema = zod_1.z.object({
     fromAccountId: zod_1.z.string().min(1),
     toAccountId: zod_1.z.string().min(1),
@@ -215,6 +223,48 @@ exports.accountingRouter.post("/expenses", requireAccountingAdmin, asyncRoute(as
             lines: [
                 { accountId: expenseAccount.id, side: "debit", amount, memo: parsed.data.memo ?? null },
                 { accountId: sourceAccount.id, side: "credit", amount, memo: parsed.data.memo ?? null },
+            ],
+        });
+    });
+    return res.status(201).json(serializeJournalEntry(entry));
+}));
+exports.accountingRouter.post("/income", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = incomeSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const amount = new library_1.Decimal(parsed.data.amount);
+    const entryDate = parsed.data.entryDate ? new Date(parsed.data.entryDate) : new Date();
+    const [destinationAccount, incomeAccount] = await Promise.all([
+        prisma_js_1.prisma.accountingAccount.findFirst({
+            where: { id: parsed.data.destinationAccountId, organizationId: orgId, isActive: true },
+        }),
+        prisma_js_1.prisma.accountingAccount.findFirst({
+            where: { id: parsed.data.incomeAccountId, organizationId: orgId, isActive: true },
+        }),
+    ]);
+    if (!destinationAccount || destinationAccount.accountType !== "asset") {
+        return res.status(400).json({ error: "Destination account must be an active asset account" });
+    }
+    if (!incomeAccount || incomeAccount.accountType !== "income") {
+        return res.status(400).json({ error: "Income account must be an active income account" });
+    }
+    const entry = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        return (0, accounting_js_1.createJournalEntry)(tx, {
+            organizationId: orgId,
+            entryDate,
+            entryType: "manual_adjustment",
+            description: parsed.data.description,
+            referenceType: "manual_income",
+            isSystemEntry: false,
+            createdByUserId: req.auth.userId,
+            lines: [
+                { accountId: destinationAccount.id, side: "debit", amount, memo: parsed.data.memo ?? null },
+                { accountId: incomeAccount.id, side: "credit", amount, memo: parsed.data.memo ?? null },
             ],
         });
     });

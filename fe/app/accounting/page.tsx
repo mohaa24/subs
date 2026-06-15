@@ -174,6 +174,14 @@ export default function AccountingPage() {
     description: "",
     memo: "",
   });
+  const [income, setIncome] = useState({
+    destinationAccountId: "",
+    incomeAccountId: "",
+    amount: "",
+    entryDate: todayString(),
+    description: "",
+    memo: "",
+  });
   const [transfer, setTransfer] = useState({
     fromAccountId: "",
     toAccountId: "",
@@ -188,6 +196,10 @@ export default function AccountingPage() {
   );
   const expenseAccounts = useMemo(
     () => accounts.filter((account) => account.accountType === "expense" && account.isActive),
+    [accounts],
+  );
+  const incomeAccounts = useMemo(
+    () => accounts.filter((account) => account.accountType === "income" && account.isActive),
     [accounts],
   );
   const netIncomePeriodLabel =
@@ -327,6 +339,32 @@ export default function AccountingPage() {
     }
   }
 
+  async function handleIncome(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await api<JournalEntry>("/accounting/income", {
+        method: "POST",
+        body: JSON.stringify({
+          ...income,
+          amount: Number(income.amount),
+          memo: income.memo || null,
+        }),
+      });
+      setIncome({
+        destinationAccountId: income.destinationAccountId,
+        incomeAccountId: income.incomeAccountId,
+        amount: "",
+        entryDate: todayString(),
+        description: "",
+        memo: "",
+      });
+      await loadAccounting();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to record income");
+    }
+  }
+
   async function handleTransfer(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -437,6 +475,9 @@ export default function AccountingPage() {
                 <TabsTrigger value="accounts" className="rounded-md border border-border px-3 py-1.5">Accounts</TabsTrigger>
                 {canManageAccounting && (
                   <TabsTrigger value="expenses" className="rounded-md border border-border px-3 py-1.5">Expenses</TabsTrigger>
+                )}
+                {canManageAccounting && (
+                  <TabsTrigger value="income" className="rounded-md border border-border px-3 py-1.5">Income</TabsTrigger>
                 )}
                 {canManageAccounting && (
                   <TabsTrigger value="transfers" className="rounded-md border border-border px-3 py-1.5">Transfers</TabsTrigger>
@@ -555,6 +596,54 @@ export default function AccountingPage() {
                           <Textarea value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} />
                         </div>
                         <Button type="submit" className="md:col-span-2">Record Expense</Button>
+                      </form>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              )}
+
+              {canManageAccounting && (
+                <TabsContent value="income">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Record Non-Member Income</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <form className="grid gap-3 md:grid-cols-2" onSubmit={handleIncome}>
+                        <div className="space-y-1.5">
+                          <Label>Received To</Label>
+                          <Select value={income.destinationAccountId} onValueChange={(value) => setIncome((v) => ({ ...v, destinationAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
+                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Income Account</Label>
+                          <Select value={income.incomeAccountId} onValueChange={(value) => setIncome((v) => ({ ...v, incomeAccountId: value }))}>
+                            <SelectTrigger><SelectValue placeholder="Select income account" /></SelectTrigger>
+                            <SelectContent>{incomeAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Amount</Label>
+                          <Input type="number" min="0" step="0.01" value={income.amount} onChange={(e) => setIncome((v) => ({ ...v, amount: e.target.value }))} required />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Date</Label>
+                          <Input type="date" value={income.entryDate} onChange={(e) => setIncome((v) => ({ ...v, entryDate: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <Label>Description</Label>
+                          <Input value={income.description} onChange={(e) => setIncome((v) => ({ ...v, description: e.target.value }))} placeholder="Donation, rental income, bank interest..." required />
+                        </div>
+                        <div className="space-y-1.5 md:col-span-2">
+                          <Label>Memo</Label>
+                          <Textarea value={income.memo} onChange={(e) => setIncome((v) => ({ ...v, memo: e.target.value }))} />
+                        </div>
+                        <p className="rounded-md bg-muted/60 p-3 text-xs text-muted-foreground md:col-span-2">
+                          Use this only for non-member income. Member payments should still be recorded through the payment flow to avoid double counting.
+                        </p>
+                        <Button type="submit" className="md:col-span-2">Record Income</Button>
                       </form>
                     </CardContent>
                   </Card>
