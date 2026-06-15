@@ -102,6 +102,8 @@ const journalEntryKindLabels: Record<JournalEntryKind, string> = {
   credit_application: "Credit Applications",
 };
 
+const hiddenSystemAccountKeys = new Set(["income_other"]);
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -212,7 +214,11 @@ export default function AccountingPage() {
     [accounts],
   );
   const incomeAccounts = useMemo(
-    () => accounts.filter((account) => account.accountType === "income" && account.isActive),
+    () => accounts.filter((account) => account.accountType === "income" && account.isActive && !hiddenSystemAccountKeys.has(account.systemKey ?? "")),
+    [accounts],
+  );
+  const visibleAccounts = useMemo(
+    () => accounts.filter((account) => !hiddenSystemAccountKeys.has(account.systemKey ?? "")),
     [accounts],
   );
   const netIncomePeriodLabel =
@@ -563,7 +569,7 @@ export default function AccountingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {accounts.map((account) => (
+                          {visibleAccounts.map((account) => (
                             <tr key={account.id} className="border-t">
                               <td className="p-2">
                                 <div className="font-medium">{account.name}</div>
