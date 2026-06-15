@@ -10,7 +10,8 @@
     "db:push": "prisma db push",
     "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "accounting:backfill": "node dist/scripts/backfill-accounting.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
