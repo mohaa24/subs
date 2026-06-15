@@ -25,6 +25,7 @@ import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-rea
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type LineSide = "debit" | "credit";
+type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
 
 type Account = {
   id: string;
@@ -82,6 +83,13 @@ const accountTypeLabels: Record<AccountType, string> = {
   expense: "Expense",
 };
 
+const accountingPeriodLabels: Record<AccountingPeriod, string> = {
+  this_month: "This Month",
+  this_year: "This Year",
+  all_time: "All Time",
+  custom: "Custom",
+};
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -89,6 +97,21 @@ function todayString() {
 function firstOfMonthString() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function firstOfYearString() {
+  const d = new Date();
+  return `${d.getFullYear()}-01-01`;
+}
+
+function accountingPeriodRange(period: AccountingPeriod) {
+  if (period === "this_year") {
+    return { fromDate: firstOfYearString(), toDate: todayString() };
+  }
+  if (period === "all_time") {
+    return { fromDate: "1900-01-01", toDate: todayString() };
+  }
+  return { fromDate: firstOfMonthString(), toDate: todayString() };
 }
 
 function formatRs(n: number) {
@@ -119,6 +142,7 @@ export default function AccountingPage() {
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
+  const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod>("this_month");
   const [fromDate, setFromDate] = useState(firstOfMonthString);
   const [toDate, setToDate] = useState(todayString);
   const [asOfDate, setAsOfDate] = useState(todayString);
@@ -154,6 +178,10 @@ export default function AccountingPage() {
     () => accounts.filter((account) => account.accountType === "expense" && account.isActive),
     [accounts],
   );
+  const netIncomePeriodLabel =
+    accountingPeriod === "custom"
+      ? `${fromDate || "Start"} to ${toDate || "Today"}`
+      : accountingPeriodLabels[accountingPeriod];
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -163,7 +191,22 @@ export default function AccountingPage() {
     if (!loading && user) void loadAccounting();
   }, [loading, user]);
 
-  async function loadAccounting() {
+  function handleAccountingPeriodChange(value: string) {
+    const nextPeriod = value as AccountingPeriod;
+    setAccountingPeriod(nextPeriod);
+    if (nextPeriod === "custom") return;
+
+    const range = accountingPeriodRange(nextPeriod);
+    setFromDate(range.fromDate);
+    setToDate(range.toDate);
+    void loadAccounting(range);
+  }
+
+  async function loadAccounting(overrides?: { fromDate?: string; toDate?: string; asOfDate?: string }) {
+    const profitLossFromDate = overrides?.fromDate ?? fromDate;
+    const profitLossToDate = overrides?.toDate ?? toDate;
+    const balanceSheetAsOfDate = overrides?.asOfDate ?? asOfDate;
+
     setLoadingData(true);
     setError("");
     try {
@@ -171,10 +214,10 @@ export default function AccountingPage() {
         api<Account[]>("/accounting/accounts", { params: { includeInactive: "true" } }),
         api<{ items: JournalEntry[] }>("/accounting/journal", { params: { limit: "25" } }),
         api<ProfitLossReport>("/accounting/reports/profit-loss", {
-          params: { fromDate, toDate },
+          params: { fromDate: profitLossFromDate, toDate: profitLossToDate },
         }),
         api<BalanceSheetReport>("/accounting/reports/balance-sheet", {
-          params: { asOfDate },
+          params: { asOfDate: balanceSheetAsOfDate },
         }),
       ]);
       setAccounts(accountsData);
@@ -277,10 +320,26 @@ export default function AccountingPage() {
               Beta
             </span>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={loadAccounting} disabled={loadingData}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-[180px] space-y-1">
+              <Label className="text-xs text-muted-foreground">P&amp;L period</Label>
+              <Select value={accountingPeriod} onValueChange={handleAccountingPeriodChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this_month">This Month</SelectItem>
+                  <SelectItem value="this_year">This Year</SelectItem>
+                  <SelectItem value="all_time">All Time</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => loadAccounting()} disabled={loadingData}>
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <>
@@ -307,6 +366,7 @@ export default function AccountingPage() {
                 <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">Net Income</p>
                   <p className="mt-1 text-xl font-semibold tabular-nums">{formatRs(plReport?.netIncome ?? 0)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{netIncomePeriodLabel}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -497,16 +557,30 @@ export default function AccountingPage() {
                       <div className="mb-4 grid gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
                           <Label>From</Label>
-                          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                          <Input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => {
+                              setAccountingPeriod("custom");
+                              setFromDate(e.target.value);
+                            }}
+                          />
                         </div>
                         <div className="space-y-1.5">
                           <Label>To</Label>
-                          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                          <Input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => {
+                              setAccountingPeriod("custom");
+                              setToDate(e.target.value);
+                            }}
+                          />
                         </div>
                         <Button
                           type="button"
                           className="sm:col-span-2"
-                          onClick={loadAccounting}
+                          onClick={() => loadAccounting()}
                           disabled={loadingData}
                         >
                           Generate Profit &amp; Loss
@@ -533,7 +607,7 @@ export default function AccountingPage() {
                         <Button
                           type="button"
                           className="mt-3 w-full"
-                          onClick={loadAccounting}
+                          onClick={() => loadAccounting()}
                           disabled={loadingData}
                         >
                           Generate Balance Sheet
