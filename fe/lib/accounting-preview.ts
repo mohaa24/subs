@@ -6,6 +6,17 @@ const ACCOUNTING_PREVIEW_STORAGE_KEY = "subs.accountingPreviewUnlocked";
 const ACCOUNTING_PREVIEW_REQUIRED_PRESSES = 5;
 const ACCOUNTING_PREVIEW_WINDOW_MS = 3000;
 
+function isAccountingPreviewShortcut(event: KeyboardEvent) {
+  const key = event.key.toLowerCase();
+  if (key !== "a") return false;
+
+  return (
+    (event.ctrlKey && event.shiftKey) ||
+    (event.ctrlKey && event.altKey) ||
+    (event.metaKey && event.shiftKey)
+  );
+}
+
 export function useAccountingPreviewUnlock() {
   const [unlocked, setUnlocked] = useState(false);
 
@@ -16,7 +27,8 @@ export function useAccountingPreviewUnlock() {
     let firstPressAt = 0;
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== "a") return;
+      if (!isAccountingPreviewShortcut(event)) return;
+      event.preventDefault();
 
       const now = Date.now();
       if (!firstPressAt || now - firstPressAt > ACCOUNTING_PREVIEW_WINDOW_MS) {
