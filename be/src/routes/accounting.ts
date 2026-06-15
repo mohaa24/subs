@@ -50,6 +50,18 @@ function dateFromQuery(value: unknown, fallback: Date) {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
+function optionalDateFromQuery(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
 function endOfDay(date: Date) {
   const next = new Date(date);
   next.setHours(23, 59, 59, 999);
@@ -300,15 +312,35 @@ accountingRouter.get("/journal", asyncRoute(async (req, res) => {
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 25));
   const entryType = typeof req.query.entryType === "string" ? req.query.entryType : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
+  const from = optionalDateFromQuery(req.query.fromDate);
+  const to = optionalDateFromQuery(req.query.toDate);
   const where: any = { organizationId: orgId };
   if (entryType) where.entryType = entryType;
+  if (from || to) {
+    where.entryDate = {
+      ...(from ? { gte: startOfDay(from) } : {}),
+      ...(to ? { lte: endOfDay(to) } : {}),
+    };
+  }
+  if (search) {
+    where.OR = [
+      { description: { contains: search, mode: "insensitive" } },
+      { referenceType: { contains: search, mode: "insensitive" } },
+      { referenceId: { contains: search, mode: "insensitive" } },
+      { createdBy: { email: { contains: search, mode: "insensitive" } } },
+      { lines: { some: { memo: { contains: search, mode: "insensitive" } } } },
+      { lines: { some: { account: { name: { contains: search, mode: "insensitive" } } } } },
+    ];
+  }
 
   const [items, total] = await Promise.all([
     prisma.accountingJournalEntry.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
-      orderBy: [{ entryDate: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ entryDate: sortOrder }, { createdAt: sortOrder }],
       include: {
         createdBy: { select: { id: true, email: true } },
         lines: { include: { account: true }, orderBy: { createdAt: "asc" } },

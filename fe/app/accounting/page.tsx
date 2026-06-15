@@ -26,6 +26,7 @@ import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-rea
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type LineSide = "debit" | "credit";
 type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
+type JournalSortOrder = "desc" | "asc";
 
 type Account = {
   id: string;
@@ -114,6 +115,11 @@ function accountingPeriodRange(period: AccountingPeriod) {
   return { fromDate: firstOfMonthString(), toDate: todayString() };
 }
 
+function journalPeriodRange(period: AccountingPeriod) {
+  if (period === "all_time") return { fromDate: "", toDate: "" };
+  return accountingPeriodRange(period);
+}
+
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
     style: "currency",
@@ -140,12 +146,18 @@ export default function AccountingPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const [journalTotal, setJournalTotal] = useState(0);
   const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
   const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod>("this_month");
   const [fromDate, setFromDate] = useState(firstOfMonthString);
   const [toDate, setToDate] = useState(todayString);
   const [asOfDate, setAsOfDate] = useState(todayString);
+  const [journalSearch, setJournalSearch] = useState("");
+  const [journalPeriod, setJournalPeriod] = useState<AccountingPeriod>("all_time");
+  const [journalFromDate, setJournalFromDate] = useState("");
+  const [journalToDate, setJournalToDate] = useState("");
+  const [journalSortOrder, setJournalSortOrder] = useState<JournalSortOrder>("desc");
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState("");
 
@@ -182,6 +194,10 @@ export default function AccountingPage() {
     accountingPeriod === "custom"
       ? `${fromDate || "Start"} to ${toDate || "Today"}`
       : accountingPeriodLabels[accountingPeriod];
+  const journalPeriodLabel =
+    journalPeriod === "custom"
+      ? `${journalFromDate || "Start"} to ${journalToDate || "Today"}`
+      : accountingPeriodLabels[journalPeriod];
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -202,17 +218,55 @@ export default function AccountingPage() {
     void loadAccounting(range);
   }
 
-  async function loadAccounting(overrides?: { fromDate?: string; toDate?: string; asOfDate?: string }) {
+  function handleJournalPeriodChange(value: string) {
+    const nextPeriod = value as AccountingPeriod;
+    setJournalPeriod(nextPeriod);
+    if (nextPeriod === "custom") return;
+
+    const range = journalPeriodRange(nextPeriod);
+    setJournalFromDate(range.fromDate);
+    setJournalToDate(range.toDate);
+    void loadAccounting({ journalFromDate: range.fromDate, journalToDate: range.toDate });
+  }
+
+  function handleJournalSortChange(value: string) {
+    const nextSortOrder = value as JournalSortOrder;
+    setJournalSortOrder(nextSortOrder);
+    void loadAccounting({ journalSortOrder: nextSortOrder });
+  }
+
+  async function loadAccounting(overrides?: {
+    fromDate?: string;
+    toDate?: string;
+    asOfDate?: string;
+    journalSearch?: string;
+    journalFromDate?: string;
+    journalToDate?: string;
+    journalSortOrder?: JournalSortOrder;
+  }) {
     const profitLossFromDate = overrides?.fromDate ?? fromDate;
     const profitLossToDate = overrides?.toDate ?? toDate;
     const balanceSheetAsOfDate = overrides?.asOfDate ?? asOfDate;
+    const nextJournalSearch = (overrides?.journalSearch ?? journalSearch).trim();
+    const nextJournalFromDate = overrides?.journalFromDate ?? journalFromDate;
+    const nextJournalToDate = overrides?.journalToDate ?? journalToDate;
+    const nextJournalSortOrder = overrides?.journalSortOrder ?? journalSortOrder;
+    const journalParams: Record<string, string> = {
+      limit: "25",
+      sortOrder: nextJournalSortOrder,
+    };
+    if (nextJournalSearch) journalParams.search = nextJournalSearch;
+    if (nextJournalFromDate) journalParams.fromDate = nextJournalFromDate;
+    if (nextJournalToDate) journalParams.toDate = nextJournalToDate;
 
     setLoadingData(true);
     setError("");
     try {
       const [accountsData, journalData, plData, bsData] = await Promise.all([
         api<Account[]>("/accounting/accounts", { params: { includeInactive: "true" } }),
-        api<{ items: JournalEntry[] }>("/accounting/journal", { params: { limit: "25" } }),
+        api<{ items: JournalEntry[]; total: number }>("/accounting/journal", {
+          params: journalParams,
+        }),
         api<ProfitLossReport>("/accounting/reports/profit-loss", {
           params: { fromDate: profitLossFromDate, toDate: profitLossToDate },
         }),
@@ -222,6 +276,7 @@ export default function AccountingPage() {
       ]);
       setAccounts(accountsData);
       setJournal(journalData.items);
+      setJournalTotal(journalData.total);
       setPlReport(plData);
       setBalanceSheet(bsData);
     } catch (err) {
@@ -632,6 +687,107 @@ export default function AccountingPage() {
                     <CardTitle className="text-base">Journal Entries</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    <form
+                      className="grid gap-3 rounded-md border bg-muted/20 p-3 lg:grid-cols-[1.4fr_160px_150px_150px_170px_auto]"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void loadAccounting({
+                          journalSearch,
+                          journalFromDate,
+                          journalToDate,
+                          journalSortOrder,
+                        });
+                      }}
+                    >
+                      <div className="space-y-1.5">
+                        <Label>Search</Label>
+                        <Input
+                          value={journalSearch}
+                          onChange={(event) => setJournalSearch(event.target.value)}
+                          placeholder="Description, account, reference, user"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Period</Label>
+                        <Select value={journalPeriod} onValueChange={handleJournalPeriodChange}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all_time">All Time</SelectItem>
+                            <SelectItem value="this_month">This Month</SelectItem>
+                            <SelectItem value="this_year">This Year</SelectItem>
+                            <SelectItem value="custom">Custom</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>From</Label>
+                        <Input
+                          type="date"
+                          value={journalFromDate}
+                          onChange={(event) => {
+                            setJournalPeriod("custom");
+                            setJournalFromDate(event.target.value);
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>To</Label>
+                        <Input
+                          type="date"
+                          value={journalToDate}
+                          onChange={(event) => {
+                            setJournalPeriod("custom");
+                            setJournalToDate(event.target.value);
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Sort by time</Label>
+                        <Select value={journalSortOrder} onValueChange={handleJournalSortChange}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="desc">Newest first</SelectItem>
+                            <SelectItem value="asc">Oldest first</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-end">
+                        <Button type="submit" className="w-full" disabled={loadingData}>
+                          Apply
+                        </Button>
+                      </div>
+                    </form>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Showing {journal.length} of {journalTotal} entries
+                        {journalPeriodLabel ? ` · ${journalPeriodLabel}` : ""}
+                      </span>
+                      {(journalSearch || journalFromDate || journalToDate || journalPeriod !== "all_time") && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => {
+                            setJournalSearch("");
+                            setJournalPeriod("all_time");
+                            setJournalFromDate("");
+                            setJournalToDate("");
+                            void loadAccounting({
+                              journalSearch: "",
+                              journalFromDate: "",
+                              journalToDate: "",
+                            });
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                    </div>
                     {journal.length === 0 ? (
                       <p className="py-8 text-center text-sm text-muted-foreground">
                         No journal entries yet. New payments, expenses, transfers, and credit allocations will appear here.
