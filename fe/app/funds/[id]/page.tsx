@@ -271,10 +271,11 @@ export default function FundDetailPage() {
 
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SummaryCard title="Opening" value={fund?.summary?.opening ?? 0} />
           <SummaryCard title="Received" value={fund?.summary?.received ?? 0} />
           <SummaryCard title="Spent" value={fund?.summary?.spent ?? 0} />
+          <SummaryCard title="Net Transferred" value={fund?.summary?.netTransferred ?? 0} />
           <SummaryCard title="Active Remaining" value={fund?.summary?.activeRemaining ?? 0} emphasis />
         </div>
 
