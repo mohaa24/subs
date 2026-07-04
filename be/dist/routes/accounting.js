@@ -958,7 +958,7 @@ exports.accountingRouter.get("/reports/balance-sheet", asyncRoute(async (req, re
             ...equity,
             {
                 id: "current-earnings",
-                name: "Current Earnings",
+                name: "Current Year Earnings",
                 accountType: "equity",
                 balance: asNumber(currentEarnings),
             },

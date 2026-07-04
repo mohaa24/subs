@@ -83,7 +83,7 @@ type BalanceSheetReport = {
 const accountTypeLabels: Record<AccountType, string> = {
   asset: "Asset",
   liability: "Liability",
-  equity: "Equity",
+  equity: "Fund Balance",
   income: "Income",
   expense: "Expense",
 };
@@ -150,6 +150,12 @@ function formatRs(n: number) {
   })
     .format(n)
     .replace("LKR", "Rs.");
+}
+
+function accountDisplayName(account: Pick<Account, "id" | "name" | "systemKey">) {
+  if (account.systemKey === "equity_fund_balance") return "General Mosque Fund";
+  if (account.id === "current-earnings") return "Current Year Earnings";
+  return account.name;
 }
 
 function accountTone(accountType: AccountType) {
@@ -586,7 +592,7 @@ export default function AccountingPage() {
                           {visibleAccounts.map((account) => (
                             <tr key={account.id} className="border-t">
                               <td className="p-2">
-                                <div className="font-medium">{account.name}</div>
+                                <div className="font-medium">{accountDisplayName(account)}</div>
                                 {account.description && <div className="text-xs text-muted-foreground">{account.description}</div>}
                               </td>
                               <td className={`p-2 font-medium ${accountTone(account.accountType)}`}>{accountTypeLabels[account.accountType]}</td>
@@ -837,7 +843,7 @@ export default function AccountingPage() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Balance Sheet</CardTitle>
+                      <CardTitle className="text-base">Statement of Financial Position</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="mb-4 space-y-1.5">
@@ -849,15 +855,15 @@ export default function AccountingPage() {
                           onClick={() => loadAccounting()}
                           disabled={loadingData}
                         >
-                          Generate Balance Sheet
+                          Generate Statement
                         </Button>
                       </div>
-                      <ReportRows title="Assets" rows={(balanceSheet?.assets ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
-                      <ReportRows title="Liabilities" rows={(balanceSheet?.liabilities ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
-                      <ReportRows title="Equity" rows={(balanceSheet?.equity ?? []).map((a) => ({ id: a.id, name: a.name, amount: a.balance ?? 0 }))} />
+                      <ReportRows title="Assets" rows={(balanceSheet?.assets ?? []).map((a) => ({ id: a.id, name: accountDisplayName(a), amount: a.balance ?? 0 }))} />
+                      <ReportRows title="Liabilities" rows={(balanceSheet?.liabilities ?? []).map((a) => ({ id: a.id, name: accountDisplayName(a), amount: a.balance ?? 0 }))} />
+                      <ReportRows title="Fund Balances" rows={(balanceSheet?.equity ?? []).map((a) => ({ id: a.id, name: accountDisplayName(a), amount: a.balance ?? 0 }))} />
                       <div className="mt-3 border-t pt-3 text-sm">
                         <div className="flex justify-between"><span>Assets</span><strong>{formatRs(balanceSheet?.assetTotal ?? 0)}</strong></div>
-                        <div className="flex justify-between"><span>Liabilities + Equity</span><strong>{formatRs(balanceSheet?.liabilitiesAndEquityTotal ?? 0)}</strong></div>
+                        <div className="flex justify-between"><span>Liabilities + Fund Balances</span><strong>{formatRs(balanceSheet?.liabilitiesAndEquityTotal ?? 0)}</strong></div>
                       </div>
                     </CardContent>
                   </Card>
@@ -1010,7 +1016,7 @@ export default function AccountingPage() {
                             <tbody>
                               {entry.lines.map((line) => (
                                 <tr key={line.id} className="border-t">
-                                  <td className="py-1.5">{line.account.name}</td>
+                                  <td className="py-1.5">{accountDisplayName(line.account)}</td>
                                   <td className="py-1.5 text-right text-muted-foreground">{line.side}</td>
                                   <td className="py-1.5 text-right tabular-nums">{formatRs(line.amount)}</td>
                                 </tr>
