@@ -67,6 +67,18 @@ function formatRs(n: number) {
   }).format(n).replace("LKR", "Rs.");
 }
 
+function formatFundDate(value?: string | null) {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString("en-LK");
+}
+
+function formatFundPeriod(fund: FundPot) {
+  if (!fund.periodStart && !fund.periodEnd) return "Recurring";
+  if (fund.periodStart && fund.periodEnd) return `${formatFundDate(fund.periodStart)} - ${formatFundDate(fund.periodEnd)}`;
+  if (fund.periodStart) return `From ${formatFundDate(fund.periodStart)}`;
+  return `Until ${formatFundDate(fund.periodEnd)}`;
+}
+
 export default function FundsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -83,6 +95,9 @@ export default function FundsPage() {
   const [newFund, setNewFund] = useState({
     name: "",
     description: "",
+    managerName: "",
+    periodStart: "",
+    periodEnd: "",
     openingBalance: "",
     openingAssetAccountId: "",
   });
@@ -152,12 +167,23 @@ export default function FundsPage() {
         body: JSON.stringify({
           name: newFund.name,
           description: newFund.description || null,
+          managerName: newFund.managerName || null,
+          periodStart: newFund.periodStart || null,
+          periodEnd: newFund.periodEnd || null,
           openingBalance,
           openingAssetAccountId: openingBalance > 0 ? newFund.openingAssetAccountId : null,
         }),
       });
       setCreateOpen(false);
-      setNewFund({ name: "", description: "", openingBalance: "", openingAssetAccountId: cashBankAccounts[0]?.id || "" });
+      setNewFund({
+        name: "",
+        description: "",
+        managerName: "",
+        periodStart: "",
+        periodEnd: "",
+        openingBalance: "",
+        openingAssetAccountId: cashBankAccounts[0]?.id || "",
+      });
       toast({ title: "Fund created", description: `${fund.name} is ready to use.` });
       router.push(`/funds/${fund.id}`);
     } catch (err) {
@@ -229,10 +255,12 @@ export default function FundsPage() {
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {error ? <p className="mb-3 text-sm text-destructive">{error}</p> : null}
-            <table className="w-full min-w-[880px] text-sm">
+            <table className="w-full min-w-[1040px] text-sm">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="p-2 text-left font-medium">Fund</th>
+                  <th className="p-2 text-left font-medium">Manager</th>
+                  <th className="p-2 text-left font-medium">Period</th>
                   <th className="p-2 text-right font-medium">Opening</th>
                   <th className="p-2 text-right font-medium">Received</th>
                   <th className="p-2 text-right font-medium">Spent</th>
@@ -252,6 +280,8 @@ export default function FundsPage() {
                       <div className="font-medium">{fund.name}</div>
                       {fund.description ? <div className="text-xs text-muted-foreground">{fund.description}</div> : null}
                     </td>
+                    <td className="p-2 text-muted-foreground">{fund.managerName || "Not assigned"}</td>
+                    <td className="p-2 text-muted-foreground">{formatFundPeriod(fund)}</td>
                     <td className="p-2 text-right tabular-nums">{formatRs(fund.summary?.opening ?? 0)}</td>
                     <td className="p-2 text-right tabular-nums">{formatRs(fund.summary?.received ?? 0)}</td>
                     <td className="p-2 text-right tabular-nums">{formatRs(fund.summary?.spent ?? 0)}</td>
@@ -262,7 +292,7 @@ export default function FundsPage() {
                 ))}
                 {funds.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-6 text-center text-muted-foreground">No restricted funds created yet.</td>
+                    <td colSpan={9} className="p-6 text-center text-muted-foreground">No restricted funds created yet.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -283,6 +313,21 @@ export default function FundsPage() {
               <Label>Description</Label>
               <Textarea value={newFund.description} onChange={(e) => setNewFund((v) => ({ ...v, description: e.target.value }))} maxLength={500} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Fund Manager Name</Label>
+              <Input value={newFund.managerName} onChange={(e) => setNewFund((v) => ({ ...v, managerName: e.target.value }))} maxLength={160} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Fund Period Start</Label>
+                <Input type="date" value={newFund.periodStart} onChange={(e) => setNewFund((v) => ({ ...v, periodStart: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Fund Period End</Label>
+                <Input type="date" value={newFund.periodEnd} onChange={(e) => setNewFund((v) => ({ ...v, periodEnd: e.target.value }))} />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Leave the fund period blank for recurring funds.</p>
             <div className="space-y-1.5">
               <Label>Opening Balance</Label>
               <Input type="number" min="0" step="0.01" value={newFund.openingBalance} onChange={(e) => setNewFund((v) => ({ ...v, openingBalance: e.target.value }))} />

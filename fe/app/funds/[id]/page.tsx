@@ -58,6 +58,13 @@ function dateLabel(value: string) {
   return new Date(value).toLocaleDateString("en-LK");
 }
 
+function formatFundPeriod(fund?: FundPot | null) {
+  if (!fund?.periodStart && !fund?.periodEnd) return "Recurring fund";
+  if (fund.periodStart && fund.periodEnd) return `${dateLabel(fund.periodStart)} - ${dateLabel(fund.periodEnd)}`;
+  if (fund.periodStart) return `From ${dateLabel(fund.periodStart)}`;
+  return `Until ${dateLabel(fund.periodEnd!)}`;
+}
+
 export default function FundDetailPage() {
   const { user, loading } = useAuth();
   const params = useParams<{ id: string }>();
@@ -254,6 +261,16 @@ export default function FundDetailPage() {
               <p className="text-sm text-muted-foreground">
                 {fund?.description || "Review this fund's collections, expenses, and surplus or deficit transfers."}
               </p>
+              {fund ? (
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span className="rounded-full border bg-background px-2 py-1">
+                    Manager: {fund.managerName || "Not assigned"}
+                  </span>
+                  <span className="rounded-full border bg-background px-2 py-1">
+                    Period: {formatFundPeriod(fund)}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
           {canManageFunds ? (
@@ -271,12 +288,11 @@ export default function FundDetailPage() {
 
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <SummaryCard title="Opening" value={fund?.summary?.opening ?? 0} />
-          <SummaryCard title="Received" value={fund?.summary?.received ?? 0} />
-          <SummaryCard title="Spent" value={fund?.summary?.spent ?? 0} />
-          <SummaryCard title="Net Transferred" value={fund?.summary?.netTransferred ?? 0} />
-          <SummaryCard title="Active Remaining" value={fund?.summary?.activeRemaining ?? 0} emphasis />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} />
+          <SummaryCard title="Total Spent" value={fund?.summary?.spent ?? 0} />
+          <SummaryCard title="Total Transferred" value={fund?.summary?.netTransferred ?? 0} />
+          <SummaryCard title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} emphasis />
         </div>
 
         <Card>

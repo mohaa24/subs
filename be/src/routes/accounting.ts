@@ -140,6 +140,9 @@ const transferSchema = z.object({
 const createFundSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().nullable(),
+  managerName: z.string().trim().max(160).optional().nullable(),
+  periodStart: z.string().optional().nullable(),
+  periodEnd: z.string().optional().nullable(),
   openingBalance: z.number().min(0).optional(),
   openingAssetAccountId: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
@@ -148,6 +151,29 @@ const createFundSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["openingAssetAccountId"],
       message: "Opening asset account is required when opening balance is greater than zero",
+    });
+  }
+  const periodStart = data.periodStart ? new Date(data.periodStart) : null;
+  const periodEnd = data.periodEnd ? new Date(data.periodEnd) : null;
+  if (data.periodStart && (!periodStart || Number.isNaN(periodStart.getTime()))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["periodStart"],
+      message: "Fund period start date is invalid",
+    });
+  }
+  if (data.periodEnd && (!periodEnd || Number.isNaN(periodEnd.getTime()))) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["periodEnd"],
+      message: "Fund period end date is invalid",
+    });
+  }
+  if (periodStart && periodEnd && periodStart > periodEnd) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["periodEnd"],
+      message: "Fund period end date must be after the start date",
     });
   }
 });
@@ -227,6 +253,62 @@ function summarizeFundTransactions(
   };
 }
 
+function summarizeFundReportTransactions(
+  transactions: Array<{ transactionType: FundTransactionType; amount: Decimal; transactionDate: Date }>,
+  from?: Date | null,
+  toEnd?: Date | null
+) {
+  let openingBalance = new Decimal(0);
+  let totalCollected = new Decimal(0);
+  let totalSpent = new Decimal(0);
+  let totalTransferred = new Decimal(0);
+  const fromStart = from ? startOfDay(from) : null;
+
+  for (const txRow of transactions) {
+    if (toEnd && txRow.transactionDate > toEnd) continue;
+    if (fromStart && txRow.transactionDate < fromStart) {
+      openingBalance = openingBalance.add(fundDelta(txRow.transactionType, txRow.amount));
+      continue;
+    }
+
+    if (txRow.transactionType === "opening" || txRow.transactionType === "collection") {
+      totalCollected = totalCollected.add(txRow.amount);
+    }
+    if (txRow.transactionType === "expense") {
+      totalSpent = totalSpent.add(txRow.amount);
+    }
+    totalTransferred = totalTransferred.add(fundTransferSignedAmount(txRow.transactionType, txRow.amount));
+  }
+
+  const remainingBalance = openingBalance.add(totalCollected).sub(totalSpent).sub(totalTransferred);
+  return {
+    openingBalance: asNumber(openingBalance),
+    totalCollected: asNumber(totalCollected),
+    totalSpent: asNumber(totalSpent),
+    totalTransferred: asNumber(totalTransferred),
+    remainingBalance: asNumber(remainingBalance),
+  };
+}
+
+function fundReportRange(query: Request["query"]) {
+  const period = typeof query.period === "string" ? query.period : "from_start";
+  const now = new Date();
+  if (period === "current_month") {
+    return { from: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), toEnd: endOfDay(now), period };
+  }
+  if (period === "current_year") {
+    return { from: startOfDay(new Date(now.getFullYear(), 0, 1)), toEnd: endOfDay(now), period };
+  }
+  if (period === "custom") {
+    return {
+      from: optionalDateFromQuery(query.fromDate),
+      toEnd: optionalDateFromQuery(query.toDate) ? endOfDay(optionalDateFromQuery(query.toDate)!) : null,
+      period,
+    };
+  }
+  return { from: null, toEnd: null, period: "from_start" };
+}
+
 async function fundBalance(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -295,6 +377,8 @@ function serializeFundPot(fund: any, summary?: any) {
   return {
     ...fund,
     openingBalance: Number(fund.openingBalance),
+    periodStart: fund.periodStart?.toISOString?.() ?? null,
+    periodEnd: fund.periodEnd?.toISOString?.() ?? null,
     createdAt: fund.createdAt.toISOString(),
     updatedAt: fund.updatedAt.toISOString(),
     closedAt: fund.closedAt?.toISOString?.() ?? null,
@@ -415,6 +499,61 @@ accountingRouter.get("/funds", asyncRoute(async (req, res) => {
   return res.json(rows);
 }));
 
+accountingRouter.get("/reports/fund-summary", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+
+  const status = req.query.status === "active" || req.query.status === "closed" ? req.query.status : null;
+  const fundId = typeof req.query.fundId === "string" && req.query.fundId.trim() ? req.query.fundId : null;
+  const range = fundReportRange(req.query);
+
+  const funds = await prisma.fundPot.findMany({
+    where: {
+      organizationId: orgId,
+      ...(status ? { status } : {}),
+      ...(fundId ? { id: fundId } : {}),
+    },
+    include: {
+      transactions: {
+        where: {
+          ...(range.toEnd ? { transactionDate: { lte: range.toEnd } } : {}),
+        },
+        orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+      },
+    },
+    orderBy: [{ status: "asc" }, { name: "asc" }],
+  });
+
+  const rows = funds.map((fund) => ({
+    id: fund.id,
+    name: fund.name,
+    status: fund.status,
+    managerName: fund.managerName,
+    periodStart: fund.periodStart?.toISOString?.() ?? null,
+    periodEnd: fund.periodEnd?.toISOString?.() ?? null,
+    ...summarizeFundReportTransactions(fund.transactions, range.from, range.toEnd),
+  }));
+
+  const totals = rows.reduce(
+    (sum, row) => ({
+      openingBalance: sum.openingBalance + row.openingBalance,
+      totalCollected: sum.totalCollected + row.totalCollected,
+      totalSpent: sum.totalSpent + row.totalSpent,
+      totalTransferred: sum.totalTransferred + row.totalTransferred,
+      remainingBalance: sum.remainingBalance + row.remainingBalance,
+    }),
+    { openingBalance: 0, totalCollected: 0, totalSpent: 0, totalTransferred: 0, remainingBalance: 0 }
+  );
+
+  return res.json({
+    rows,
+    totals,
+    period: range.period,
+    fromDate: range.from?.toISOString?.() ?? null,
+    toDate: range.toEnd?.toISOString?.() ?? null,
+  });
+}));
+
 accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(400).json({ error: "Organization scope required" });
@@ -426,6 +565,8 @@ accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, r
 
   const openingBalance = new Decimal(parsed.data.openingBalance ?? 0);
   const entryDate = new Date();
+  const periodStart = parsed.data.periodStart ? startOfDay(new Date(parsed.data.periodStart)) : null;
+  const periodEnd = parsed.data.periodEnd ? endOfDay(new Date(parsed.data.periodEnd)) : null;
 
   const fund = await prisma.$transaction(async (tx) => {
     await ensureDefaultAccountingAccounts(tx, orgId);
@@ -482,6 +623,9 @@ accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, r
         organizationId: orgId,
         name: parsed.data.name,
         description: parsed.data.description ?? null,
+        managerName: parsed.data.managerName ?? null,
+        periodStart,
+        periodEnd,
         openingBalance,
         fundAccountId: fundAccount.id,
         surplusAccountId: surplusAccount.id,

@@ -348,6 +348,9 @@ export interface FundPot {
   organizationId: string;
   name: string;
   description?: string | null;
+  managerName?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
   status: FundPotStatus;
   openingBalance: number;
   fundAccountId: string;
@@ -363,6 +366,28 @@ export interface FundPot {
   deficitAccount?: AccountingAccount;
   openingAssetAccount?: AccountingAccount | null;
   transactions?: FundTransaction[];
+}
+
+export interface FundSummaryReportRow {
+  id: string;
+  name: string;
+  status: FundPotStatus;
+  managerName?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  openingBalance: number;
+  totalCollected: number;
+  totalSpent: number;
+  totalTransferred: number;
+  remainingBalance: number;
+}
+
+export interface FundSummaryReport {
+  rows: FundSummaryReportRow[];
+  totals: Omit<FundSummaryReportRow, "id" | "name" | "status" | "managerName" | "periodStart" | "periodEnd">;
+  period: string;
+  fromDate?: string | null;
+  toDate?: string | null;
 }
 
 export interface PaymentReceipt {

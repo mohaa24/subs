@@ -1,0 +1,3 @@
+ALTER TABLE "FundPot" ADD COLUMN "managerName" TEXT;
+ALTER TABLE "FundPot" ADD COLUMN "periodStart" TIMESTAMP(3);
+ALTER TABLE "FundPot" ADD COLUMN "periodEnd" TIMESTAMP(3);

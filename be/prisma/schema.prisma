@@ -613,6 +613,9 @@ model FundPot {
   organizationId        String
   name                  String
   description           String?       @db.Text
+  managerName           String?
+  periodStart           DateTime?
+  periodEnd             DateTime?
   status                FundPotStatus @default(active)
   openingBalance        Decimal       @db.Decimal(12, 2) @default(0)
   fundAccountId         String

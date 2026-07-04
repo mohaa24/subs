@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth-context";
-import { api } from "@/lib/api";
+import { api, type FundPot, type FundSummaryReport } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
 
@@ -27,6 +27,8 @@ type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type AssetSubtype = "cash_bank" | "receivable" | "other";
 type LineSide = "debit" | "credit";
 type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
+type FundReportPeriod = "from_start" | "current_month" | "current_year" | "custom";
+type FundReportStatus = "all" | "active" | "closed";
 type JournalSortOrder = "desc" | "asc";
 type AccountingTab = "accounts" | "expenses" | "income" | "transfers" | "reports" | "journal";
 type JournalEntryKind = "all" | "payment" | "expense" | "income" | "transfer" | "credit_application";
@@ -99,6 +101,19 @@ const accountingPeriodLabels: Record<AccountingPeriod, string> = {
   this_year: "This Year",
   all_time: "All Time",
   custom: "Custom",
+};
+
+const fundReportPeriodLabels: Record<FundReportPeriod, string> = {
+  from_start: "From Start of Project",
+  current_month: "Current Month",
+  current_year: "Current Year",
+  custom: "Custom Period",
+};
+
+const fundReportStatusLabels: Record<FundReportStatus, string> = {
+  all: "All Statuses",
+  active: "Active",
+  closed: "Closed",
 };
 
 const journalEntryKindLabels: Record<JournalEntryKind, string> = {
@@ -175,11 +190,18 @@ export default function AccountingPage() {
   const [journalTotal, setJournalTotal] = useState(0);
   const [plReport, setPlReport] = useState<ProfitLossReport | null>(null);
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
+  const [funds, setFunds] = useState<FundPot[]>([]);
+  const [fundSummaryReport, setFundSummaryReport] = useState<FundSummaryReport | null>(null);
   const [activeTab, setActiveTab] = useState<AccountingTab>("accounts");
   const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod>("this_month");
   const [fromDate, setFromDate] = useState(firstOfMonthString);
   const [toDate, setToDate] = useState(todayString);
   const [asOfDate, setAsOfDate] = useState(todayString);
+  const [fundReportStatus, setFundReportStatus] = useState<FundReportStatus>("all");
+  const [fundReportFundId, setFundReportFundId] = useState("all");
+  const [fundReportPeriod, setFundReportPeriod] = useState<FundReportPeriod>("from_start");
+  const [fundReportFromDate, setFundReportFromDate] = useState(firstOfMonthString);
+  const [fundReportToDate, setFundReportToDate] = useState(todayString);
   const [journalEntryKind, setJournalEntryKind] = useState<JournalEntryKind>("all");
   const [journalSearch, setJournalSearch] = useState("");
   const [journalPeriod, setJournalPeriod] = useState<AccountingPeriod>("all_time");
@@ -284,6 +306,19 @@ export default function AccountingPage() {
     void loadAccounting({ journalSortOrder: nextSortOrder });
   }
 
+  function handleFundReportPeriodChange(value: string) {
+    const nextPeriod = value as FundReportPeriod;
+    setFundReportPeriod(nextPeriod);
+    if (nextPeriod === "current_month") {
+      setFundReportFromDate(firstOfMonthString());
+      setFundReportToDate(todayString());
+    }
+    if (nextPeriod === "current_year") {
+      setFundReportFromDate(firstOfYearString());
+      setFundReportToDate(todayString());
+    }
+  }
+
   async function loadAccounting(overrides?: {
     fromDate?: string;
     toDate?: string;
@@ -293,6 +328,11 @@ export default function AccountingPage() {
     journalFromDate?: string;
     journalToDate?: string;
     journalSortOrder?: JournalSortOrder;
+    fundReportStatus?: FundReportStatus;
+    fundReportFundId?: string;
+    fundReportPeriod?: FundReportPeriod;
+    fundReportFromDate?: string;
+    fundReportToDate?: string;
   }) {
     const profitLossFromDate = overrides?.fromDate ?? fromDate;
     const profitLossToDate = overrides?.toDate ?? toDate;
@@ -302,6 +342,11 @@ export default function AccountingPage() {
     const nextJournalFromDate = overrides?.journalFromDate ?? journalFromDate;
     const nextJournalToDate = overrides?.journalToDate ?? journalToDate;
     const nextJournalSortOrder = overrides?.journalSortOrder ?? journalSortOrder;
+    const nextFundReportStatus = overrides?.fundReportStatus ?? fundReportStatus;
+    const nextFundReportFundId = overrides?.fundReportFundId ?? fundReportFundId;
+    const nextFundReportPeriod = overrides?.fundReportPeriod ?? fundReportPeriod;
+    const nextFundReportFromDate = overrides?.fundReportFromDate ?? fundReportFromDate;
+    const nextFundReportToDate = overrides?.fundReportToDate ?? fundReportToDate;
     const journalParams: Record<string, string> = {
       limit: "25",
       sortOrder: nextJournalSortOrder,
@@ -314,11 +359,20 @@ export default function AccountingPage() {
     if (nextJournalEntryKind === "income") journalParams.referenceType = "manual_income";
     if (nextJournalFromDate) journalParams.fromDate = nextJournalFromDate;
     if (nextJournalToDate) journalParams.toDate = nextJournalToDate;
+    const fundReportParams: Record<string, string> = {
+      period: nextFundReportPeriod,
+    };
+    if (nextFundReportStatus !== "all") fundReportParams.status = nextFundReportStatus;
+    if (nextFundReportFundId !== "all") fundReportParams.fundId = nextFundReportFundId;
+    if (nextFundReportPeriod === "custom") {
+      if (nextFundReportFromDate) fundReportParams.fromDate = nextFundReportFromDate;
+      if (nextFundReportToDate) fundReportParams.toDate = nextFundReportToDate;
+    }
 
     setLoadingData(true);
     setError("");
     try {
-      const [accountsData, journalData, plData, bsData] = await Promise.all([
+      const [accountsData, journalData, plData, bsData, fundsData, fundSummaryData] = await Promise.all([
         api<Account[]>("/accounting/accounts", { params: { includeInactive: "true" } }),
         api<{ items: JournalEntry[]; total: number }>("/accounting/journal", {
           params: journalParams,
@@ -329,12 +383,18 @@ export default function AccountingPage() {
         api<BalanceSheetReport>("/accounting/reports/balance-sheet", {
           params: { asOfDate: balanceSheetAsOfDate },
         }),
+        api<FundPot[]>("/accounting/funds"),
+        api<FundSummaryReport>("/accounting/reports/fund-summary", {
+          params: fundReportParams,
+        }),
       ]);
       setAccounts(accountsData);
       setJournal(journalData.items);
       setJournalTotal(journalData.total);
       setPlReport(plData);
       setBalanceSheet(bsData);
+      setFunds(fundsData);
+      setFundSummaryReport(fundSummaryData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load accounting");
     } finally {
@@ -863,6 +923,119 @@ export default function AccountingPage() {
                       <div className="mt-3 border-t pt-3 text-sm">
                         <div className="flex justify-between"><span>Assets</span><strong>{formatRs(balanceSheet?.assetTotal ?? 0)}</strong></div>
                         <div className="flex justify-between"><span>Liabilities + Fund Balances</span><strong>{formatRs(balanceSheet?.liabilitiesAndEquityTotal ?? 0)}</strong></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="lg:col-span-2">
+                    <CardHeader>
+                      <CardTitle className="text-base">Project Fund Summary Report</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-3 md:grid-cols-[180px_1fr_210px]">
+                        <div className="space-y-1.5">
+                          <Label>Fund Status</Label>
+                          <Select value={fundReportStatus} onValueChange={(value) => setFundReportStatus(value as FundReportStatus)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(fundReportStatusLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Fund Name</Label>
+                          <Select value={fundReportFundId} onValueChange={setFundReportFundId}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Funds</SelectItem>
+                              {funds.map((fund) => (
+                                <SelectItem key={fund.id} value={fund.id}>{fund.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>Period</Label>
+                          <Select value={fundReportPeriod} onValueChange={handleFundReportPeriodChange}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(fundReportPeriodLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {fundReportPeriod === "custom" ? (
+                          <>
+                            <div className="space-y-1.5">
+                              <Label>From</Label>
+                              <Input type="date" value={fundReportFromDate} onChange={(e) => setFundReportFromDate(e.target.value)} />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label>To</Label>
+                              <Input type="date" value={fundReportToDate} onChange={(e) => setFundReportToDate(e.target.value)} />
+                            </div>
+                          </>
+                        ) : null}
+                        <div className="flex items-end">
+                          <Button
+                            type="button"
+                            className="w-full"
+                            onClick={() => loadAccounting()}
+                            disabled={loadingData}
+                          >
+                            Generate Fund Summary
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-md border">
+                        <table className="w-full min-w-[900px] text-sm">
+                          <thead className="bg-muted/50">
+                            <tr>
+                              <th className="p-2 text-left font-medium">Fund Name</th>
+                              <th className="p-2 text-left font-medium">Status</th>
+                              <th className="p-2 text-right font-medium">Opening Balance</th>
+                              <th className="p-2 text-right font-medium">Total Collected</th>
+                              <th className="p-2 text-right font-medium">Total Spent</th>
+                              <th className="p-2 text-right font-medium">Total Transferred</th>
+                              <th className="p-2 text-right font-medium">Remaining Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(fundSummaryReport?.rows ?? []).map((row) => (
+                              <tr key={row.id} className="border-t">
+                                <td className="p-2">
+                                  <div className="font-medium">{row.name}</div>
+                                  {row.managerName ? <div className="text-xs text-muted-foreground">Manager: {row.managerName}</div> : null}
+                                </td>
+                                <td className="p-2 capitalize text-muted-foreground">{row.status}</td>
+                                <td className="p-2 text-right tabular-nums">{formatRs(row.openingBalance)}</td>
+                                <td className="p-2 text-right tabular-nums">{formatRs(row.totalCollected)}</td>
+                                <td className="p-2 text-right tabular-nums">{formatRs(row.totalSpent)}</td>
+                                <td className="p-2 text-right tabular-nums">{formatRs(row.totalTransferred)}</td>
+                                <td className="p-2 text-right font-semibold tabular-nums">{formatRs(row.remainingBalance)}</td>
+                              </tr>
+                            ))}
+                            {(fundSummaryReport?.rows ?? []).length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="p-6 text-center text-muted-foreground">No fund activity found for this filter.</td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                          <tfoot className="border-t bg-muted/30 font-semibold">
+                            <tr>
+                              <td className="p-2" colSpan={2}>Total</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(fundSummaryReport?.totals.openingBalance ?? 0)}</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(fundSummaryReport?.totals.totalCollected ?? 0)}</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(fundSummaryReport?.totals.totalSpent ?? 0)}</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(fundSummaryReport?.totals.totalTransferred ?? 0)}</td>
+                              <td className="p-2 text-right tabular-nums">{formatRs(fundSummaryReport?.totals.remainingBalance ?? 0)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
                       </div>
                     </CardContent>
                   </Card>
