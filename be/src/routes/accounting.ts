@@ -190,6 +190,43 @@ function fundTransferSignedAmount(type: FundTransactionType, amount: Decimal) {
   return new Decimal(0);
 }
 
+function summarizeFundTransactions(
+  transactions: Array<{ transactionType: FundTransactionType; amount: Decimal; transactionDate: Date }>,
+  from?: Date | null,
+  toEnd?: Date | null
+) {
+  let opening = new Decimal(0);
+  let received = new Decimal(0);
+  let spent = new Decimal(0);
+  let netTransferred = new Decimal(0);
+  const fromStart = from ? startOfDay(from) : null;
+
+  for (const txRow of transactions) {
+    const inPeriod =
+      (!fromStart || txRow.transactionDate >= fromStart) &&
+      (!toEnd || txRow.transactionDate <= toEnd);
+
+    if (!inPeriod) {
+      opening = opening.add(fundDelta(txRow.transactionType, txRow.amount));
+      continue;
+    }
+
+    if (txRow.transactionType === "opening") opening = opening.add(txRow.amount);
+    if (txRow.transactionType === "collection") received = received.add(txRow.amount);
+    if (txRow.transactionType === "expense") spent = spent.add(txRow.amount);
+    netTransferred = netTransferred.add(fundTransferSignedAmount(txRow.transactionType, txRow.amount));
+  }
+
+  const activeRemaining = opening.add(received).sub(spent).sub(netTransferred);
+  return {
+    opening: asNumber(opening),
+    received: asNumber(received),
+    spent: asNumber(spent),
+    netTransferred: asNumber(netTransferred),
+    activeRemaining: asNumber(activeRemaining),
+  };
+}
+
 async function fundBalance(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -373,37 +410,7 @@ accountingRouter.get("/funds", asyncRoute(async (req, res) => {
     orderBy: [{ status: "asc" }, { name: "asc" }],
   });
 
-  const rows = funds.map((fund) => {
-    let opening = new Decimal(0);
-    let received = new Decimal(0);
-    let spent = new Decimal(0);
-    let netTransferred = new Decimal(0);
-
-    for (const txRow of fund.transactions) {
-      const inPeriod =
-        (!from || txRow.transactionDate >= startOfDay(from)) &&
-        (!toEnd || txRow.transactionDate <= toEnd);
-
-      if (!inPeriod) {
-        opening = opening.add(fundDelta(txRow.transactionType, txRow.amount));
-        continue;
-      }
-
-      if (txRow.transactionType === "opening") opening = opening.add(txRow.amount);
-      if (txRow.transactionType === "collection") received = received.add(txRow.amount);
-      if (txRow.transactionType === "expense") spent = spent.add(txRow.amount);
-      netTransferred = netTransferred.add(fundTransferSignedAmount(txRow.transactionType, txRow.amount));
-    }
-
-    const activeRemaining = opening.add(received).sub(spent).sub(netTransferred);
-    return serializeFundPot(fund, {
-      opening: asNumber(opening),
-      received: asNumber(received),
-      spent: asNumber(spent),
-      netTransferred: asNumber(netTransferred),
-      activeRemaining: asNumber(activeRemaining),
-    });
-  });
+  const rows = funds.map((fund) => serializeFundPot(fund, summarizeFundTransactions(fund.transactions, from, toEnd)));
 
   return res.json(rows);
 }));
@@ -543,8 +550,7 @@ accountingRouter.get("/funds/:id", asyncRoute(async (req, res) => {
   });
   if (!fund) return res.status(404).json({ error: "Fund not found" });
 
-  const activeRemaining = await prisma.$transaction((tx) => fundBalance(tx, orgId, fund.id));
-  return res.json(serializeFundPot(fund, { activeRemaining: asNumber(activeRemaining) }));
+  return res.json(serializeFundPot(fund, summarizeFundTransactions(fund.transactions)));
 }));
 
 accountingRouter.post("/funds/:id/collections", requireAccountingAdmin, asyncRoute(async (req, res) => {
