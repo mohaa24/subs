@@ -33,6 +33,23 @@ function minDecimal(a, b) {
 function maxDecimal(a, b) {
     return a.gte(b) ? a : b;
 }
+async function validateDepositAccountId(organizationId, depositAccountId) {
+    if (!depositAccountId)
+        return null;
+    const account = await prisma_js_1.prisma.accountingAccount.findFirst({
+        where: {
+            id: depositAccountId,
+            organizationId,
+            accountType: "asset",
+            assetSubtype: "cash_bank",
+            isActive: true,
+        },
+        select: { id: true },
+    });
+    if (!account)
+        throw new Error("Deposit account must be an active cash/bank asset account");
+    return account.id;
+}
 function periodString(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -910,6 +927,7 @@ const recordPaymentSchema = zod_1.z
     amount: zod_1.z.number().positive(),
     paymentDate: zod_1.z.string().optional(),
     paymentMethod: paymentMethodSchema.optional(),
+    depositAccountId: zod_1.z.string().optional().nullable(),
     note: zod_1.z.string().optional(),
 })
     .superRefine((data, ctx) => {
@@ -968,6 +986,13 @@ exports.paymentsRouter.post("/", async (req, res) => {
             req.auth.role !== "super_user") {
             return res.status(403).json({ error: "Forbidden" });
         }
+        let depositAccountId = null;
+        try {
+            depositAccountId = await validateDepositAccountId(membership.organizationId, parsed.data.depositAccountId);
+        }
+        catch (error) {
+            return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid deposit account" });
+        }
         try {
             const payment = await withReceiptNumberRetry(() => prisma_js_1.prisma.$transaction(async (tx) => {
                 const paymentDate = parsed.data.paymentDate
@@ -982,6 +1007,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
                         receiptNumber,
                         paymentKind: "credit",
                         paymentMethod,
+                        depositAccountId,
                         amount: paymentAmount,
                         paymentDate,
                         collectedByUserId: req.auth.userId,
@@ -1002,6 +1028,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
                     organizationId: membership.organizationId,
                     paymentDate,
                     paymentMethod,
+                    depositAccountId,
                     directDueTypeId: null,
                     directAppliedAmount: new library_1.Decimal(0),
                     creditAmount: paymentAmount,
@@ -1043,6 +1070,13 @@ exports.paymentsRouter.post("/", async (req, res) => {
     if (req.auth.organizationId && due.organizationId !== req.auth.organizationId && req.auth.role !== "super_user") {
         return res.status(403).json({ error: "Forbidden" });
     }
+    let depositAccountId = null;
+    try {
+        depositAccountId = await validateDepositAccountId(due.organizationId, parsed.data.depositAccountId);
+    }
+    catch (error) {
+        return res.status(400).json({ error: error instanceof Error ? error.message : "Invalid deposit account" });
+    }
     const dueRemaining = due.amountDue.sub(due.amountPaid);
     const remaining = dueRemaining.gt(new library_1.Decimal(0)) ? dueRemaining : new library_1.Decimal(0);
     const appliedToDue = minDecimal(paymentAmount, remaining);
@@ -1061,6 +1095,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
                 receiptNumber,
                 paymentKind: "due",
                 paymentMethod,
+                depositAccountId,
                 amount: paymentAmount,
                 paymentDate,
                 collectedByUserId: req.auth.userId,
@@ -1092,6 +1127,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
             organizationId: due.organizationId,
             paymentDate,
             paymentMethod,
+            depositAccountId,
             directDueTypeId: due.dueTypeId,
             directAppliedAmount: appliedToDue,
             creditAmount: overpaymentAmount,

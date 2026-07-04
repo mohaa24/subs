@@ -25,12 +25,14 @@ const DEFAULT_ACCOUNTS = [
     {
         name: "Cash on Hand",
         accountType: "asset",
+        assetSubtype: "cash_bank",
         systemKey: CASH_ACCOUNT_KEY,
         description: "Default physical cash account",
     },
     {
         name: "Bank Account",
         accountType: "asset",
+        assetSubtype: "cash_bank",
         systemKey: BANK_ACCOUNT_KEY,
         description: "Default bank or savings account",
     },
@@ -109,6 +111,7 @@ async function ensureSystemAccount(tx, organizationId, account) {
             where: { id: existingByKey.id },
             data: {
                 description: account.description,
+                assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
                 isActive: account.isActive ?? true,
             },
         });
@@ -129,6 +132,7 @@ async function ensureSystemAccount(tx, organizationId, account) {
                     organizationId,
                     name,
                     accountType: account.accountType,
+                    assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
                     systemKey: account.systemKey,
                     description: account.description,
                     isActive: account.isActive ?? true,
@@ -200,6 +204,20 @@ async function getDueTypeIncomeAccount(tx, input) {
     return account ?? getSystemAccount(tx, input.organizationId, OTHER_INCOME_KEY);
 }
 async function getPaymentDepositAccount(tx, input) {
+    if (input.depositAccountId) {
+        const selected = await tx.accountingAccount.findFirst({
+            where: {
+                id: input.depositAccountId,
+                organizationId: input.organizationId,
+                accountType: "asset",
+                assetSubtype: "cash_bank",
+                isActive: true,
+            },
+        });
+        if (!selected)
+            throw new Error("Deposit account must be an active cash/bank asset account");
+        return selected;
+    }
     const systemKey = input.paymentMethod === "bank_transfer" ? BANK_ACCOUNT_KEY : CASH_ACCOUNT_KEY;
     return getSystemAccount(tx, input.organizationId, systemKey);
 }
@@ -251,6 +269,7 @@ async function postPaymentAccountingEntry(tx, input) {
     const depositAccount = await getPaymentDepositAccount(tx, {
         organizationId: input.organizationId,
         paymentMethod: input.paymentMethod,
+        depositAccountId: input.depositAccountId,
     });
     const memberCreditAccount = await getSystemAccount(tx, input.organizationId, MEMBER_CREDIT_KEY);
     const incomeAccount = input.directAppliedAmount.gt(ZERO)

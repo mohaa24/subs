@@ -1,4 +1,4 @@
-import type { AccountingAccountType, AccountingJournalEntryType, AccountingJournalLineSide, Prisma } from "@prisma/client";
+import type { AccountingAccountType, AccountingAssetSubtype, AccountingJournalEntryType, AccountingJournalLineSide, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
 export type AccountingTx = Prisma.TransactionClient;
@@ -14,18 +14,21 @@ const OTHER_INCOME_KEY = "income_other";
 const DEFAULT_ACCOUNTS: Array<{
   name: string;
   accountType: AccountingAccountType;
+  assetSubtype?: AccountingAssetSubtype;
   systemKey: string;
   description: string;
 }> = [
   {
     name: "Cash on Hand",
     accountType: "asset",
+    assetSubtype: "cash_bank",
     systemKey: CASH_ACCOUNT_KEY,
     description: "Default physical cash account",
   },
   {
     name: "Bank Account",
     accountType: "asset",
+    assetSubtype: "cash_bank",
     systemKey: BANK_ACCOUNT_KEY,
     description: "Default bank or savings account",
   },
@@ -65,6 +68,7 @@ type JournalLineInput = {
 type SystemAccountInput = {
   name: string;
   accountType: AccountingAccountType;
+  assetSubtype?: AccountingAssetSubtype;
   systemKey: string;
   description: string;
   isActive?: boolean;
@@ -132,6 +136,7 @@ async function ensureSystemAccount(tx: AccountingTx, organizationId: string, acc
       where: { id: existingByKey.id },
       data: {
         description: account.description,
+        assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
         isActive: account.isActive ?? true,
       },
     });
@@ -154,6 +159,7 @@ async function ensureSystemAccount(tx: AccountingTx, organizationId: string, acc
           organizationId,
           name,
           accountType: account.accountType,
+          assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
           systemKey: account.systemKey,
           description: account.description,
           isActive: account.isActive ?? true,
@@ -237,8 +243,22 @@ export async function getDueTypeIncomeAccount(
 
 export async function getPaymentDepositAccount(
   tx: AccountingTx,
-  input: { organizationId: string; paymentMethod?: string | null }
+  input: { organizationId: string; paymentMethod?: string | null; depositAccountId?: string | null }
 ) {
+  if (input.depositAccountId) {
+    const selected = await tx.accountingAccount.findFirst({
+      where: {
+        id: input.depositAccountId,
+        organizationId: input.organizationId,
+        accountType: "asset",
+        assetSubtype: "cash_bank",
+        isActive: true,
+      },
+    });
+    if (!selected) throw new Error("Deposit account must be an active cash/bank asset account");
+    return selected;
+  }
+
   const systemKey = input.paymentMethod === "bank_transfer" ? BANK_ACCOUNT_KEY : CASH_ACCOUNT_KEY;
   return getSystemAccount(tx, input.organizationId, systemKey);
 }
@@ -296,6 +316,7 @@ export async function postPaymentAccountingEntry(
     organizationId: string;
     paymentDate: Date;
     paymentMethod?: string | null;
+    depositAccountId?: string | null;
     directDueTypeId?: string | null;
     directAppliedAmount: Decimal;
     creditAmount: Decimal;
@@ -319,6 +340,7 @@ export async function postPaymentAccountingEntry(
   const depositAccount = await getPaymentDepositAccount(tx, {
     organizationId: input.organizationId,
     paymentMethod: input.paymentMethod,
+    depositAccountId: input.depositAccountId,
   });
   const memberCreditAccount = await getSystemAccount(tx, input.organizationId, MEMBER_CREDIT_KEY);
   const incomeAccount = input.directAppliedAmount.gt(ZERO)

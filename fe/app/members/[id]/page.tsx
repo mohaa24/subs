@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   api,
   apiAssetUrl,
+  type AccountingAccount,
   type DueType,
   type Membership,
   type Person,
@@ -306,6 +307,7 @@ export default function MembershipDetailPage() {
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
+  const [payDepositAccountId, setPayDepositAccountId] = useState("");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
@@ -328,6 +330,7 @@ export default function MembershipDetailPage() {
   const [manualDueTypeId, setManualDueTypeId] = useState("");
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const [applyCreditDueId, setApplyCreditDueId] = useState<string | null>(null);
+  const [depositAccounts, setDepositAccounts] = useState<AccountingAccount[]>([]);
   const printRef = useRef<HTMLDivElement>(null);
   let visibleRunningBalance = 0;
   const chronologicalStatementItems = statementItems
@@ -420,6 +423,21 @@ export default function MembershipDetailPage() {
         setDueTypes([]);
         setManualDueTypeId("");
       });
+  }, [membership, user?.role]);
+
+  useEffect(() => {
+    if (!membership) return;
+    const params: Record<string, string> = { includeInactive: "true" };
+    if (user?.role === "super_user") params.organizationId = membership.organizationId;
+    api<AccountingAccount[]>("/accounting/accounts", { params })
+      .then((items) => {
+        const cashBankAccounts = items.filter(
+          (account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive
+        );
+        setDepositAccounts(cashBankAccounts);
+        setPayDepositAccountId((current) => current || cashBankAccounts[0]?.id || "");
+      })
+      .catch(() => setDepositAccounts([]));
   }, [membership, user?.role]);
 
   async function generateQr() {
@@ -553,6 +571,7 @@ export default function MembershipDetailPage() {
     setPayDue(null);
     setPayAmount("");
     setPayMethod("cash");
+    setPayDepositAccountId((current) => current || depositAccounts[0]?.id || "");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -652,6 +671,7 @@ export default function MembershipDetailPage() {
     setPayDue(due);
     setPayAmount(String(remaining > 0 ? remaining.toFixed(2) : "0"));
     setPayMethod("cash");
+    setPayDepositAccountId((current) => current || depositAccounts[0]?.id || "");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -682,6 +702,7 @@ export default function MembershipDetailPage() {
                 paymentDueId: payDue.id,
                 amount: amt,
                 paymentMethod: payMethod,
+                depositAccountId: payDepositAccountId || undefined,
                 note: payNote.trim() || undefined,
               }
             : {
@@ -689,6 +710,7 @@ export default function MembershipDetailPage() {
                 membershipId: membership.id,
                 amount: amt,
                 paymentMethod: payMethod,
+                depositAccountId: payDepositAccountId || undefined,
                 note: payNote.trim() || undefined,
               }
         ),
@@ -1973,6 +1995,9 @@ export default function MembershipDetailPage() {
         onAmountChange={setPayAmount}
         paymentMethod={payMethod}
         onPaymentMethodChange={setPayMethod}
+        depositAccounts={depositAccounts}
+        depositAccountId={payDepositAccountId}
+        onDepositAccountChange={setPayDepositAccountId}
         note={payNote}
         onNoteChange={setPayNote}
         error={payError}

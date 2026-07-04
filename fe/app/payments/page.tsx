@@ -8,6 +8,7 @@ import Link from "next/link";
 import {
   api,
   apiAssetUrl,
+  type AccountingAccount,
   type DueStatus,
   type DueType,
   type Payment,
@@ -116,6 +117,7 @@ export default function PaymentsPage() {
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
+  const [payDepositAccountId, setPayDepositAccountId] = useState("");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
   const [payError, setPayError] = useState("");
@@ -130,6 +132,7 @@ export default function PaymentsPage() {
   const [editDueAmount, setEditDueAmount] = useState("");
   const [editDueReason, setEditDueReason] = useState("");
   const [editDueSubmitting, setEditDueSubmitting] = useState(false);
+  const [depositAccounts, setDepositAccounts] = useState<AccountingAccount[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -149,6 +152,16 @@ export default function PaymentsPage() {
     api<Zone[]>("/zones", { params: { includeInactive: "true" } })
       .then(setZones)
       .catch(() => setZones([]));
+
+    api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } })
+      .then((items) => {
+        const cashBankAccounts = items.filter(
+          (account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive
+        );
+        setDepositAccounts(cashBankAccounts);
+        setPayDepositAccountId((current) => current || cashBankAccounts[0]?.id || "");
+      })
+      .catch(() => setDepositAccounts([]));
   }, [user?.organizationId]);
 
   function loadDues() {
@@ -272,6 +285,7 @@ export default function PaymentsPage() {
     setPayDue(due);
     setPayAmount(String(remaining > 0 ? remaining.toFixed(2) : "0"));
     setPayMethod("cash");
+    setPayDepositAccountId((current) => current || depositAccounts[0]?.id || "");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -300,6 +314,7 @@ export default function PaymentsPage() {
           paymentDueId: payDue.id,
           amount: amt,
           paymentMethod: payMethod,
+          depositAccountId: payDepositAccountId || undefined,
           note: payNote.trim() || undefined,
         }),
       });
@@ -900,6 +915,9 @@ export default function PaymentsPage() {
         onAmountChange={setPayAmount}
         paymentMethod={payMethod}
         onPaymentMethodChange={setPayMethod}
+        depositAccounts={depositAccounts}
+        depositAccountId={payDepositAccountId}
+        onDepositAccountChange={setPayDepositAccountId}
         note={payNote}
         onNoteChange={setPayNote}
         error={payError}

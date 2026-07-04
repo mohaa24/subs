@@ -542,6 +542,20 @@ function HomePageContent() {
         },
       ],
     },
+    {
+      value: "funds",
+      label: "Funds Management",
+      actions: [
+        {
+          actionKey: "funds-management",
+          title: "Funds Management",
+          description: "Create and track restricted project funds",
+          icon: Landmark,
+          href: "/funds",
+          badge: "Beta",
+        },
+      ],
+    },
   ];
 
   return (

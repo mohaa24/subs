@@ -279,6 +279,7 @@ export interface Payment {
   receiptNumber?: string | null;
   paymentKind: PaymentKind;
   paymentMethod?: "cash" | "bank_transfer" | "card" | "other" | null;
+  depositAccountId?: string | null;
   amount: number;
   paymentDate: string;
   collectedByUserId: string;
@@ -292,6 +293,76 @@ export interface Payment {
     areaCode?: number | null;
     hod?: { fullName: string; nameWithInitials: string };
   };
+}
+
+export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";
+export type AccountingAssetSubtype = "cash_bank" | "receivable" | "other";
+
+export interface AccountingAccount {
+  id: string;
+  organizationId: string;
+  name: string;
+  accountType: AccountingAccountType;
+  assetSubtype: AccountingAssetSubtype;
+  systemKey?: string | null;
+  description?: string | null;
+  isActive: boolean;
+  balance?: number;
+}
+
+export type FundPotStatus = "active" | "closed";
+export type FundTransactionType =
+  | "opening"
+  | "collection"
+  | "expense"
+  | "surplus_transfer"
+  | "deficit_transfer";
+
+export interface FundTransaction {
+  id: string;
+  organizationId: string;
+  fundPotId: string;
+  transactionType: FundTransactionType;
+  amount: number;
+  transactionDate: string;
+  assetAccountId?: string | null;
+  paidByName?: string | null;
+  paidByMembershipId?: string | null;
+  description?: string | null;
+  memo?: string | null;
+  journalEntryId?: string | null;
+  createdAt: string;
+  assetAccount?: AccountingAccount | null;
+}
+
+export interface FundPotSummary {
+  opening: number;
+  received: number;
+  spent: number;
+  netTransferred: number;
+  activeRemaining: number;
+}
+
+export interface FundPot {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string | null;
+  status: FundPotStatus;
+  openingBalance: number;
+  fundAccountId: string;
+  surplusAccountId: string;
+  deficitAccountId: string;
+  openingAssetAccountId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string | null;
+  summary?: FundPotSummary;
+  fundAccount?: AccountingAccount;
+  surplusAccount?: AccountingAccount;
+  deficitAccount?: AccountingAccount;
+  openingAssetAccount?: AccountingAccount | null;
+  transactions?: FundTransaction[];
 }
 
 export interface PaymentReceipt {

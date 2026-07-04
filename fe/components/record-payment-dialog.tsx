@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
+import type { AccountingAccount } from "@/lib/api";
 
 export type PaymentMethod = "cash" | "bank_transfer" | "card" | "other";
 
@@ -44,6 +45,9 @@ type RecordPaymentDialogProps = {
   onAmountChange: (value: string) => void;
   paymentMethod: PaymentMethod;
   onPaymentMethodChange: (value: PaymentMethod) => void;
+  depositAccounts?: AccountingAccount[];
+  depositAccountId?: string;
+  onDepositAccountChange?: (value: string) => void;
   note: string;
   onNoteChange: (value: string) => void;
   error?: string;
@@ -66,6 +70,9 @@ export function RecordPaymentDialog({
   onAmountChange,
   paymentMethod,
   onPaymentMethodChange,
+  depositAccounts = [],
+  depositAccountId = "",
+  onDepositAccountChange,
   note,
   onNoteChange,
   error,
@@ -157,6 +164,27 @@ export function RecordPaymentDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {depositAccounts.length > 0 ? (
+            <div className="space-y-2">
+              <Label>Deposit Account</Label>
+              <Select value={depositAccountId} onValueChange={(value) => onDepositAccountChange?.(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select cash/bank account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {depositAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                This controls which cash/bank ledger receives the payment.
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label>Note / Remark (optional)</Label>

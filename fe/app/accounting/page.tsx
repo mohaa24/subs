@@ -24,6 +24,7 @@ import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
+type AssetSubtype = "cash_bank" | "receivable" | "other";
 type LineSide = "debit" | "credit";
 type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
 type JournalSortOrder = "desc" | "asc";
@@ -34,6 +35,7 @@ type Account = {
   id: string;
   name: string;
   accountType: AccountType;
+  assetSubtype: AssetSubtype;
   systemKey?: string | null;
   description?: string | null;
   isActive: boolean;
@@ -84,6 +86,12 @@ const accountTypeLabels: Record<AccountType, string> = {
   equity: "Equity",
   income: "Income",
   expense: "Expense",
+};
+
+const assetSubtypeLabels: Record<AssetSubtype, string> = {
+  cash_bank: "Cash / Bank",
+  receivable: "Receivable",
+  other: "Other",
 };
 
 const accountingPeriodLabels: Record<AccountingPeriod, string> = {
@@ -179,6 +187,7 @@ export default function AccountingPage() {
   const [newAccount, setNewAccount] = useState({
     name: "",
     accountType: "asset" as AccountType,
+    assetSubtype: "other" as AssetSubtype,
     description: "",
   });
   const [expense, setExpense] = useState({
@@ -208,6 +217,10 @@ export default function AccountingPage() {
   const assetAccounts = useMemo(
     () => accounts.filter((account) => account.accountType === "asset" && account.isActive),
     [accounts],
+  );
+  const cashBankAssetAccounts = useMemo(
+    () => assetAccounts.filter((account) => account.assetSubtype === "cash_bank"),
+    [assetAccounts],
   );
   const expenseAccounts = useMemo(
     () => accounts.filter((account) => account.accountType === "expense" && account.isActive),
@@ -332,7 +345,7 @@ export default function AccountingPage() {
         method: "POST",
         body: JSON.stringify(newAccount),
       });
-      setNewAccount({ name: "", accountType: "asset", description: "" });
+      setNewAccount({ name: "", accountType: "asset", assetSubtype: "other", description: "" });
       await loadAccounting();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create account");
@@ -564,6 +577,7 @@ export default function AccountingPage() {
                           <tr>
                             <th className="p-2 text-left font-medium">Account</th>
                             <th className="p-2 text-left font-medium">Type</th>
+                            <th className="p-2 text-left font-medium">Subtype</th>
                             <th className="p-2 text-left font-medium">Status</th>
                             <th className="p-2 text-right font-medium">Balance</th>
                           </tr>
@@ -576,6 +590,9 @@ export default function AccountingPage() {
                                 {account.description && <div className="text-xs text-muted-foreground">{account.description}</div>}
                               </td>
                               <td className={`p-2 font-medium ${accountTone(account.accountType)}`}>{accountTypeLabels[account.accountType]}</td>
+                              <td className="p-2 text-muted-foreground">
+                                {account.accountType === "asset" ? assetSubtypeLabels[account.assetSubtype] : "—"}
+                              </td>
                               <td className="p-2 text-muted-foreground">{account.isActive ? "Active" : "Archived"}</td>
                               <td className="p-2 text-right tabular-nums">{formatRs(account.balance ?? 0)}</td>
                             </tr>
@@ -607,6 +624,19 @@ export default function AccountingPage() {
                               </SelectContent>
                             </Select>
                           </div>
+                          {newAccount.accountType === "asset" ? (
+                            <div className="space-y-1.5">
+                              <Label>Asset Subtype</Label>
+                              <Select value={newAccount.assetSubtype} onValueChange={(value) => setNewAccount((v) => ({ ...v, assetSubtype: value as AssetSubtype }))}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(assetSubtypeLabels).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ) : null}
                           <div className="space-y-1.5">
                             <Label>Description</Label>
                             <Textarea value={newAccount.description} onChange={(e) => setNewAccount((v) => ({ ...v, description: e.target.value }))} />
@@ -634,7 +664,7 @@ export default function AccountingPage() {
                           <Label>Paid From</Label>
                           <Select value={expense.sourceAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, sourceAccountId: value }))}>
                             <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
-                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>{cashBankAssetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">
@@ -679,7 +709,7 @@ export default function AccountingPage() {
                           <Label>Received To</Label>
                           <Select value={income.destinationAccountId} onValueChange={(value) => setIncome((v) => ({ ...v, destinationAccountId: value }))}>
                             <SelectTrigger><SelectValue placeholder="Select asset account" /></SelectTrigger>
-                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>{cashBankAssetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">
@@ -727,14 +757,14 @@ export default function AccountingPage() {
                           <Label>From</Label>
                           <Select value={transfer.fromAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, fromAccountId: value }))}>
                             <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
-                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>{cashBankAssetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">
                           <Label>To</Label>
                           <Select value={transfer.toAccountId} onValueChange={(value) => setTransfer((v) => ({ ...v, toAccountId: value }))}>
                             <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
-                            <SelectContent>{assetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                            <SelectContent>{cashBankAssetAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-1.5">

@@ -7,6 +7,7 @@ export const DASHBOARD_FLOWS = [
   "distributions",
   "reports",
   "accounting",
+  "funds",
 ] as const;
 
 export type DashboardFlow = (typeof DASHBOARD_FLOWS)[number];
