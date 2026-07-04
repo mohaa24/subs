@@ -153,7 +153,6 @@ function formatRs(n: number) {
 }
 
 function accountDisplayName(account: Pick<Account, "id" | "name" | "systemKey">) {
-  if (account.systemKey === "equity_fund_balance") return "General Mosque Fund";
   if (account.id === "current-earnings") return "Current Year Earnings";
   return account.name;
 }

@@ -43,10 +43,10 @@ const DEFAULT_ACCOUNTS = [
         description: "Unapplied member credit balance owed by the organization",
     },
     {
-        name: "General Mosque Fund",
+        name: "Fund Balance",
         accountType: "equity",
         systemKey: FUND_BALANCE_KEY,
-        description: "Accumulated prior-period surplus or deficit",
+        description: "Opening balance and retained fund balance",
     },
     {
         name: "Other Income",
