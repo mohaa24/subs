@@ -296,7 +296,18 @@ export interface Payment {
 }
 
 export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";
-export type AccountingAssetSubtype = "cash_bank" | "receivable" | "other";
+export type AccountingAssetSubtype =
+  | "cash_bank"
+  | "receivable"
+  | "other"
+  | "payable"
+  | "other_liability"
+  | "general_fund"
+  | "project_fund"
+  | "operating_income"
+  | "project_fund_surplus"
+  | "operating_expense"
+  | "project_fund_deficit";
 
 export interface AccountingAccount {
   id: string;
@@ -327,9 +338,11 @@ export interface FundTransaction {
   transactionDate: string;
   assetAccountId?: string | null;
   paidByName?: string | null;
+  paidByPhone?: string | null;
   paidByMembershipId?: string | null;
   description?: string | null;
   memo?: string | null;
+  receiptNumber?: string | null;
   journalEntryId?: string | null;
   createdAt: string;
   assetAccount?: AccountingAccount | null;
@@ -388,6 +401,21 @@ export interface FundSummaryReport {
   period: string;
   fromDate?: string | null;
   toDate?: string | null;
+}
+
+export interface FundCollectionReceipt {
+  receiptNumber: string;
+  transactionId: string;
+  transactionDate: string;
+  organizationName: string;
+  organizationReceiptLogoUrl?: string | null;
+  fundName: string;
+  paidByName: string;
+  paidByPhone?: string | null;
+  amount: number;
+  receivedInto?: string | null;
+  note?: string | null;
+  collectedBy?: string | null;
 }
 
 export interface PaymentReceipt {

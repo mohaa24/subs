@@ -35,24 +35,28 @@ const DEFAULT_ACCOUNTS: Array<{
   {
     name: "Member Credit Liability",
     accountType: "liability",
+    assetSubtype: "payable",
     systemKey: MEMBER_CREDIT_KEY,
     description: "Unapplied member credit balance owed by the organization",
   },
   {
     name: "Fund Balance",
     accountType: "equity",
+    assetSubtype: "general_fund",
     systemKey: FUND_BALANCE_KEY,
     description: "Opening balance and retained fund balance",
   },
   {
     name: "Other Income",
     accountType: "income",
+    assetSubtype: "operating_income",
     systemKey: OTHER_INCOME_KEY,
     description: "Fallback income account",
   },
   {
     name: "General Expense",
     accountType: "expense",
+    assetSubtype: "operating_expense",
     systemKey: GENERAL_EXPENSE_KEY,
     description: "Default expense account",
   },
@@ -136,7 +140,7 @@ async function ensureSystemAccount(tx: AccountingTx, organizationId: string, acc
       where: { id: existingByKey.id },
       data: {
         description: account.description,
-        assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
+        assetSubtype: account.assetSubtype ?? defaultAccountSubtype(account.accountType),
         isActive: account.isActive ?? true,
       },
     });
@@ -159,7 +163,7 @@ async function ensureSystemAccount(tx: AccountingTx, organizationId: string, acc
           organizationId,
           name,
           accountType: account.accountType,
-          assetSubtype: account.accountType === "asset" ? account.assetSubtype ?? "other" : "other",
+          assetSubtype: account.assetSubtype ?? defaultAccountSubtype(account.accountType),
           systemKey: account.systemKey,
           description: account.description,
           isActive: account.isActive ?? true,
@@ -196,11 +200,20 @@ export async function ensureDefaultAccountingAccounts(tx: AccountingTx, organiza
     await ensureSystemAccount(tx, organizationId, {
       name: `${dueType.name} Income`,
       accountType: "income",
+      assetSubtype: "operating_income",
       systemKey: dueTypeIncomeSystemKey(dueType.id),
       description: `Income recognized from ${dueType.name} dues`,
       isActive: dueType.isActive,
     });
   }
+}
+
+export function defaultAccountSubtype(accountType: AccountingAccountType): AccountingAssetSubtype {
+  if (accountType === "asset") return "other";
+  if (accountType === "liability") return "other_liability";
+  if (accountType === "equity") return "general_fund";
+  if (accountType === "income") return "operating_income";
+  return "operating_expense";
 }
 
 export function dueTypeIncomeSystemKey(dueTypeId: string) {

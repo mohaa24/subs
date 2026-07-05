@@ -24,7 +24,18 @@ import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
-type AssetSubtype = "cash_bank" | "receivable" | "other";
+type AssetSubtype =
+  | "cash_bank"
+  | "receivable"
+  | "other"
+  | "payable"
+  | "other_liability"
+  | "general_fund"
+  | "project_fund"
+  | "operating_income"
+  | "project_fund_surplus"
+  | "operating_expense"
+  | "project_fund_deficit";
 type LineSide = "debit" | "credit";
 type AccountingPeriod = "this_month" | "this_year" | "all_time" | "custom";
 type FundReportPeriod = "from_start" | "current_month" | "current_year" | "custom";
@@ -93,7 +104,31 @@ const accountTypeLabels: Record<AccountType, string> = {
 const assetSubtypeLabels: Record<AssetSubtype, string> = {
   cash_bank: "Cash / Bank",
   receivable: "Receivable",
-  other: "Other",
+  other: "Other Assets",
+  payable: "Payables",
+  other_liability: "Other Liabilities",
+  general_fund: "General Funds",
+  project_fund: "Project Funds",
+  operating_income: "Operating Income",
+  project_fund_surplus: "Project Fund Surplus",
+  operating_expense: "Operating Expense",
+  project_fund_deficit: "Project Fund Deficit",
+};
+
+const subtypesByAccountType: Record<AccountType, AssetSubtype[]> = {
+  asset: ["cash_bank", "receivable", "other"],
+  liability: ["payable", "other_liability"],
+  equity: ["general_fund", "project_fund"],
+  income: ["operating_income", "project_fund_surplus"],
+  expense: ["operating_expense", "project_fund_deficit"],
+};
+
+const defaultSubtypeByAccountType: Record<AccountType, AssetSubtype> = {
+  asset: "other",
+  liability: "other_liability",
+  equity: "general_fund",
+  income: "operating_income",
+  expense: "operating_expense",
 };
 
 const accountingPeriodLabels: Record<AccountingPeriod, string> = {
@@ -178,6 +213,10 @@ function accountTone(accountType: AccountType) {
   if (accountType === "income") return "text-blue-700";
   if (accountType === "expense") return "text-red-700";
   return "text-foreground";
+}
+
+function accountSubtypeLabel(account: Pick<Account, "assetSubtype">) {
+  return assetSubtypeLabels[account.assetSubtype] ?? "Other";
 }
 
 export default function AccountingPage() {
@@ -655,9 +694,7 @@ export default function AccountingPage() {
                                 {account.description && <div className="text-xs text-muted-foreground">{account.description}</div>}
                               </td>
                               <td className={`p-2 font-medium ${accountTone(account.accountType)}`}>{accountTypeLabels[account.accountType]}</td>
-                              <td className="p-2 text-muted-foreground">
-                                {account.accountType === "asset" ? assetSubtypeLabels[account.assetSubtype] : "—"}
-                              </td>
+                              <td className="p-2 text-muted-foreground">{accountSubtypeLabel(account)}</td>
                               <td className="p-2 text-muted-foreground">{account.isActive ? "Active" : "Archived"}</td>
                               <td className="p-2 text-right tabular-nums">{formatRs(account.balance ?? 0)}</td>
                             </tr>
@@ -680,7 +717,17 @@ export default function AccountingPage() {
                           </div>
                           <div className="space-y-1.5">
                             <Label>Type</Label>
-                            <Select value={newAccount.accountType} onValueChange={(value) => setNewAccount((v) => ({ ...v, accountType: value as AccountType }))}>
+                            <Select
+                              value={newAccount.accountType}
+                              onValueChange={(value) => {
+                                const accountType = value as AccountType;
+                                setNewAccount((v) => ({
+                                  ...v,
+                                  accountType,
+                                  assetSubtype: defaultSubtypeByAccountType[accountType],
+                                }));
+                              }}
+                            >
                               <SelectTrigger><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 {Object.entries(accountTypeLabels).map(([value, label]) => (
@@ -689,19 +736,17 @@ export default function AccountingPage() {
                               </SelectContent>
                             </Select>
                           </div>
-                          {newAccount.accountType === "asset" ? (
-                            <div className="space-y-1.5">
-                              <Label>Asset Subtype</Label>
-                              <Select value={newAccount.assetSubtype} onValueChange={(value) => setNewAccount((v) => ({ ...v, assetSubtype: value as AssetSubtype }))}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  {Object.entries(assetSubtypeLabels).map(([value, label]) => (
-                                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          ) : null}
+                          <div className="space-y-1.5">
+                            <Label>Subtype</Label>
+                            <Select value={newAccount.assetSubtype} onValueChange={(value) => setNewAccount((v) => ({ ...v, assetSubtype: value as AssetSubtype }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {subtypesByAccountType[newAccount.accountType].map((value) => (
+                                  <SelectItem key={value} value={value}>{assetSubtypeLabels[value]}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <div className="space-y-1.5">
                             <Label>Description</Label>
                             <Textarea value={newAccount.description} onChange={(e) => setNewAccount((v) => ({ ...v, description: e.target.value }))} />

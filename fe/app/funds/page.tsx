@@ -69,7 +69,9 @@ function formatRs(n: number) {
 
 function formatFundDate(value?: string | null) {
   if (!value) return "";
-  return new Date(value).toLocaleDateString("en-LK");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
 }
 
 function formatFundPeriod(fund: FundPot) {

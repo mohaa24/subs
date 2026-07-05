@@ -355,11 +355,33 @@ membershipsRouter.get("/lookup", async (req, res) => {
   if (!orgId && req.auth!.role !== "super_user") return res.status(400).json({ error: "Organization scope required" });
   const q = (req.query.q as string)?.trim() || "";
   const list = await prisma.membership.findMany({
-    where: { organizationId: orgId!, membershipNo: { contains: q, mode: "insensitive" } },
+    where: {
+      organizationId: orgId!,
+      ...(q
+        ? {
+            OR: [
+              { membershipNo: { contains: q, mode: "insensitive" } },
+              { hod: { fullName: { contains: q, mode: "insensitive" } } },
+              { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
+              { hod: { mobileNumber: { contains: q, mode: "insensitive" } } },
+              { hod: { whatsAppNumber: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
     take: 20,
-    select: { id: true, membershipNo: true, hod: { select: { fullName: true } } },
+    select: {
+      id: true,
+      membershipNo: true,
+      hod: { select: { fullName: true, nameWithInitials: true, mobileNumber: true, whatsAppNumber: true } },
+    },
   });
-  return res.json(list);
+  return res.json(
+    list.map((member) => ({
+      ...member,
+      phoneNumber: member.hod?.mobileNumber || member.hod?.whatsAppNumber || null,
+    }))
+  );
 });
 
 membershipsRouter.get("/:id", async (req, res) => {

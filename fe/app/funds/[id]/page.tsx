@@ -24,11 +24,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth-context";
-import { api, type AccountingAccount, type FundPot, type FundTransaction } from "@/lib/api";
+import {
+  api,
+  apiAssetUrl,
+  type AccountingAccount,
+  type FundCollectionReceipt,
+  type FundPot,
+  type FundTransaction,
+} from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { toast } from "@/hooks/use-toast";
 
-type MemberLookup = { id: string; membershipNo: string; hod?: { fullName: string } | null };
+type MemberLookup = {
+  id: string;
+  membershipNo: string;
+  phoneNumber?: string | null;
+  hod?: { fullName: string; nameWithInitials?: string | null } | null;
+};
+type TransferMode = "full" | "partial";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -55,7 +68,16 @@ function txLabel(type: FundTransaction["transactionType"]) {
 }
 
 function dateLabel(value: string) {
-  return new Date(value).toLocaleDateString("en-LK");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+function dateTimeLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const datePart = dateLabel(value);
+  return `${datePart} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function formatFundPeriod(fund?: FundPot | null) {
@@ -78,11 +100,15 @@ export default function FundDetailPage() {
   const [error, setError] = useState("");
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [collectionReceipt, setCollectionReceipt] = useState<FundCollectionReceipt | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [collection, setCollection] = useState({
     amount: "",
     assetAccountId: "",
     paidByName: "",
+    paidByPhone: "",
     paidByMembershipId: "",
     isMember: false,
     memo: "",
@@ -91,6 +117,11 @@ export default function FundDetailPage() {
     amount: "",
     assetAccountId: "",
     description: "",
+    memo: "",
+  });
+  const [transfer, setTransfer] = useState({
+    mode: "full" as TransferMode,
+    amount: "",
     memo: "",
   });
   const [memberQuery, setMemberQuery] = useState("");
@@ -104,6 +135,10 @@ export default function FundDetailPage() {
   const collections = fund?.transactions?.filter((tx) => tx.transactionType === "opening" || tx.transactionType === "collection") ?? [];
   const expenses = fund?.transactions?.filter((tx) => tx.transactionType === "expense") ?? [];
   const transfers = fund?.transactions?.filter((tx) => tx.transactionType === "surplus_transfer" || tx.transactionType === "deficit_transfer") ?? [];
+  const liveBalance = fund?.summary?.activeRemaining ?? 0;
+  const transferLimit = Math.abs(liveBalance);
+  const transferDirection = liveBalance > 0 ? "surplus out of this project fund" : "deficit into this project fund";
+  const transferredFromFundPerspective = -(fund?.summary?.netTransferred ?? 0);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -158,20 +193,22 @@ export default function FundDetailPage() {
     if (!fund) return;
     setSubmitting(true);
     try {
-      await api(`/accounting/funds/${fund.id}/collections`, {
+      const transaction = await api<FundTransaction>(`/accounting/funds/${fund.id}/collections`, {
         method: "POST",
         body: JSON.stringify({
           amount: Number(collection.amount),
           assetAccountId: collection.assetAccountId,
           paidByName: collection.paidByName,
+          paidByPhone: collection.paidByPhone || null,
           paidByMembershipId: collection.isMember ? collection.paidByMembershipId || null : null,
           memo: collection.memo || null,
         }),
       });
       setCollectionOpen(false);
-      setCollection({ amount: "", assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByMembershipId: "", isMember: false, memo: "" });
+      setCollection({ amount: "", assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", isMember: false, memo: "" });
       setMemberQuery("");
       await loadFundDetails();
+      await openCollectionReceipt(transaction.id);
       toast({ title: "Collection added", description: "Restricted fund collection has been recorded." });
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to add collection", description: err instanceof Error ? err.message : "Unable to add collection" });
@@ -205,12 +242,43 @@ export default function FundDetailPage() {
     }
   }
 
-  async function handleTransferBalance() {
+  async function openCollectionReceipt(transactionId: string) {
+    try {
+      const receipt = await api<FundCollectionReceipt>(`/accounting/fund-transactions/${transactionId}/receipt`);
+      setCollectionReceipt(receipt);
+      setReceiptOpen(true);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Receipt could not be loaded",
+        description: err instanceof Error ? err.message : "The collection was saved, but receipt loading failed.",
+      });
+    }
+  }
+
+  async function handleTransferBalance(event: FormEvent) {
+    event.preventDefault();
     if (!fund) return;
-    if (!window.confirm("Transfer the current remaining balance to this fund's surplus or deficit account?")) return;
+    const partialAmount = transfer.mode === "partial" ? Number(transfer.amount) : null;
+    if (transfer.mode === "partial" && (!partialAmount || partialAmount <= 0 || partialAmount > transferLimit)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid transfer amount",
+        description: `Enter an amount greater than 0 and no more than ${formatRs(transferLimit)}.`,
+      });
+      return;
+    }
     setSubmitting(true);
     try {
-      await api(`/accounting/funds/${fund.id}/transfer`, { method: "POST", body: JSON.stringify({}) });
+      await api(`/accounting/funds/${fund.id}/transfer`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount: transfer.mode === "partial" ? partialAmount : null,
+          memo: transfer.memo || null,
+        }),
+      });
+      setTransferOpen(false);
+      setTransfer({ mode: "full", amount: "", memo: "" });
       await loadFundDetails();
       toast({ title: "Balance transferred", description: "The fund balance has been moved to surplus or deficit." });
     } catch (err) {
@@ -280,7 +348,7 @@ export default function FundDetailPage() {
                 Add Collection
               </Button>
               <Button onClick={() => setExpenseOpen(true)} disabled={fundClosed || submitting || loadingData} variant="outline">Add Expense</Button>
-              <Button onClick={handleTransferBalance} disabled={fundClosed || submitting || loadingData} variant="outline">Transfer Balance</Button>
+              <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="outline">Transfer Balance</Button>
               <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="destructive">Close Fund</Button>
             </div>
           ) : null}
@@ -290,8 +358,12 @@ export default function FundDetailPage() {
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} />
-          <SummaryCard title="Total Spent" value={fund?.summary?.spent ?? 0} />
-          <SummaryCard title="Total Transferred" value={fund?.summary?.netTransferred ?? 0} />
+          <SummaryCard title="Total Spent" value={-(fund?.summary?.spent ?? 0)} tone="negative" />
+          <SummaryCard
+            title="Total Transferred"
+            value={transferredFromFundPerspective}
+            tone={transferredFromFundPerspective < 0 ? "negative" : transferredFromFundPerspective > 0 ? "positive" : "default"}
+          />
           <SummaryCard title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} emphasis />
         </div>
 
@@ -330,23 +402,25 @@ export default function FundDetailPage() {
               <input
                 type="checkbox"
                 checked={collection.isMember}
-                onChange={(e) => setCollection((v) => ({ ...v, isMember: e.target.checked, paidByMembershipId: "", paidByName: "" }))}
+                onChange={(e) => setCollection((v) => ({ ...v, isMember: e.target.checked, paidByMembershipId: "", paidByName: "", paidByPhone: "" }))}
               />
               Paid by existing member
             </label>
             {collection.isMember ? (
               <div className="space-y-1.5">
                 <Label>Search Member</Label>
-                <Input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Search by membership number" />
+                <Input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Search by membership number, name, or phone" />
                 {memberOptions.length > 0 ? (
                   <Select
                     value={collection.paidByMembershipId}
                     onValueChange={(value) => {
                       const member = memberOptions.find((item) => item.id === value);
+                      const memberName = member?.hod?.fullName || member?.hod?.nameWithInitials || "Member";
                       setCollection((v) => ({
                         ...v,
                         paidByMembershipId: value,
-                        paidByName: member ? `${member.membershipNo} - ${member.hod?.fullName ?? "Member"}` : v.paidByName,
+                        paidByName: member ? `${member.membershipNo} - ${memberName}` : v.paidByName,
+                        paidByPhone: member?.phoneNumber || v.paidByPhone,
                       }));
                     }}
                   >
@@ -354,7 +428,7 @@ export default function FundDetailPage() {
                     <SelectContent>
                       {memberOptions.map((member) => (
                         <SelectItem key={member.id} value={member.id}>
-                          {member.membershipNo} - {member.hod?.fullName ?? "Member"}
+                          {member.membershipNo} - {member.hod?.fullName || member.hod?.nameWithInitials || "Member"}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -367,6 +441,10 @@ export default function FundDetailPage() {
                 <Input value={collection.paidByName} onChange={(e) => setCollection((v) => ({ ...v, paidByName: e.target.value }))} required />
               </div>
             )}
+            <div className="space-y-1.5">
+              <Label>Phone Number (Optional)</Label>
+              <Input value={collection.paidByPhone} onChange={(e) => setCollection((v) => ({ ...v, paidByPhone: e.target.value }))} placeholder="Auto-filled for existing members when available" />
+            </div>
             <div className="space-y-1.5">
               <Label>Optional Notes</Label>
               <Input value={collection.memo} onChange={(e) => setCollection((v) => ({ ...v, memo: e.target.value }))} placeholder="Invoice, reference, or approval note" />
@@ -405,18 +483,202 @@ export default function FundDetailPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Transfer Balance</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={handleTransferBalance}>
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Live fund balance</span>
+                <span className={`font-semibold tabular-nums ${liveBalance < 0 ? "text-destructive" : "text-primary"}`}>
+                  {formatRs(liveBalance)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                This will transfer {transferDirection}. Maximum transfer amount is {formatRs(transferLimit)}.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm">
+                <input
+                  type="radio"
+                  name="transferMode"
+                  checked={transfer.mode === "full"}
+                  onChange={() => setTransfer((v) => ({ ...v, mode: "full", amount: "" }))}
+                />
+                Full Amount
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm">
+                <input
+                  type="radio"
+                  name="transferMode"
+                  checked={transfer.mode === "partial"}
+                  onChange={() => setTransfer((v) => ({ ...v, mode: "partial" }))}
+                />
+                Partial Amount
+              </label>
+            </div>
+            {transfer.mode === "partial" ? (
+              <div className="space-y-1.5">
+                <Label>Transfer Amount</Label>
+                <Input
+                  type="number"
+                  min="0.01"
+                  max={transferLimit || undefined}
+                  step="0.01"
+                  value={transfer.amount}
+                  onChange={(e) => setTransfer((v) => ({ ...v, amount: e.target.value }))}
+                  required
+                />
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label>Optional Notes</Label>
+              <Input value={transfer.memo} onChange={(e) => setTransfer((v) => ({ ...v, memo: e.target.value }))} placeholder="Reason or approval note" />
+            </div>
+            <Button className="w-full" disabled={submitting || transferLimit <= 0}>
+              {submitting ? "Transferring..." : "Transfer Balance"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <FundCollectionReceiptDialog
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={collectionReceipt}
+      />
     </div>
   );
 }
 
-function SummaryCard({ title, value, emphasis = false }: { title: string; value: number; emphasis?: boolean }) {
+function SummaryCard({
+  title,
+  value,
+  emphasis = false,
+  tone = "default",
+}: {
+  title: string;
+  value: number;
+  emphasis?: boolean;
+  tone?: "default" | "positive" | "negative";
+}) {
+  const toneClass = tone === "negative" ? "text-destructive" : tone === "positive" ? "text-primary" : "";
   return (
     <Card>
       <CardContent className="p-4">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-        <p className={`mt-2 text-lg font-semibold tabular-nums ${emphasis ? "text-primary" : ""}`}>{formatRs(value)}</p>
+        <p className={`mt-2 text-lg font-semibold tabular-nums ${emphasis ? "text-primary" : toneClass}`}>{formatRs(value)}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function escapeReceiptText(value?: string | null) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function FundCollectionReceiptDialog({
+  open,
+  onOpenChange,
+  receipt,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  receipt: FundCollectionReceipt | null;
+}) {
+  const logoUrl = apiAssetUrl(receipt?.organizationReceiptLogoUrl);
+
+  function printReceipt() {
+    if (!receipt) return;
+    const popup = window.open("", "_blank", "width=420,height=700");
+    if (!popup) return;
+    popup.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Fund Receipt ${escapeReceiptText(receipt.receiptNumber)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body { margin: 0; padding: 16px; font-family: Arial, sans-serif; color: #111827; }
+            .receipt { width: 320px; margin: 0 auto; }
+            .logo { width: 100%; max-height: 88px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; margin-bottom: 12px; }
+            .title { text-align: center; font-size: 16px; font-weight: 700; margin: 0; }
+            .sub { text-align: center; font-size: 12px; color: #4b5563; margin: 4px 0 12px; }
+            .line { display: flex; justify-content: space-between; gap: 16px; border-top: 1px dashed #d1d5db; padding: 8px 0; font-size: 12px; }
+            .label { color: #6b7280; }
+            .amount { font-size: 18px; font-weight: 700; text-align: right; }
+            @media print { body { padding: 0; } .receipt { width: 72mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="receipt">
+            ${logoUrl ? `<img class="logo" src="${escapeReceiptText(logoUrl)}" alt="Receipt logo" />` : ""}
+            <p class="title">${escapeReceiptText(receipt.organizationName)}</p>
+            <p class="sub">Project Fund Collection Receipt</p>
+            <div class="line"><span class="label">Receipt No</span><strong>${escapeReceiptText(receipt.receiptNumber)}</strong></div>
+            <div class="line"><span class="label">Date</span><span>${escapeReceiptText(dateTimeLabel(receipt.transactionDate))}</span></div>
+            <div class="line"><span class="label">Fund</span><span>${escapeReceiptText(receipt.fundName)}</span></div>
+            <div class="line"><span class="label">Paid By</span><span>${escapeReceiptText(receipt.paidByName)}</span></div>
+            ${receipt.paidByPhone ? `<div class="line"><span class="label">Phone</span><span>${escapeReceiptText(receipt.paidByPhone)}</span></div>` : ""}
+            <div class="line"><span class="label">Received Into</span><span>${escapeReceiptText(receipt.receivedInto || "Cash/Bank")}</span></div>
+            ${receipt.note ? `<div class="line"><span class="label">Notes</span><span>${escapeReceiptText(receipt.note)}</span></div>` : ""}
+            <div class="line"><span class="label">Amount</span><span class="amount">${escapeReceiptText(formatRs(receipt.amount))}</span></div>
+            ${receipt.collectedBy ? `<div class="line"><span class="label">Collected By</span><span>${escapeReceiptText(receipt.collectedBy)}</span></div>` : ""}
+          </div>
+          <script>window.onload = () => { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    popup.document.close();
+    popup.focus();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Fund Collection Receipt</DialogTitle></DialogHeader>
+        {receipt ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4">
+              {logoUrl ? <img src={logoUrl} alt="Receipt logo" className="mb-3 h-20 w-full rounded-md border object-contain p-2" /> : null}
+              <div className="text-center">
+                <p className="font-semibold">{receipt.organizationName}</p>
+                <p className="text-sm text-muted-foreground">Project Fund Collection Receipt</p>
+              </div>
+              <div className="mt-4 space-y-2 text-sm">
+                <ReceiptRow label="Receipt No" value={receipt.receiptNumber} />
+                <ReceiptRow label="Date" value={dateTimeLabel(receipt.transactionDate)} />
+                <ReceiptRow label="Fund" value={receipt.fundName} />
+                <ReceiptRow label="Paid By" value={receipt.paidByName} />
+                {receipt.paidByPhone ? <ReceiptRow label="Phone" value={receipt.paidByPhone} /> : null}
+                <ReceiptRow label="Received Into" value={receipt.receivedInto || "Cash/Bank"} />
+                {receipt.note ? <ReceiptRow label="Notes" value={receipt.note} /> : null}
+                <ReceiptRow label="Amount" value={formatRs(receipt.amount)} strong />
+              </div>
+            </div>
+            <Button className="w-full" onClick={printReceipt}>Print Receipt</Button>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Receipt details are loading.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReceiptRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-t pt-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`text-right ${strong ? "font-semibold" : ""}`}>{value}</span>
+    </div>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   accountBalanceExpression,
   accountBalances,
   createJournalEntry,
+  defaultAccountSubtype,
   ensureDefaultAccountingAccounts,
 } from "../lib/accounting.js";
 
@@ -18,7 +19,26 @@ accountingRouter.use(requireAuth);
 accountingRouter.use(withOrgScope);
 
 const accountTypes: AccountingAccountType[] = ["asset", "liability", "equity", "income", "expense"];
-const assetSubtypes: AccountingAssetSubtype[] = ["cash_bank", "receivable", "other"];
+const accountSubtypes: AccountingAssetSubtype[] = [
+  "cash_bank",
+  "receivable",
+  "other",
+  "payable",
+  "other_liability",
+  "general_fund",
+  "project_fund",
+  "operating_income",
+  "project_fund_surplus",
+  "operating_expense",
+  "project_fund_deficit",
+];
+const accountSubtypesByType: Record<AccountingAccountType, AccountingAssetSubtype[]> = {
+  asset: ["cash_bank", "receivable", "other"],
+  liability: ["payable", "other_liability"],
+  equity: ["general_fund", "project_fund"],
+  income: ["operating_income", "project_fund_surplus"],
+  expense: ["operating_expense", "project_fund_deficit"],
+};
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
@@ -98,13 +118,21 @@ function serializeJournalEntry(entry: any) {
 const createAccountSchema = z.object({
   name: z.string().trim().min(1).max(120),
   accountType: z.enum(accountTypes as [AccountingAccountType, ...AccountingAccountType[]]),
-  assetSubtype: z.enum(assetSubtypes as [AccountingAssetSubtype, ...AccountingAssetSubtype[]]).optional(),
+  assetSubtype: z.enum(accountSubtypes as [AccountingAssetSubtype, ...AccountingAssetSubtype[]]).optional(),
   description: z.string().trim().max(500).optional().nullable(),
+}).superRefine((data, ctx) => {
+  if (data.assetSubtype && !accountSubtypesByType[data.accountType].includes(data.assetSubtype)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["assetSubtype"],
+      message: "Selected subtype does not match the account type",
+    });
+  }
 });
 
 const updateAccountSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  assetSubtype: z.enum(assetSubtypes as [AccountingAssetSubtype, ...AccountingAssetSubtype[]]).optional(),
+  assetSubtype: z.enum(accountSubtypes as [AccountingAssetSubtype, ...AccountingAssetSubtype[]]).optional(),
   description: z.string().trim().max(500).optional().nullable(),
   isActive: z.boolean().optional(),
 });
@@ -183,6 +211,7 @@ const fundCollectionSchema = z.object({
   assetAccountId: z.string().min(1),
   transactionDate: z.string().optional(),
   paidByName: z.string().trim().min(1).max(160),
+  paidByPhone: z.string().trim().max(40).optional().nullable(),
   paidByMembershipId: z.string().optional().nullable(),
   memo: z.string().trim().max(500).optional().nullable(),
 });
@@ -196,6 +225,7 @@ const fundExpenseSchema = z.object({
 });
 
 const fundTransferSchema = z.object({
+  amount: z.number().positive().optional().nullable(),
   transactionDate: z.string().optional(),
   memo: z.string().trim().max(500).optional().nullable(),
 });
@@ -271,16 +301,19 @@ function summarizeFundReportTransactions(
       continue;
     }
 
-    if (txRow.transactionType === "opening" || txRow.transactionType === "collection") {
+    if (txRow.transactionType === "opening") {
+      openingBalance = openingBalance.add(txRow.amount);
+    }
+    if (txRow.transactionType === "collection") {
       totalCollected = totalCollected.add(txRow.amount);
     }
     if (txRow.transactionType === "expense") {
       totalSpent = totalSpent.add(txRow.amount);
     }
-    totalTransferred = totalTransferred.add(fundTransferSignedAmount(txRow.transactionType, txRow.amount));
+    totalTransferred = totalTransferred.sub(fundTransferSignedAmount(txRow.transactionType, txRow.amount));
   }
 
-  const remainingBalance = openingBalance.add(totalCollected).sub(totalSpent).sub(totalTransferred);
+  const remainingBalance = openingBalance.add(totalCollected).sub(totalSpent).add(totalTransferred);
   return {
     openingBalance: asNumber(openingBalance),
     totalCollected: asNumber(totalCollected),
@@ -307,6 +340,29 @@ function fundReportRange(query: Request["query"]) {
     };
   }
   return { from: null, toEnd: null, period: "from_start" };
+}
+
+function fundReceiptNumberPrefix(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `F${year}${month}`;
+}
+
+async function generateFundReceiptNumber(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  transactionDate: Date
+) {
+  const prefix = fundReceiptNumberPrefix(transactionDate);
+  const latest = await tx.fundTransaction.findFirst({
+    where: { organizationId, receiptNumber: { startsWith: prefix } },
+    orderBy: { receiptNumber: "desc" },
+    select: { receiptNumber: true },
+  });
+  const previousSequence = latest?.receiptNumber
+    ? parseInt(latest.receiptNumber.slice(prefix.length), 10) || 0
+    : 0;
+  return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
 }
 
 async function fundBalance(
@@ -373,6 +429,23 @@ function serializeFundTransaction(txRow: any) {
   };
 }
 
+function buildFundReceipt(transaction: any, collectedByEmail?: string | null) {
+  return {
+    receiptNumber: transaction.receiptNumber,
+    transactionId: transaction.id,
+    transactionDate: transaction.transactionDate.toISOString(),
+    organizationName: transaction.organization.name,
+    organizationReceiptLogoUrl: transaction.organization.receiptLogoUrl,
+    fundName: transaction.fundPot.name,
+    paidByName: transaction.paidByName,
+    paidByPhone: transaction.paidByPhone,
+    amount: Number(transaction.amount),
+    receivedInto: transaction.assetAccount?.name ?? null,
+    note: transaction.memo,
+    collectedBy: collectedByEmail ?? null,
+  };
+}
+
 function serializeFundPot(fund: any, summary?: any) {
   return {
     ...fund,
@@ -425,7 +498,7 @@ accountingRouter.post("/accounts", requireAccountingAdmin, asyncRoute(async (req
       organizationId: orgId,
       name: parsed.data.name,
       accountType: parsed.data.accountType,
-      assetSubtype: parsed.data.accountType === "asset" ? parsed.data.assetSubtype ?? "other" : "other",
+      assetSubtype: parsed.data.assetSubtype ?? defaultAccountSubtype(parsed.data.accountType),
       description: parsed.data.description ?? null,
       createdByUserId: req.auth!.userId,
     },
@@ -448,8 +521,8 @@ accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRoute(async
   if (account.systemKey && parsed.data.name && parsed.data.name !== account.name) {
     return res.status(409).json({ error: "System accounts cannot be renamed" });
   }
-  if (parsed.data.assetSubtype !== undefined && account.accountType !== "asset") {
-    return res.status(400).json({ error: "Asset subtype can only be set on asset accounts" });
+  if (parsed.data.assetSubtype !== undefined && !accountSubtypesByType[account.accountType].includes(parsed.data.assetSubtype)) {
+    return res.status(400).json({ error: "Selected subtype does not match the account type" });
   }
 
   const lineCount = await prisma.accountingJournalLine.count({ where: { accountId: account.id } });
@@ -592,6 +665,7 @@ accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, r
         organizationId: orgId,
         name: fundAccountName,
         accountType: "equity",
+        assetSubtype: "project_fund",
         description: `Restricted fund balance for ${parsed.data.name}`,
         systemKey: `fund_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         createdByUserId: req.auth!.userId,
@@ -602,6 +676,7 @@ accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, r
         organizationId: orgId,
         name: surplusAccountName,
         accountType: "income",
+        assetSubtype: "project_fund_surplus",
         description: `Surplus transferred from ${parsed.data.name}`,
         systemKey: `fund_surplus_${fundAccount.id}`,
         createdByUserId: req.auth!.userId,
@@ -612,6 +687,7 @@ accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async (req, r
         organizationId: orgId,
         name: deficitAccountName,
         accountType: "expense",
+        assetSubtype: "project_fund_deficit",
         description: `Deficit transferred from ${parsed.data.name}`,
         systemKey: `fund_deficit_${fundAccount.id}`,
         createdByUserId: req.auth!.userId,
@@ -718,13 +794,19 @@ accountingRouter.post("/funds/:id/collections", requireAccountingAdmin, asyncRou
     if (fund.status === "closed") throw new Error("Closed funds cannot receive collections");
 
     const assetAccount = await requireCashBankAccount(tx, orgId, parsed.data.assetAccountId);
+    let memberPhone = parsed.data.paidByPhone ?? null;
     if (parsed.data.paidByMembershipId) {
       const member = await tx.membership.findFirst({
         where: { id: parsed.data.paidByMembershipId, organizationId: orgId },
-        select: { id: true },
+        select: {
+          id: true,
+          hod: { select: { mobileNumber: true, whatsAppNumber: true } },
+        },
       });
       if (!member) throw new Error("Selected member was not found");
+      memberPhone = memberPhone || member.hod?.mobileNumber || member.hod?.whatsAppNumber || null;
     }
+    const receiptNumber = await generateFundReceiptNumber(tx, orgId, transactionDate);
 
     const journalEntry = await createJournalEntry(tx, {
       organizationId: orgId,
@@ -750,7 +832,9 @@ accountingRouter.post("/funds/:id/collections", requireAccountingAdmin, asyncRou
         transactionDate,
         assetAccountId: assetAccount.id,
         paidByName: parsed.data.paidByName,
+        paidByPhone: memberPhone,
         paidByMembershipId: parsed.data.paidByMembershipId ?? null,
+        receiptNumber,
         memo: parsed.data.memo ?? null,
         journalEntryId: journalEntry.id,
         createdByUserId: req.auth!.userId,
@@ -760,6 +844,36 @@ accountingRouter.post("/funds/:id/collections", requireAccountingAdmin, asyncRou
   });
 
   return res.status(201).json(serializeFundTransaction(transaction));
+}));
+
+accountingRouter.get("/fund-transactions/:id/receipt", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+
+  const transaction = await prisma.fundTransaction.findFirst({
+    where: {
+      id: req.params.id,
+      organizationId: orgId,
+      transactionType: "collection",
+    },
+    include: {
+      organization: { select: { name: true, receiptLogoUrl: true } },
+      fundPot: { select: { name: true } },
+      assetAccount: { select: { name: true } },
+    },
+  });
+  if (!transaction || !transaction.receiptNumber) {
+    return res.status(404).json({ error: "Fund collection receipt not found" });
+  }
+
+  const collectedBy = transaction.createdByUserId
+    ? await prisma.user.findUnique({
+        where: { id: transaction.createdByUserId },
+        select: { email: true },
+      })
+    : null;
+
+  return res.json(buildFundReceipt(transaction, collectedBy?.email ?? null));
 }));
 
 accountingRouter.post("/funds/:id/expenses", requireAccountingAdmin, asyncRoute(async (req, res) => {
@@ -825,6 +939,7 @@ async function transferFundBalance(
     fundPotId: string;
     userId: string;
     transactionDate: Date;
+    amount?: Decimal | null;
     memo?: string | null;
   }
 ) {
@@ -838,7 +953,11 @@ async function transferFundBalance(
   if (balance.equals(new Decimal(0))) return null;
 
   const isSurplus = balance.gt(new Decimal(0));
-  const amount = isSurplus ? balance : balance.abs();
+  const availableAmount = isSurplus ? balance : balance.abs();
+  const amount = input.amount ?? availableAmount;
+  if (amount.lte(new Decimal(0)) || amount.gt(availableAmount)) {
+    throw new Error(`Transfer amount must be greater than zero and no more than ${availableAmount.toFixed(2)}`);
+  }
   const transactionType: FundTransactionType = isSurplus ? "surplus_transfer" : "deficit_transfer";
   const journalEntry = await createJournalEntry(tx, {
     organizationId: input.organizationId,
@@ -888,21 +1007,30 @@ accountingRouter.post("/funds/:id/transfer", requireAccountingAdmin, asyncRoute(
   }
 
   const transactionDate = parsed.data.transactionDate ? new Date(parsed.data.transactionDate) : new Date();
-  const transaction = await prisma.$transaction(async (tx) => {
-    const fund = await tx.fundPot.findFirst({
-      where: { id: req.params.id, organizationId: orgId },
-      select: { id: true, status: true },
+  let transaction;
+  try {
+    transaction = await prisma.$transaction(async (tx) => {
+      const fund = await tx.fundPot.findFirst({
+        where: { id: req.params.id, organizationId: orgId },
+        select: { id: true, status: true },
+      });
+      if (!fund) throw new Error("Fund not found");
+      if (fund.status === "closed") throw new Error("Closed funds cannot be transferred");
+      return transferFundBalance(tx, {
+        organizationId: orgId,
+        fundPotId: fund.id,
+        userId: req.auth!.userId,
+        transactionDate,
+        amount: parsed.data.amount ? new Decimal(parsed.data.amount) : null,
+        memo: parsed.data.memo ?? null,
+      });
     });
-    if (!fund) throw new Error("Fund not found");
-    if (fund.status === "closed") throw new Error("Closed funds cannot be transferred");
-    return transferFundBalance(tx, {
-      organizationId: orgId,
-      fundPotId: fund.id,
-      userId: req.auth!.userId,
-      transactionDate,
-      memo: parsed.data.memo ?? null,
-    });
-  });
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Transfer amount")) {
+      return res.status(400).json({ error: err.message });
+    }
+    throw err;
+  }
 
   if (!transaction) return res.status(409).json({ error: "There is no remaining balance to transfer" });
   return res.status(201).json(serializeFundTransaction(transaction));

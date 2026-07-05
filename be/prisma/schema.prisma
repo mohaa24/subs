@@ -550,6 +550,14 @@ enum AccountingAssetSubtype {
   cash_bank
   receivable
   other
+  payable
+  other_liability
+  general_fund
+  project_fund
+  operating_income
+  project_fund_surplus
+  operating_expense
+  project_fund_deficit
 }
 
 enum AccountingJournalEntryType {
@@ -648,9 +656,11 @@ model FundTransaction {
   transactionDate   DateTime
   assetAccountId    String?
   paidByName        String?
+  paidByPhone       String?
   paidByMembershipId String?
   description       String?             @db.Text
   memo              String?             @db.Text
+  receiptNumber     String?
   journalEntryId    String?
   createdByUserId   String?
   createdAt         DateTime            @default(now())
@@ -663,6 +673,7 @@ model FundTransaction {
   @@index([organizationId, transactionDate])
   @@index([fundPotId, transactionDate])
   @@index([journalEntryId])
+  @@unique([organizationId, receiptNumber])
 }
 
 model AccountingJournalEntry {
