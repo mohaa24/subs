@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Landmark, Plus } from "lucide-react";
+import { ArrowLeft, Landmark, Plus, ReceiptText } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -376,7 +376,7 @@ export default function FundDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-3">
-            <FundActivityTable title="Collections" rows={collections} />
+            <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} />
             <FundActivityTable title="Expenses" rows={expenses} />
             {transfers.length > 0 ? <FundActivityTable title="Transfers" rows={transfers} /> : null}
           </CardContent>
@@ -682,7 +682,16 @@ function ReceiptRow({ label, value, strong = false }: { label: string; value: st
   );
 }
 
-function FundActivityTable({ title, rows }: { title: string; rows: FundTransaction[] }) {
+function FundActivityTable({
+  title,
+  rows,
+  onReceiptClick,
+}: {
+  title: string;
+  rows: FundTransaction[];
+  onReceiptClick?: (transactionId: string) => void;
+}) {
+  const showReceiptColumn = Boolean(onReceiptClick);
   return (
     <div className="rounded-lg border">
       <div className="border-b bg-muted/40 px-3 py-2 font-medium">{title}</div>
@@ -693,6 +702,7 @@ function FundActivityTable({ title, rows }: { title: string; rows: FundTransacti
               <th className="p-2 text-left font-medium">Date</th>
               <th className="p-2 text-left font-medium">Detail</th>
               <th className="p-2 text-right font-medium">Amount</th>
+              {showReceiptColumn ? <th className="p-2 text-right font-medium">Receipt</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -705,11 +715,29 @@ function FundActivityTable({ title, rows }: { title: string; rows: FundTransacti
                   {row.memo ? <div className="text-xs text-muted-foreground">{row.memo}</div> : null}
                 </td>
                 <td className="p-2 text-right tabular-nums">{formatRs(row.amount)}</td>
+                {showReceiptColumn ? (
+                  <td className="p-2 text-right">
+                    {row.transactionType === "collection" && row.receiptNumber ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2"
+                        onClick={() => onReceiptClick?.(row.id)}
+                      >
+                        <ReceiptText className="mr-1 h-3.5 w-3.5" />
+                        {row.receiptNumber}
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </td>
+                ) : null}
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={3} className="p-4 text-center text-muted-foreground">No records yet.</td>
+                <td colSpan={showReceiptColumn ? 4 : 3} className="p-4 text-center text-muted-foreground">No records yet.</td>
               </tr>
             ) : null}
           </tbody>
