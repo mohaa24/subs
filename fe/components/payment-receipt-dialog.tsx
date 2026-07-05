@@ -20,7 +20,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 
 export interface PaymentReceiptData {
-  paymentKind: "due" | "credit";
+  paymentKind: "due" | "credit" | "fund";
   organizationName: string;
   organizationReceiptLogoUrl?: string | null;
   membershipNo: string;
@@ -38,7 +38,13 @@ export interface PaymentReceiptData {
   creditBalanceAfterPayment: number;
   note?: string | null;
   collectedBy?: string;
-  memberQrValue: string;
+  memberQrValue?: string;
+  receiptTitle?: string;
+  primaryLabel?: string;
+  nameLabel?: string;
+  amountLabel?: string;
+  showBalanceAfterPayment?: boolean;
+  extraRows?: Array<{ label: string; value?: string | null }>;
 }
 
 type ReceiptEncoderInstance = {
@@ -185,9 +191,41 @@ function rowHtml(
   return `<div class="textbox-info"><p class="f-left">${labelHtml}</p><p class="f-right">${valueHtml}</p></div>`;
 }
 
+function receiptTitle(receipt: PaymentReceiptData): string {
+  return receipt.receiptTitle || "PAYMENT RECEIPT";
+}
+
+function primaryLabel(receipt: PaymentReceiptData): string {
+  return receipt.primaryLabel || "Member #";
+}
+
+function nameLabel(receipt: PaymentReceiptData): string {
+  return receipt.nameLabel || "Name";
+}
+
+function amountLabel(receipt: PaymentReceiptData): string {
+  return receipt.amountLabel || "Paid";
+}
+
+function shouldShowBalanceAfterPayment(receipt: PaymentReceiptData): boolean {
+  return receipt.showBalanceAfterPayment !== false;
+}
+
 function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): string {
   const noteHtml = receipt.note ? rowHtml("Note", receipt.note) : "";
   const paymentMethodHtml = rowHtml("Payment Method", receipt.paymentMethod || "-");
+  const extraRowsHtml = (receipt.extraRows ?? [])
+    .filter((row) => row.value)
+    .map((row) => rowHtml(row.label, row.value || "-"))
+    .join("");
+  const balanceHtml = shouldShowBalanceAfterPayment(receipt)
+    ? `
+      <div style="height: 10px;"></div>
+      ${rowHtml("Balance After Payment", undefined, { labelBold: false })}
+      ${rowHtml("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)}
+      ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
+      <div class="border-bottom"></div>`
+    : `<div class="border-bottom"></div>`;
   const logoHtml = receipt.organizationReceiptLogoUrl
     ? `<div class="logo-box"><img src="${escapeHtml(receipt.organizationReceiptLogoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
     : "";
@@ -260,21 +298,18 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       <div class="text-box centered">
         ${logoHtml}
         <div class="headings">${escapeHtml(receipt.organizationName)}</div>
-        <div>PAYMENT RECEIPT</div>
+        <div>${escapeHtml(receiptTitle(receipt))}</div>
       </div>
       <div class="border-top"></div>
       ${rowHtml("Receipt #", receipt.receiptNumber)}
       ${rowHtml("Date", dateTime(receipt.paymentDate))}
-      ${rowHtml("Member #", receipt.membershipNo)}
-      ${rowHtml("Name", receipt.memberName || "-")}
+      ${rowHtml(primaryLabel(receipt), receipt.membershipNo)}
+      ${rowHtml(nameLabel(receipt), receipt.memberName || "-")}
       ${paymentMethodHtml}
+      ${extraRowsHtml}
       <div class="border-bottom"></div>
-      ${rowHtml("Paid", `Rs ${money(receipt.paidAmount)}`, { valueBold: true })}
-      <div style="height: 10px;"></div>
-      ${rowHtml("Balance After Payment", undefined, { labelBold: false })}
-      ${rowHtml("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)}
-      ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
-      <div class="border-bottom"></div>
+      ${rowHtml(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`, { valueBold: true })}
+      ${balanceHtml}
       ${rowHtml("Collected By", receipt.collectedBy || "-")}
       ${noteHtml}
       <div class="border-bottom"></div>
@@ -495,7 +530,7 @@ async function encodePosReceipt(
   }
   encoder.size(1, 1);
   encoder.bold(false);
-  for (const line of formatCenteredLines("PAYMENT RECEIPT")) {
+  for (const line of formatCenteredLines(receiptTitle(receipt))) {
     encoder.line(line);
   }
   encoder.rule();
@@ -503,24 +538,30 @@ async function encodePosReceipt(
   encoder.align("left");
   for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
   for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
-  for (const line of formatKeyValueLines("Member #", receipt.membershipNo)) encoder.line(line);
-  for (const line of formatTwoColumnLines("Name", receipt.memberName || "-")) encoder.line(line);
+  for (const line of formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo)) encoder.line(line);
+  for (const line of formatTwoColumnLines(nameLabel(receipt), receipt.memberName || "-")) encoder.line(line);
 
   for (const line of formatKeyValueLines("Payment Method", receipt.paymentMethod || "-")) {
     encoder.line(line);
   }
+  for (const row of receipt.extraRows ?? []) {
+    if (!row.value) continue;
+    for (const line of formatTwoColumnLines(row.label, row.value)) encoder.line(line);
+  }
 
   encoder.rule();
   encoder.bold(true);
-  for (const line of formatKeyValueLines("Paid", `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
+  for (const line of formatKeyValueLines(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
   encoder.bold(false);
-  encoder.newline();
-  encoder.line("Balance After Payment");
-  for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
-    encoder.line(line);
-  }
-  for (const line of formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)) {
-    encoder.line(line);
+  if (shouldShowBalanceAfterPayment(receipt)) {
+    encoder.newline();
+    encoder.line("Balance After Payment");
+    for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
+      encoder.line(line);
+    }
+    for (const line of formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)) {
+      encoder.line(line);
+    }
   }
 
   encoder.rule();
@@ -639,6 +680,10 @@ export function PaymentReceiptDialog({
       return;
     }
     let cancelled = false;
+    if (!receipt.memberQrValue) {
+      setQrDataUrl("");
+      return;
+    }
     QRCode.toDataURL(receipt.memberQrValue, {
       width: 180,
       margin: 1,
@@ -836,7 +881,7 @@ export function PaymentReceiptDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Payment Receipt</DialogTitle>
+          <DialogTitle>{receipt ? receiptTitle(receipt) : "Payment Receipt"}</DialogTitle>
         </DialogHeader>
         {receipt && (
           <div className="space-y-4">
@@ -855,7 +900,7 @@ export function PaymentReceiptDialog({
                   </div>
                 ) : null}
                 <p className="text-[15px] font-bold uppercase">{receipt.organizationName}</p>
-                <p>PAYMENT RECEIPT</p>
+                <p>{receiptTitle(receipt)}</p>
               </div>
               <div className="mt-1 border-t border-black pt-1" />
 
@@ -868,41 +913,51 @@ export function PaymentReceiptDialog({
                 <p className="shrink-0 whitespace-nowrap text-right">{dateTime(receipt.paymentDate)}</p>
               </div>
               <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Member #</p>
+                <p className="min-w-0 flex-1 font-semibold">{primaryLabel(receipt)}</p>
                 <p className="shrink-0 whitespace-nowrap text-right">{receipt.membershipNo}</p>
               </div>
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Name</p>
+                <p className="min-w-0 flex-1 font-semibold">{nameLabel(receipt)}</p>
                 <p className="min-w-0 break-words text-right">{receipt.memberName || "-"}</p>
               </div>
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1 font-semibold">Payment Method</p>
                 <p className="shrink-0 whitespace-nowrap text-right">{receipt.paymentMethod || "-"}</p>
               </div>
+              {(receipt.extraRows ?? []).filter((row) => row.value).map((row) => (
+                <div key={row.label} className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
+                  <p className="min-w-0 flex-1 font-semibold">{row.label}</p>
+                  <p className="min-w-0 break-words text-right">{row.value}</p>
+                </div>
+              ))}
 
               <div className="my-1 border-b border-black" />
               <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Paid</p>
+                <p className="min-w-0 flex-1 font-semibold">{amountLabel(receipt)}</p>
                 <p className="shrink-0 whitespace-nowrap text-right font-bold">
                   Rs {money(receipt.paidAmount)}
                 </p>
               </div>
-              <div className="h-2" />
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1">Balance After Payment</p>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Total Outstanding</p>
-                <p className="shrink-0 whitespace-nowrap text-right">
-                  Rs {money(receipt.outstandingAfterPayment)}
-                </p>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <p className="min-w-0 flex-1 font-semibold">Total Credit Balance</p>
-                <p className="shrink-0 whitespace-nowrap text-right">
-                  Rs {money(receipt.creditBalanceAfterPayment)}
-                </p>
-              </div>
+              {shouldShowBalanceAfterPayment(receipt) ? (
+                <>
+                  <div className="h-2" />
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1">Balance After Payment</p>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1 font-semibold">Total Outstanding</p>
+                    <p className="shrink-0 whitespace-nowrap text-right">
+                      Rs {money(receipt.outstandingAfterPayment)}
+                    </p>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 flex-1 font-semibold">Total Credit Balance</p>
+                    <p className="shrink-0 whitespace-nowrap text-right">
+                      Rs {money(receipt.creditBalanceAfterPayment)}
+                    </p>
+                  </div>
+                </>
+              ) : null}
               <div className="my-1 border-b border-black" />
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,48%)] items-start gap-2">
                 <p className="min-w-0 flex-1 font-semibold">Collected By</p>

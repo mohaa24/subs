@@ -34,6 +34,10 @@ import {
 } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { toast } from "@/hooks/use-toast";
+import {
+  PaymentReceiptDialog,
+  type PaymentReceiptData,
+} from "@/components/payment-receipt-dialog";
 
 type MemberLookup = {
   id: string;
@@ -73,13 +77,6 @@ function dateLabel(value: string) {
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
 }
 
-function dateTimeLabel(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const datePart = dateLabel(value);
-  return `${datePart} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
 function formatFundPeriod(fund?: FundPot | null) {
   if (!fund?.periodStart && !fund?.periodEnd) return "Recurring fund";
   if (fund.periodStart && fund.periodEnd) return `${dateLabel(fund.periodStart)} - ${dateLabel(fund.periodEnd)}`;
@@ -102,7 +99,7 @@ export default function FundDetailPage() {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
-  const [collectionReceipt, setCollectionReceipt] = useState<FundCollectionReceipt | null>(null);
+  const [collectionReceipt, setCollectionReceipt] = useState<PaymentReceiptData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [collection, setCollection] = useState({
     amount: "",
@@ -245,7 +242,7 @@ export default function FundDetailPage() {
   async function openCollectionReceipt(transactionId: string) {
     try {
       const receipt = await api<FundCollectionReceipt>(`/accounting/fund-transactions/${transactionId}/receipt`);
-      setCollectionReceipt(receipt);
+      setCollectionReceipt(toFundReceiptData(receipt));
       setReceiptOpen(true);
     } catch (err) {
       toast({
@@ -544,7 +541,7 @@ export default function FundDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <FundCollectionReceiptDialog
+      <PaymentReceiptDialog
         open={receiptOpen}
         onOpenChange={setReceiptOpen}
         receipt={collectionReceipt}
@@ -575,111 +572,34 @@ function SummaryCard({
   );
 }
 
-function escapeReceiptText(value?: string | null) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function FundCollectionReceiptDialog({
-  open,
-  onOpenChange,
-  receipt,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  receipt: FundCollectionReceipt | null;
-}) {
-  const logoUrl = apiAssetUrl(receipt?.organizationReceiptLogoUrl);
-
-  function printReceipt() {
-    if (!receipt) return;
-    const popup = window.open("", "_blank", "width=420,height=700");
-    if (!popup) return;
-    popup.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <title>Fund Receipt ${escapeReceiptText(receipt.receiptNumber)}</title>
-          <style>
-            * { box-sizing: border-box; }
-            body { margin: 0; padding: 16px; font-family: Arial, sans-serif; color: #111827; }
-            .receipt { width: 320px; margin: 0 auto; }
-            .logo { width: 100%; max-height: 88px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; margin-bottom: 12px; }
-            .title { text-align: center; font-size: 16px; font-weight: 700; margin: 0; }
-            .sub { text-align: center; font-size: 12px; color: #4b5563; margin: 4px 0 12px; }
-            .line { display: flex; justify-content: space-between; gap: 16px; border-top: 1px dashed #d1d5db; padding: 8px 0; font-size: 12px; }
-            .label { color: #6b7280; }
-            .amount { font-size: 18px; font-weight: 700; text-align: right; }
-            @media print { body { padding: 0; } .receipt { width: 72mm; } }
-          </style>
-        </head>
-        <body>
-          <div class="receipt">
-            ${logoUrl ? `<img class="logo" src="${escapeReceiptText(logoUrl)}" alt="Receipt logo" />` : ""}
-            <p class="title">${escapeReceiptText(receipt.organizationName)}</p>
-            <p class="sub">Project Fund Collection Receipt</p>
-            <div class="line"><span class="label">Receipt No</span><strong>${escapeReceiptText(receipt.receiptNumber)}</strong></div>
-            <div class="line"><span class="label">Date</span><span>${escapeReceiptText(dateTimeLabel(receipt.transactionDate))}</span></div>
-            <div class="line"><span class="label">Fund</span><span>${escapeReceiptText(receipt.fundName)}</span></div>
-            <div class="line"><span class="label">Paid By</span><span>${escapeReceiptText(receipt.paidByName)}</span></div>
-            ${receipt.paidByPhone ? `<div class="line"><span class="label">Phone</span><span>${escapeReceiptText(receipt.paidByPhone)}</span></div>` : ""}
-            <div class="line"><span class="label">Received Into</span><span>${escapeReceiptText(receipt.receivedInto || "Cash/Bank")}</span></div>
-            ${receipt.note ? `<div class="line"><span class="label">Notes</span><span>${escapeReceiptText(receipt.note)}</span></div>` : ""}
-            <div class="line"><span class="label">Amount</span><span class="amount">${escapeReceiptText(formatRs(receipt.amount))}</span></div>
-            ${receipt.collectedBy ? `<div class="line"><span class="label">Collected By</span><span>${escapeReceiptText(receipt.collectedBy)}</span></div>` : ""}
-          </div>
-          <script>window.onload = () => { window.print(); };</script>
-        </body>
-      </html>
-    `);
-    popup.document.close();
-    popup.focus();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Fund Collection Receipt</DialogTitle></DialogHeader>
-        {receipt ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border p-4">
-              {logoUrl ? <img src={logoUrl} alt="Receipt logo" className="mb-3 h-20 w-full rounded-md border object-contain p-2" /> : null}
-              <div className="text-center">
-                <p className="font-semibold">{receipt.organizationName}</p>
-                <p className="text-sm text-muted-foreground">Project Fund Collection Receipt</p>
-              </div>
-              <div className="mt-4 space-y-2 text-sm">
-                <ReceiptRow label="Receipt No" value={receipt.receiptNumber} />
-                <ReceiptRow label="Date" value={dateTimeLabel(receipt.transactionDate)} />
-                <ReceiptRow label="Fund" value={receipt.fundName} />
-                <ReceiptRow label="Paid By" value={receipt.paidByName} />
-                {receipt.paidByPhone ? <ReceiptRow label="Phone" value={receipt.paidByPhone} /> : null}
-                <ReceiptRow label="Received Into" value={receipt.receivedInto || "Cash/Bank"} />
-                {receipt.note ? <ReceiptRow label="Notes" value={receipt.note} /> : null}
-                <ReceiptRow label="Amount" value={formatRs(receipt.amount)} strong />
-              </div>
-            </div>
-            <Button className="w-full" onClick={printReceipt}>Print Receipt</Button>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">Receipt details are loading.</p>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ReceiptRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-t pt-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={`text-right ${strong ? "font-semibold" : ""}`}>{value}</span>
-    </div>
-  );
+function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
+  return {
+    paymentKind: "fund",
+    organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
+    membershipNo: receipt.fundName,
+    membershipId: "",
+    memberName: receipt.paidByName,
+    paymentId: receipt.transactionId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.transactionDate,
+    paymentMethod: receipt.receivedInto || "Cash/Bank",
+    paidAmount: receipt.amount,
+    appliedToDue: 0,
+    overpaymentToCredit: 0,
+    remainingAfter: 0,
+    outstandingAfterPayment: 0,
+    creditBalanceAfterPayment: 0,
+    note: receipt.note || null,
+    collectedBy: receipt.collectedBy || undefined,
+    memberQrValue: "",
+    receiptTitle: "PROJECT FUND RECEIPT",
+    primaryLabel: "Fund",
+    nameLabel: "Paid By",
+    amountLabel: "Collected",
+    showBalanceAfterPayment: false,
+    extraRows: receipt.paidByPhone ? [{ label: "Phone", value: receipt.paidByPhone }] : [],
+  };
 }
 
 function FundActivityTable({
