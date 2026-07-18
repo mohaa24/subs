@@ -39,6 +39,13 @@
 }
 
 @layer components {
+  @media (min-width: 1024px) {
+    .civica-sidebar ~ main {
+      margin-left: 17rem !important;
+      max-width: calc(100vw - 17rem) !important;
+    }
+  }
+
   .phone-field .react-international-phone-input-container {
     width: 100%;
   }
@@ -77,6 +84,7 @@
   }
 
   header, nav, footer,
+  .civica-sidebar,
   [role="dialog"] {
     display: none !important;
   }

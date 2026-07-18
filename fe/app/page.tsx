@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
@@ -36,7 +36,6 @@ import {
 } from "@/components/ui/dialog";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -46,7 +45,6 @@ import {
 } from "@/components/ui/select";
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
-import { normalizeDashboardFlow } from "@/lib/dashboard-flows";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -126,9 +124,7 @@ function HomePageContent() {
   const { user, loading } = useAuth();
   const { t } = useTranslation();
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeFlow = normalizeDashboardFlow(searchParams.get("flow"));
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsWindowDays, setStatsWindowDays] = useState("30");
@@ -138,16 +134,6 @@ function HomePageContent() {
   const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
-
-  const setActiveFlow = useCallback(
-    (flow: string) => {
-      const nextFlow = normalizeDashboardFlow(flow);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("flow", nextFlow);
-      router.push(`${pathname}?${params.toString()}`, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
@@ -213,6 +199,13 @@ function HomePageContent() {
       stopScanner();
     }
   }, [scannerOpen, startScanner, stopScanner]);
+
+  useEffect(() => {
+    if (searchParams.get("scan") === "membership") {
+      openScanner("details");
+      router.replace("/", { scroll: false });
+    }
+  }, [openScanner, router, searchParams]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -743,105 +736,6 @@ function HomePageContent() {
           </>
         )}
 
-        {/* ── Flow tabs ─────────────────────────────────────── */}
-        <div className="mb-4">
-          <h3 className="text-sm font-medium text-muted-foreground">{t("dashboard.flows")}</h3>
-        </div>
-        <Tabs value={activeFlow} onValueChange={setActiveFlow} className="w-full">
-          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
-            {FLOW_TABS.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="rounded-md border border-border px-3 py-1.5 data-[state=active]:border-primary/40 data-[state=active]:bg-primary/10"
-              >
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          {FLOW_TABS.map((tab) => {
-            const actions = tab.actions.filter(
-              (item) => !item.roles || item.roles.includes(user.role),
-            );
-
-            return (
-              <TabsContent key={tab.value} value={tab.value}>
-                {actions.length === 0 ? (
-                  <Card>
-                    <CardContent className="pt-6">
-                      <p className="text-sm text-muted-foreground">
-                        No actions available for your role in this flow.
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {actions.map(({ actionKey, title, description, icon: Icon, href, action, disabled, badge }) => {
-                      const isBookmarked = bookmarks.some((b) => b.actionKey === actionKey);
-                      const card = (
-                        <Card className={`group h-full relative transition-all ${disabled ? "cursor-not-allowed border-dashed opacity-70" : "cursor-pointer hover:border-primary/30 hover:bg-accent/30"}`}>
-                          {badge ? (
-                            <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                              {badge}
-                            </span>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              toggleBookmark(actionKey);
-                            }}
-                            className="absolute top-2 right-2 z-10 rounded-lg p-2 transition-colors hover:bg-accent/60"
-                            aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
-                          >
-                            {isBookmarked ? (
-                              <Star className="h-5 w-5 text-primary fill-primary" />
-                            ) : (
-                              <Star className="h-5 w-5 text-muted-foreground/40" />
-                            )}
-                          </button>
-                          <CardHeader className={`flex flex-row items-center gap-3 space-y-0 pb-2 pr-12 ${badge ? "pt-8" : ""}`}>
-                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${disabled ? "bg-muted" : "bg-primary/10 group-hover:bg-primary/20"}`}>
-                              <Icon className="h-4 w-4 text-primary" />
-                            </div>
-                            <CardTitle className="text-sm font-medium text-foreground">
-                              {title}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <p className="text-sm text-muted-foreground">{description}</p>
-                          </CardContent>
-                        </Card>
-                      );
-
-                      if (href && !disabled) {
-                        return (
-                          <Link key={`${tab.value}-${title}`} href={href}>
-                            {card}
-                          </Link>
-                        );
-                      }
-
-                      return (
-                        <button
-                          key={`${tab.value}-${title}`}
-                          type="button"
-                          className="text-left"
-                          onClick={disabled ? undefined : action}
-                          disabled={disabled}
-                        >
-                          {card}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-            );
-          })}
-        </Tabs>
       </main>
 
       {/* QR Scanner dialog */}
