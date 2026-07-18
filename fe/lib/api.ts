@@ -297,10 +297,13 @@ export interface Payment {
 
 export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";
 export type AccountingAssetSubtype =
-  | "cash_bank"
-  | "receivable"
+  | "cash"
+  | "bank"
+  | "loan_receivable"
+  | "service_receivable"
   | "other"
-  | "payable"
+  | "loan_payable"
+  | "service_payable"
   | "other_liability"
   | "general_fund"
   | "project_fund"
@@ -420,6 +423,8 @@ export interface FundTransaction {
   memo?: string | null;
   receiptNumber?: string | null;
   journalEntryId?: string | null;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
   createdAt: string;
   assetAccount?: AccountingAccount | null;
 }

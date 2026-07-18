@@ -156,7 +156,7 @@ export default function PaymentsPage() {
     api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } })
       .then((items) => {
         const cashBankAccounts = items.filter(
-          (account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive
+          (account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive
         );
         setDepositAccounts(cashBankAccounts);
         setPayDepositAccountId((current) => current || cashBankAccounts[0]?.id || "");

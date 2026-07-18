@@ -88,8 +88,6 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Member Payments", href: "/payments" },
       { label: "Income Accounts", href: "/cash-in" },
-      { label: "Special Fund Collection", href: "/cash-in" },
-      { label: "Receivable Collection", href: "/cash-in" },
     ],
   },
   {
@@ -98,8 +96,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: ArrowUpFromLine,
     children: [
       { label: "Expense Accounts", href: "/cash-out" },
-      { label: "Special Fund Expenses", href: "/cash-out" },
-      { label: "Payable Payments", href: "/cash-out" },
     ],
   },
   {
@@ -113,8 +109,8 @@ const NAV_ITEMS: NavItem[] = [
     ],
   },
   { key: "funds", label: "Special Funds", icon: PiggyBank, href: "/funds" },
-  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/cash-in" },
-  { key: "payable", label: "Payable", icon: ClipboardList, href: "/cash-out" },
+  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables" },
+  { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables" },
   {
     key: "accounts",
     label: "Chart of Accounts",

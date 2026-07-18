@@ -105,7 +105,7 @@ export default function FundsPage() {
   });
 
   const cashBankAccounts = useMemo(
-    () => accounts.filter((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive),
+    () => accounts.filter((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive),
     [accounts],
   );
 
@@ -143,7 +143,7 @@ export default function FundsPage() {
     try {
       const data = await api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } });
       setAccounts(data);
-      const firstCashBank = data.find((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive);
+      const firstCashBank = data.find((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive);
       setNewFund((v) => ({ ...v, openingAssetAccountId: v.openingAssetAccountId || firstCashBank?.id || "" }));
     } catch {
       setAccounts([]);

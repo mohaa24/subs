@@ -25,10 +25,13 @@ import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-rea
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type AssetSubtype =
-  | "cash_bank"
-  | "receivable"
+  | "cash"
+  | "bank"
+  | "loan_receivable"
+  | "service_receivable"
   | "other"
-  | "payable"
+  | "loan_payable"
+  | "service_payable"
   | "other_liability"
   | "general_fund"
   | "project_fund"
@@ -102,10 +105,13 @@ const accountTypeLabels: Record<AccountType, string> = {
 };
 
 const assetSubtypeLabels: Record<AssetSubtype, string> = {
-  cash_bank: "Cash / Bank",
-  receivable: "Receivable",
+  cash: "Cash",
+  bank: "Bank",
+  loan_receivable: "Loan Receivables",
+  service_receivable: "Service Receivables",
   other: "Other Assets",
-  payable: "Payables",
+  loan_payable: "Loan Payables",
+  service_payable: "Service Payables",
   other_liability: "Other Liabilities",
   general_fund: "General Funds",
   project_fund: "Project Funds",
@@ -116,8 +122,8 @@ const assetSubtypeLabels: Record<AssetSubtype, string> = {
 };
 
 const subtypesByAccountType: Record<AccountType, AssetSubtype[]> = {
-  asset: ["cash_bank", "receivable", "other"],
-  liability: ["payable", "other_liability"],
+  asset: ["cash", "bank", "loan_receivable", "service_receivable", "other"],
+  liability: ["loan_payable", "service_payable", "other_liability"],
   equity: ["general_fund", "project_fund"],
   income: ["operating_income", "project_fund_surplus"],
   expense: ["operating_expense", "project_fund_deficit"],
@@ -285,7 +291,7 @@ export default function AccountingPage() {
     [accounts],
   );
   const cashBankAssetAccounts = useMemo(
-    () => assetAccounts.filter((account) => account.assetSubtype === "cash_bank"),
+    () => assetAccounts.filter((account) => account.assetSubtype === "cash" || account.assetSubtype === "bank"),
     [assetAccounts],
   );
   const expenseAccounts = useMemo(

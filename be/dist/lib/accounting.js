@@ -26,21 +26,21 @@ const DEFAULT_ACCOUNTS = [
     {
         name: "Cash on Hand",
         accountType: "asset",
-        assetSubtype: "cash_bank",
+        assetSubtype: "cash",
         systemKey: CASH_ACCOUNT_KEY,
         description: "Default physical cash account",
     },
     {
         name: "Bank Account",
         accountType: "asset",
-        assetSubtype: "cash_bank",
+        assetSubtype: "bank",
         systemKey: BANK_ACCOUNT_KEY,
         description: "Default bank or savings account",
     },
     {
         name: "Member Credit Liability",
         accountType: "liability",
-        assetSubtype: "payable",
+        assetSubtype: "service_payable",
         systemKey: MEMBER_CREDIT_KEY,
         description: "Unapplied member credit balance owed by the organization",
     },
@@ -227,7 +227,7 @@ async function getPaymentDepositAccount(tx, input) {
                 id: input.depositAccountId,
                 organizationId: input.organizationId,
                 accountType: "asset",
-                assetSubtype: "cash_bank",
+                assetSubtype: { in: ["cash", "bank"] },
                 isActive: true,
             },
         });

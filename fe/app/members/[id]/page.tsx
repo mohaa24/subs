@@ -432,7 +432,7 @@ export default function MembershipDetailPage() {
     api<AccountingAccount[]>("/accounting/accounts", { params })
       .then((items) => {
         const cashBankAccounts = items.filter(
-          (account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive
+          (account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive
         );
         setDepositAccounts(cashBankAccounts);
         setPayDepositAccountId((current) => current || cashBankAccounts[0]?.id || "");

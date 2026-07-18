@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Landmark, Plus, ReceiptText } from "lucide-react";
+import { ArrowLeft, Landmark, Plus, ReceiptText, Undo2 } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -46,6 +46,10 @@ type MemberLookup = {
   hod?: { fullName: string; nameWithInitials?: string | null } | null;
 };
 type TransferMode = "full" | "partial";
+
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -106,6 +110,7 @@ export default function FundDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [collection, setCollection] = useState({
     amount: "",
+    transactionDate: todayString(),
     assetAccountId: "",
     paidByName: "",
     paidByPhone: "",
@@ -115,6 +120,7 @@ export default function FundDetailPage() {
   });
   const [expense, setExpense] = useState({
     amount: "",
+    transactionDate: todayString(),
     assetAccountId: "",
     description: "",
     memo: "",
@@ -128,7 +134,7 @@ export default function FundDetailPage() {
   const [memberOptions, setMemberOptions] = useState<MemberLookup[]>([]);
 
   const cashBankAccounts = useMemo(
-    () => accounts.filter((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive),
+    () => accounts.filter((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive),
     [accounts],
   );
   const fundClosed = fund?.status === "closed";
@@ -182,7 +188,7 @@ export default function FundDetailPage() {
     try {
       const data = await api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } });
       setAccounts(data);
-      const firstCashBank = data.find((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive);
+      const firstCashBank = data.find((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive);
       setCollection((v) => ({ ...v, assetAccountId: v.assetAccountId || firstCashBank?.id || "" }));
       setExpense((v) => ({ ...v, assetAccountId: v.assetAccountId || firstCashBank?.id || "" }));
     } catch {
@@ -199,6 +205,7 @@ export default function FundDetailPage() {
         method: "POST",
         body: JSON.stringify({
           amount: Number(collection.amount),
+          transactionDate: collection.transactionDate,
           assetAccountId: collection.assetAccountId,
           paidByName: collection.paidByName,
           paidByPhone: collection.paidByPhone || null,
@@ -207,7 +214,7 @@ export default function FundDetailPage() {
         }),
       });
       setCollectionOpen(false);
-      setCollection({ amount: "", assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", isMember: false, memo: "" });
+      setCollection({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", isMember: false, memo: "" });
       setMemberQuery("");
       await loadFundDetails();
       await openCollectionReceipt(transaction.id);
@@ -228,13 +235,14 @@ export default function FundDetailPage() {
         method: "POST",
         body: JSON.stringify({
           amount: Number(expense.amount),
+          transactionDate: expense.transactionDate,
           assetAccountId: expense.assetAccountId,
           description: expense.description,
           memo: expense.memo || null,
         }),
       });
       setExpenseOpen(false);
-      setExpense({ amount: "", assetAccountId: cashBankAccounts[0]?.id || "", description: "", memo: "" });
+      setExpense({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", description: "", memo: "" });
       await loadFundDetails();
       toast({ title: "Expense added", description: "Restricted fund expense has been recorded." });
     } catch (err) {
@@ -255,6 +263,21 @@ export default function FundDetailPage() {
         title: "Receipt could not be loaded",
         description: err instanceof Error ? err.message : "The collection was saved, but receipt loading failed.",
       });
+    }
+  }
+
+  async function handleReverseFundTransaction(transaction: FundTransaction) {
+    const reason = window.prompt("Reason for reversal");
+    if (!reason?.trim()) return;
+    try {
+      await api(`/accounting/fund-transactions/${transaction.id}/reverse`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      toast({ title: "Fund transaction reversed", description: transaction.receiptNumber ?? transaction.id });
+      await loadFundDetails();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Failed to reverse fund transaction", description: err instanceof Error ? err.message : "Unable to reverse" });
     }
   }
 
@@ -388,8 +411,8 @@ export default function FundDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-3">
-            <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} />
-            <FundActivityTable title="Expenses" rows={expenses} />
+            <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
+            <FundActivityTable title="Expenses" rows={expenses} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
             {transfers.length > 0 ? <FundActivityTable title="Transfers" rows={transfers} /> : null}
           </CardContent>
         </Card>
@@ -399,6 +422,10 @@ export default function FundDetailPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Add Collection</DialogTitle></DialogHeader>
           <form className="space-y-3" onSubmit={handleAddCollection}>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={collection.transactionDate} onChange={(e) => setCollection((v) => ({ ...v, transactionDate: e.target.value }))} required />
+            </div>
             <div className="space-y-1.5">
               <Label>Amount</Label>
               <Input type="number" min="0" step="0.01" value={collection.amount} onChange={(e) => setCollection((v) => ({ ...v, amount: e.target.value }))} required />
@@ -472,6 +499,10 @@ export default function FundDetailPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Add Expense</DialogTitle></DialogHeader>
           <form className="space-y-3" onSubmit={handleAddExpense}>
+            <div className="space-y-1.5">
+              <Label>Date</Label>
+              <Input type="date" value={expense.transactionDate} onChange={(e) => setExpense((v) => ({ ...v, transactionDate: e.target.value }))} required />
+            </div>
             <div className="space-y-1.5">
               <Label>Amount</Label>
               <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
@@ -621,12 +652,15 @@ function FundActivityTable({
   title,
   rows,
   onReceiptClick,
+  onReverse,
 }: {
   title: string;
   rows: FundTransaction[];
   onReceiptClick?: (transactionId: string) => void;
+  onReverse?: (transaction: FundTransaction) => void;
 }) {
   const showReceiptColumn = Boolean(onReceiptClick);
+  const showActionColumn = Boolean(onReverse);
   return (
     <div className="rounded-lg border">
       <div className="border-b bg-muted/40 px-3 py-2 font-medium">{title}</div>
@@ -637,7 +671,9 @@ function FundActivityTable({
               <th className="p-2 text-left font-medium">Date</th>
               <th className="p-2 text-left font-medium">Detail</th>
               <th className="p-2 text-right font-medium">Amount</th>
+              <th className="p-2 text-left font-medium">Status</th>
               {showReceiptColumn ? <th className="p-2 text-right font-medium">Receipt</th> : null}
+              {showActionColumn ? <th className="p-2 text-right font-medium">Action</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -650,6 +686,9 @@ function FundActivityTable({
                   {row.memo ? <div className="text-xs text-muted-foreground">{row.memo}</div> : null}
                 </td>
                 <td className="p-2 text-right tabular-nums">{formatRs(row.amount)}</td>
+                <td className="p-2">
+                  {row.reversedAt ? <span className="text-destructive">Reversed</span> : <span className="text-emerald-700">Posted</span>}
+                </td>
                 {showReceiptColumn ? (
                   <td className="p-2 text-right">
                     {row.transactionType === "collection" && row.receiptNumber ? (
@@ -668,11 +707,21 @@ function FundActivityTable({
                     )}
                   </td>
                 ) : null}
+                {showActionColumn ? (
+                  <td className="p-2 text-right">
+                    {!row.reversedAt && (row.transactionType === "collection" || row.transactionType === "expense") ? (
+                      <Button type="button" variant="outline" size="sm" onClick={() => onReverse?.(row)}>
+                        <Undo2 className="mr-1 h-3.5 w-3.5" />
+                        Reverse
+                      </Button>
+                    ) : null}
+                  </td>
+                ) : null}
               </tr>
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={showReceiptColumn ? 4 : 3} className="p-4 text-center text-muted-foreground">No records yet.</td>
+                <td colSpan={3 + 1 + (showReceiptColumn ? 1 : 0) + (showActionColumn ? 1 : 0)} className="p-4 text-center text-muted-foreground">No records yet.</td>
               </tr>
             ) : null}
           </tbody>

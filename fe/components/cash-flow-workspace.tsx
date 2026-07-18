@@ -51,6 +51,11 @@ import { toast } from "@/hooks/use-toast";
 
 type CashFlowSlug = "cash-in" | "cash-out";
 type CashPeriod = "this_month" | "this_year" | "all_time" | "custom";
+type RecordTarget = {
+  row: CashFlowAccountRow;
+  category: CashTransactionCategory | null;
+  sectionKey?: string;
+};
 
 type MemberLookup = {
   id: string;
@@ -136,6 +141,22 @@ function endpointFor(flow: CashFlowSlug, category: CashTransactionCategory) {
   return "/accounting/cash-out/payable-payments";
 }
 
+function isCashBankSubtype(subtype?: string | null) {
+  return subtype === "cash" || subtype === "bank";
+}
+
+function isReceivableSubtype(subtype?: string | null) {
+  return subtype === "loan_receivable" || subtype === "service_receivable";
+}
+
+function isPayableSubtype(subtype?: string | null) {
+  return subtype === "loan_payable" || subtype === "service_payable";
+}
+
+function subtypeLabel(subtype?: string | null) {
+  return subtype ? subtype.replace(/_/g, " ") : "";
+}
+
 function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
   if (sectionKey === "receivable_collection") return "Add Collection";
   if (sectionKey === "payable_payment") return "Make Payment";
@@ -169,7 +190,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
   const [search, setSearch] = useState("");
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<{ row: CashFlowAccountRow; category: CashTransactionCategory; sectionKey?: string } | null>(null);
+  const [selected, setSelected] = useState<RecordTarget | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [submitting, setSubmitting] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
@@ -177,7 +198,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
   const Icon = config.icon;
 
   const cashBankAccounts = useMemo(
-    () => accounts.filter((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive),
+    () => accounts.filter((account) => account.accountType === "asset" && isCashBankSubtype(account.assetSubtype) && account.isActive),
     [accounts],
   );
 
@@ -219,7 +240,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     try {
       const data = await api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } });
       setAccounts(data);
-      const firstCashBank = data.find((account) => account.accountType === "asset" && account.assetSubtype === "cash_bank" && account.isActive);
+      const firstCashBank = data.find((account) => account.accountType === "asset" && isCashBankSubtype(account.assetSubtype) && account.isActive);
       setForm((v) => ({ ...v, cashBankAccountId: v.cashBankAccountId || firstCashBank?.id || "" }));
     } catch {
       setAccounts([]);
@@ -272,12 +293,20 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     setMemberOptions([]);
   }
 
+  function openFundRecord(row: CashFlowAccountRow, sectionKey?: string) {
+    setSelected({ row, category: null, sectionKey });
+    setForm(defaultForm(cashBankAccounts[0]?.id || ""));
+    setMemberQuery("");
+    setMemberOptions([]);
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!selected) return;
     setSubmitting(true);
     try {
-      const transaction = await api<CashTransaction>(endpointFor(flow, selected.category), {
+      const transaction: { id: string; documentNumber?: string | null; receiptNumber?: string | null } = selected.category
+        ? await api<CashTransaction>(endpointFor(flow, selected.category), {
         method: "POST",
         body: JSON.stringify({
           accountId: selected.row.id,
@@ -290,11 +319,31 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
           reference: form.reference || null,
           description: form.description || null,
         }),
-      });
+        })
+        : await api<{ id: string; receiptNumber?: string | null }>(`/accounting/funds/${selected.row.id}/${flow === "cash-in" ? "collections" : "expenses"}`, {
+          method: "POST",
+          body: JSON.stringify(flow === "cash-in"
+            ? {
+                amount: Number(form.amount),
+                transactionDate: form.transactionDate,
+                assetAccountId: form.cashBankAccountId,
+                paidByName: form.counterpartyName,
+                paidByPhone: form.counterpartyPhone || null,
+                paidByMembershipId: form.counterpartyMembershipId || null,
+                memo: form.description || form.reference || null,
+              }
+            : {
+                amount: Number(form.amount),
+                transactionDate: form.transactionDate,
+                assetAccountId: form.cashBankAccountId,
+                description: form.counterpartyName,
+                memo: [form.reference, form.description].filter(Boolean).join(" - ") || null,
+              }),
+        });
       setSelected(null);
       toast({
         title: flow === "cash-in" ? "Cash in recorded" : "Cash out recorded",
-        description: `${config.documentLabel}: ${transaction.documentNumber ?? transaction.id}`,
+        description: `${config.documentLabel}: ${transaction.documentNumber ?? transaction.receiptNumber ?? transaction.id}`,
       });
       if (accountId) await loadDetail();
       else await loadOverview();
@@ -387,7 +436,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
             loadingData={loadingData}
             onRecord={() => openRecord(
               { ...detail.account, periodTotal: detail.summary.periodTotal ?? 0, thisMonthTotal: 0 },
-              detail.account.assetSubtype === "receivable" ? "receivable_collection" : detail.account.assetSubtype === "payable" ? "payable_payment" : flow === "cash-in" ? "operating_income" : "operating_expense"
+              isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_payment" : flow === "cash-in" ? "operating_income" : "operating_expense"
             )}
             onReverse={handleReverse}
           />
@@ -435,7 +484,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                         <div key={row.id} className="grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center">
                           <div>
                             <div className="font-medium text-foreground">{row.name}</div>
-                            <div className="text-xs text-muted-foreground">{isFund ? "Project Fund" : row.assetSubtype?.replace(/_/g, " ")}</div>
+                            <div className="text-xs text-muted-foreground">{isFund ? "Special Fund" : subtypeLabel(row.assetSubtype)}</div>
                           </div>
                           <div>
                             <div className="text-xs text-muted-foreground">YTD Total</div>
@@ -451,17 +500,17 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                           </div>
                           <div className="flex items-center gap-2 md:justify-end">
                             {isFund ? (
-                              <Button asChild size="sm">
-                                <Link href={`/funds/${row.id}?mode=${flow}`}>{buttonLabel(flow, section.key)}</Link>
+                              <Button size="sm" onClick={() => openFundRecord(row, section.key)} disabled={!canManage}>
+                                {buttonLabel(flow, section.key)}
                               </Button>
                             ) : (
                               <Button size="sm" onClick={() => openRecord(row, category, section.key)} disabled={!canManage}>{buttonLabel(flow, section.key)}</Button>
                             )}
-                            {!isFund ? (
-                              <Button asChild size="icon" variant="ghost" aria-label="Open account">
-                                <Link href={`/${flow}/accounts/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                              </Button>
-                            ) : null}
+                            <Button asChild size="icon" variant="ghost" aria-label={isFund ? "Open fund" : "Open account"}>
+                              <Link href={isFund ? `/funds/${row.id}?mode=${flow}` : `/${flow}/accounts/${row.id}`}>
+                                <ChevronRight className="h-4 w-4" />
+                              </Link>
+                            </Button>
                           </div>
                         </div>
                       );
@@ -587,8 +636,8 @@ function AccountDetailView({
   onRecord: () => void;
   onReverse: (transaction: CashTransaction) => void;
 }) {
-  const isReceivable = detail.account.assetSubtype === "receivable";
-  const isPayable = detail.account.assetSubtype === "payable";
+  const isReceivable = isReceivableSubtype(detail.account.assetSubtype);
+  const isPayable = isPayableSubtype(detail.account.assetSubtype);
   const historyTitle = flow === "cash-in" ? "Transaction History" : "Payment History";
   return (
     <div className="space-y-4">
@@ -607,9 +656,9 @@ function AccountDetailView({
           </>
         ) : (
           <>
-            <MetricCard icon={ReceiptText} label={flow === "cash-in" ? "YTD Income" : "YTD Expense"} value={formatRs(detail.summary.periodTotal ?? 0)} />
-            <MetricCard icon={WalletCards} label="Debits" value={formatRs(detail.summary.debitTotal ?? 0)} />
-            <MetricCard icon={CalendarDays} label="Credits" value={formatRs(detail.summary.creditTotal ?? 0)} />
+            <MetricCard icon={ReceiptText} label="YTD Total" value={formatRs(detail.summary.periodTotal ?? 0)} />
+            <MetricCard icon={WalletCards} label="This Month" value={formatRs(detail.summary.thisMonthTotal ?? 0)} />
+            <MetricCard icon={CalendarDays} label="No. of Transactions" value={String(detail.summary.transactionCount ?? 0)} />
           </>
         )}
       </div>

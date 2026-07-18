@@ -105,6 +105,7 @@ model User {
   createdAccountingJournalEntries AccountingJournalEntry[] @relation("AccountingJournalEntryCreatedBy")
   createdCashTransactions CashTransaction[] @relation("CashTransactionCreatedBy")
   reversedCashTransactions CashTransaction[] @relation("CashTransactionReversedBy")
+  reversedFundTransactions FundTransaction[] @relation("FundTransactionReversedBy")
 }
 
 enum UserRole {
@@ -551,10 +552,13 @@ enum AccountingAccountType {
 }
 
 enum AccountingAssetSubtype {
-  cash_bank
-  receivable
+  cash
+  bank
+  loan_receivable
+  service_receivable
   other
-  payable
+  loan_payable
+  service_payable
   other_liability
   general_fund
   project_fund
@@ -680,6 +684,9 @@ model FundTransaction {
   memo              String?             @db.Text
   receiptNumber     String?
   journalEntryId    String?
+  reversedAt        DateTime?
+  reversedByUserId  String?
+  reversalReason    String?             @db.Text
   createdByUserId   String?
   createdAt         DateTime            @default(now())
 
@@ -687,10 +694,12 @@ model FundTransaction {
   fundPot      FundPot      @relation(fields: [fundPotId], references: [id], onDelete: Cascade)
   assetAccount AccountingAccount? @relation("FundTransactionAssetAccount", fields: [assetAccountId], references: [id], onDelete: SetNull)
   journalEntry AccountingJournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  reversedBy   User?        @relation("FundTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, transactionDate])
   @@index([fundPotId, transactionDate])
   @@index([journalEntryId])
+  @@index([reversedByUserId])
   @@unique([organizationId, receiptNumber])
 }
 

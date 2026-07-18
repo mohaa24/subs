@@ -41,7 +41,7 @@ async function validateDepositAccountId(organizationId, depositAccountId) {
             id: depositAccountId,
             organizationId,
             accountType: "asset",
-            assetSubtype: "cash_bank",
+            assetSubtype: { in: ["cash", "bank"] },
             isActive: true,
         },
         select: { id: true },
