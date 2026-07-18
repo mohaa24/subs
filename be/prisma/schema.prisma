@@ -590,8 +590,10 @@ enum CashFlowType {
 
 enum CashTransactionCategory {
   operating_income
+  receivable_payment
   receivable_collection
   operating_expense
+  payable_recovery
   payable_payment
 }
 

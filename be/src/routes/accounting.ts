@@ -520,8 +520,10 @@ async function generateCashDocumentNumber(
 
 function cashTransactionLabel(category: CashTransactionCategory) {
   if (category === "operating_income") return "Operating income";
+  if (category === "receivable_payment") return "Receivable payment";
   if (category === "receivable_collection") return "Receivable collection";
   if (category === "operating_expense") return "Operating expense";
+  if (category === "payable_recovery") return "Payable recovery";
   return "Payable payment";
 }
 
@@ -533,7 +535,7 @@ function cashAccountWhere(flowType: CashFlowType, category: CashTransactionCateg
       OR: [{ systemKey: null }, { NOT: { systemKey: { startsWith: "income_due_type_" } } }],
     };
   }
-  if (flowType === "cash_in" && category === "receivable_collection") {
+  if (category === "receivable_collection" || category === "receivable_payment") {
     return { accountType: "asset", assetSubtype: { in: receivableSubtypes } };
   }
   if (flowType === "cash_out" && category === "operating_expense") {
@@ -871,19 +873,56 @@ async function loadCashAccountDetail(req: Request, res: Response, flowType: Cash
         : flowType === "cash_in"
           ? "operating_income"
           : "operating_expense";
+  const oppositeCategory =
+    isReceivableSubtype(account.assetSubtype)
+      ? "receivable_payment" as const
+      : isPayableSubtype(account.assetSubtype)
+        ? "payable_recovery" as const
+        : null;
+  const historyWhere: Prisma.CashTransactionWhereInput =
+    isReceivableSubtype(account.assetSubtype)
+      ? {
+          organizationId: orgId,
+          accountId: account.id,
+          OR: [
+            { flowType: "cash_in", category: "receivable_collection" },
+            { flowType: "cash_out", category: "receivable_payment" },
+          ],
+          transactionDate: { gte: from, lte: toEnd },
+        }
+      : isPayableSubtype(account.assetSubtype)
+        ? {
+            organizationId: orgId,
+            accountId: account.id,
+            OR: [
+              { flowType: "cash_out", category: "payable_payment" },
+              { flowType: "cash_in", category: "payable_recovery" },
+            ],
+            transactionDate: { gte: from, lte: toEnd },
+          }
+        : {
+            organizationId: orgId,
+            accountId: account.id,
+            flowType,
+            transactionDate: { gte: from, lte: toEnd },
+          };
 
-  const [allTotals, postedPeriod, postedMonth, postedAll, history] = await prisma.$transaction(async (tx) => Promise.all([
+  const [allTotals, postedPeriod, postedMonth, postedAll, oppositePeriod, oppositeMonth, oppositeAll, history] = await prisma.$transaction(async (tx) => Promise.all([
     groupedAccountTotals(tx, orgId, [account.id], null, null),
     cashTransactionAmount(tx, orgId, { accountId: account.id, flowType, category: detailCategory, from, toEnd }),
     cashTransactionAmount(tx, orgId, { accountId: account.id, flowType, category: detailCategory, from: firstOfMonth(), toEnd: endOfDay(new Date()) }),
     cashTransactionAmount(tx, orgId, { accountId: account.id, flowType, category: detailCategory }),
+    oppositeCategory
+      ? cashTransactionAmount(tx, orgId, { accountId: account.id, flowType: flowType === "cash_in" ? "cash_out" : "cash_in", category: oppositeCategory, from, toEnd })
+      : Promise.resolve({ amount: new Decimal(0), count: 0 }),
+    oppositeCategory
+      ? cashTransactionAmount(tx, orgId, { accountId: account.id, flowType: flowType === "cash_in" ? "cash_out" : "cash_in", category: oppositeCategory, from: firstOfMonth(), toEnd: endOfDay(new Date()) })
+      : Promise.resolve({ amount: new Decimal(0), count: 0 }),
+    oppositeCategory
+      ? cashTransactionAmount(tx, orgId, { accountId: account.id, flowType: flowType === "cash_in" ? "cash_out" : "cash_in", category: oppositeCategory })
+      : Promise.resolve({ amount: new Decimal(0), count: 0 }),
     tx.cashTransaction.findMany({
-      where: {
-        organizationId: orgId,
-        accountId: account.id,
-        flowType,
-        transactionDate: { gte: from, lte: toEnd },
-      },
+      where: historyWhere,
       include: {
         cashBankAccount: { select: { id: true, name: true } },
         counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
@@ -899,21 +938,21 @@ async function loadCashAccountDetail(req: Request, res: Response, flowType: Cash
   const summary =
     account.accountType === "asset" && isReceivableSubtype(account.assetSubtype)
       ? {
-          totalGiven: asNumber(all.debit),
+          totalGiven: asNumber(oppositeAll.amount),
           totalCollected: asNumber(postedAll.amount),
-          outstandingBalance: asNumber(all.debit.sub(postedAll.amount)),
-          periodTotal: asNumber(postedPeriod.amount),
-          thisMonthTotal: asNumber(postedMonth.amount),
-          transactionCount: postedPeriod.count,
+          outstandingBalance: asNumber(oppositeAll.amount.sub(postedAll.amount)),
+          periodTotal: asNumber(postedPeriod.amount.add(oppositePeriod.amount)),
+          thisMonthTotal: asNumber(postedMonth.amount.add(oppositeMonth.amount)),
+          transactionCount: postedPeriod.count + oppositePeriod.count,
         }
-      : account.accountType === "liability" && isPayableSubtype(account.assetSubtype)
+    : account.accountType === "liability" && isPayableSubtype(account.assetSubtype)
         ? {
-            totalPayable: asNumber(all.credit),
+            totalPayable: asNumber(oppositeAll.amount),
             totalPaid: asNumber(postedAll.amount),
-            outstandingBalance: asNumber(all.credit.sub(postedAll.amount)),
-            periodTotal: asNumber(postedPeriod.amount),
-            thisMonthTotal: asNumber(postedMonth.amount),
-            transactionCount: postedPeriod.count,
+            outstandingBalance: asNumber(oppositeAll.amount.sub(postedAll.amount)),
+            periodTotal: asNumber(postedPeriod.amount.add(oppositePeriod.amount)),
+            thisMonthTotal: asNumber(postedMonth.amount.add(oppositeMonth.amount)),
+            transactionCount: postedPeriod.count + oppositePeriod.count,
           }
         : {
             periodTotal: asNumber(postedPeriod.amount),
@@ -1143,8 +1182,16 @@ accountingRouter.post("/cash-in/receivable-collections", requireAccountingAdmin,
   createCashTransaction(req, res, "cash_in", "receivable_collection")
 ));
 
+accountingRouter.post("/cash-in/receivable-payments", requireAccountingAdmin, asyncRoute((req, res) =>
+  createCashTransaction(req, res, "cash_out", "receivable_payment")
+));
+
 accountingRouter.post("/cash-out/operating-expenses", requireAccountingAdmin, asyncRoute((req, res) =>
   createCashTransaction(req, res, "cash_out", "operating_expense")
+));
+
+accountingRouter.post("/cash-out/payable-recoveries", requireAccountingAdmin, asyncRoute((req, res) =>
+  createCashTransaction(req, res, "cash_in", "payable_recovery")
 ));
 
 accountingRouter.post("/cash-out/payable-payments", requireAccountingAdmin, asyncRoute((req, res) =>

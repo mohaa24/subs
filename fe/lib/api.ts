@@ -327,8 +327,10 @@ export interface AccountingAccount {
 export type CashFlowType = "cash_in" | "cash_out";
 export type CashTransactionCategory =
   | "operating_income"
+  | "receivable_payment"
   | "receivable_collection"
   | "operating_expense"
+  | "payable_recovery"
   | "payable_payment";
 
 export interface CashFlowAccountRow {

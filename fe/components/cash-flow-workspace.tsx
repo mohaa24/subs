@@ -136,8 +136,10 @@ function flowConfig(flow: CashFlowSlug) {
 
 function endpointFor(flow: CashFlowSlug, category: CashTransactionCategory) {
   if (flow === "cash-in" && category === "operating_income") return "/accounting/cash-in/operating-income";
+  if (flow === "cash-in" && category === "receivable_payment") return "/accounting/cash-in/receivable-payments";
   if (flow === "cash-in" && category === "receivable_collection") return "/accounting/cash-in/receivable-collections";
   if (flow === "cash-out" && category === "operating_expense") return "/accounting/cash-out/operating-expenses";
+  if (flow === "cash-out" && category === "payable_recovery") return "/accounting/cash-out/payable-recoveries";
   return "/accounting/cash-out/payable-payments";
 }
 
@@ -161,6 +163,26 @@ function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
   if (sectionKey === "receivable_collection") return "Add Collection";
   if (sectionKey === "payable_payment") return "Make Payment";
   return flow === "cash-in" ? "Record Income" : "Record Expense";
+}
+
+function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null, sectionKey?: string) {
+  if (category === "receivable_payment") return "Record Payment";
+  if (category === "receivable_collection") return "Add Collection";
+  if (category === "payable_recovery") return "Recover";
+  if (category === "payable_payment") return "Make Payment";
+  return buttonLabel(flow, sectionKey);
+}
+
+function actionCounterpartyLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null) {
+  if (category === "receivable_payment" || category === "payable_payment") return "Paid To";
+  if (category === "receivable_collection" || category === "payable_recovery") return "Received From";
+  return flow === "cash-in" ? "Received From" : "Paid To";
+}
+
+function actionDocumentLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null) {
+  if (category === "receivable_payment" || category === "payable_payment") return "Payment Voucher Number";
+  if (category === "receivable_collection" || category === "payable_recovery") return "Receipt Number";
+  return flow === "cash-in" ? "Receipt Number" : "Payment Voucher Number";
 }
 
 function defaultForm(cashBankAccountId = "") {
@@ -343,7 +365,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
       setSelected(null);
       toast({
         title: flow === "cash-in" ? "Cash in recorded" : "Cash out recorded",
-        description: `${config.documentLabel}: ${transaction.documentNumber ?? transaction.receiptNumber ?? transaction.id}`,
+        description: `${actionDocumentLabel(flow, selected.category)}: ${transaction.documentNumber ?? transaction.receiptNumber ?? transaction.id}`,
       });
       if (accountId) await loadDetail();
       else await loadOverview();
@@ -371,7 +393,8 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
 
   if (loading || !user) return null;
 
-  const selectedAction = selected ? buttonLabel(flow, selected.sectionKey) : config.actionLabel;
+  const selectedAction = selected ? actionLabel(flow, selected.category, selected.sectionKey) : config.actionLabel;
+  const selectedCounterpartyLabel = selected ? actionCounterpartyLabel(flow, selected.category) : config.counterpartyLabel;
 
   return (
     <div className="min-h-screen bg-background relative">
@@ -434,9 +457,9 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
             detail={detail}
             canManage={canManage}
             loadingData={loadingData}
-            onRecord={() => openRecord(
+            onRecord={(category) => openRecord(
               { ...detail.account, periodTotal: detail.summary.periodTotal ?? 0, thisMonthTotal: 0 },
-              isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_payment" : flow === "cash-in" ? "operating_income" : "operating_expense"
+              category ?? (isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_payment" : flow === "cash-in" ? "operating_income" : "operating_expense")
             )}
             onReverse={handleReverse}
           />
@@ -539,7 +562,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                 <Input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => setForm((v) => ({ ...v, amount: e.target.value }))} required />
               </div>
               <div>
-                <Label>{config.counterpartyLabel}</Label>
+                <Label>{selectedCounterpartyLabel}</Label>
                 <Input value={form.counterpartyName} onChange={(e) => setForm((v) => ({ ...v, counterpartyName: e.target.value, counterpartyMembershipId: "" }))} required />
               </div>
               <div>
@@ -633,7 +656,7 @@ function AccountDetailView({
   detail: CashAccountDetail;
   canManage: boolean;
   loadingData: boolean;
-  onRecord: () => void;
+  onRecord: (category?: CashTransactionCategory) => void;
   onReverse: (transaction: CashTransaction) => void;
 }) {
   const isReceivable = isReceivableSubtype(detail.account.assetSubtype);
@@ -666,7 +689,21 @@ function AccountDetailView({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">{historyTitle}</CardTitle>
-          <Button onClick={onRecord} disabled={!canManage}>{isReceivable ? "Add Collection" : isPayable ? "Make Payment" : config.actionLabel}</Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {isReceivable ? (
+              <>
+                <Button variant="outline" onClick={() => onRecord("receivable_payment")} disabled={!canManage}>Record Payment</Button>
+                <Button onClick={() => onRecord("receivable_collection")} disabled={!canManage}>Add Collection</Button>
+              </>
+            ) : isPayable ? (
+              <>
+                <Button variant="outline" onClick={() => onRecord("payable_recovery")} disabled={!canManage}>Recover</Button>
+                <Button onClick={() => onRecord("payable_payment")} disabled={!canManage}>Make Payment</Button>
+              </>
+            ) : (
+              <Button onClick={() => onRecord()} disabled={!canManage}>{config.actionLabel}</Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loadingData ? <div className="h-20 rounded-md bg-muted animate-pulse" /> : null}
@@ -679,7 +716,7 @@ function AccountDetailView({
                   <tr>
                     <th className="p-2">Date</th>
                     <th className="p-2">Details</th>
-                    <th className="p-2">{config.documentLabel}</th>
+                    <th className="p-2">Document</th>
                     <th className="p-2 text-right">Amount</th>
                     <th className="p-2">Status</th>
                     <th className="p-2 text-right">Action</th>
@@ -692,11 +729,15 @@ function AccountDetailView({
                       <td className="p-2">
                         <div className="font-medium">{transaction.description || transaction.counterpartyName}</div>
                         <div className="text-xs text-muted-foreground">
-                          {transaction.counterpartyName}
+                          {actionLabel(flow, transaction.category)}
+                          {transaction.counterpartyName ? ` - ${transaction.counterpartyName}` : ""}
                           {transaction.reference ? ` - ${transaction.reference}` : ""}
                         </div>
                       </td>
-                      <td className="p-2 font-mono text-xs">{transaction.documentNumber ?? "-"}</td>
+                      <td className="p-2">
+                        <div className="font-mono text-xs">{transaction.documentNumber ?? "-"}</div>
+                        <div className="text-[10px] text-muted-foreground">{actionDocumentLabel(flow, transaction.category)}</div>
+                      </td>
                       <td className="p-2 text-right font-semibold">{formatRs(transaction.amount)}</td>
                       <td className="p-2">{transaction.reversedAt ? <span className="text-destructive">Reversed</span> : <span className="text-emerald-700">Posted</span>}</td>
                       <td className="p-2 text-right">
