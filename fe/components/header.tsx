@@ -45,7 +45,7 @@ const LOCALE_OPTIONS: { value: "en" | "ta" | "si"; label: string; code: string }
 
 type NavChild = {
   label: string;
-  href: string;
+  href?: string;
   badge?: string;
   disabled?: boolean;
 };
@@ -56,6 +56,7 @@ type NavItem = {
   icon: LucideIcon;
   href?: string;
   badge?: string;
+  disabled?: boolean;
   children?: NavChild[];
 };
 
@@ -97,9 +98,9 @@ const NAV_ITEMS: NavItem[] = [
     label: "Banking",
     icon: Landmark,
     children: [
-      { label: "Bank Deposits", href: "/accounting" },
-      { label: "Cash Withdrawals", href: "/accounting" },
-      { label: "Bank Transfers", href: "/accounting" },
+      { label: "Bank Deposits", badge: "Soon", disabled: true },
+      { label: "Cash Withdrawals", badge: "Soon", disabled: true },
+      { label: "Bank Transfers", badge: "Soon", disabled: true },
     ],
   },
   { key: "funds", label: "Special Funds", icon: PiggyBank, href: "/funds" },
@@ -124,8 +125,8 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Finance Reports", href: "/accounting" },
     ],
   },
-  { key: "payroll", label: "Payroll", icon: Users, href: "/", badge: "Coming Soon" },
-  { key: "budgets", label: "Budgets", icon: PieChart, href: "/", badge: "Coming Soon" },
+  { key: "payroll", label: "Payroll", icon: Users, badge: "Coming Soon", disabled: true },
+  { key: "budgets", label: "Budgets", icon: PieChart, badge: "Coming Soon", disabled: true },
   { key: "scan", label: "Scan QR Code", icon: QrCode, href: "/?scan=membership" },
   {
     key: "settings",
@@ -137,7 +138,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Form Settings", href: "/settings/form-config" },
       { label: "Zones", href: "/settings/zones" },
       { label: "Due Types", href: "/settings/due-types" },
-      { label: "Audit Log", href: "/accounting", badge: "Soon" },
+      { label: "Audit Log", badge: "Soon", disabled: true },
     ],
   },
 ];
@@ -180,7 +181,7 @@ function MenuPanel({
         </Link>
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 pb-4">
+      <nav className="civica-sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto px-4 pb-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = itemIsActive(pathname, item);
@@ -207,17 +208,29 @@ function MenuPanel({
                     <div className="ml-7 mt-1 space-y-0.5 pb-1">
                       {item.children.map((child) => {
                         const childActive = isActivePath(pathname, child.href);
-                        return (
-                          <Link
-                            key={`${item.key}-${child.label}`}
-                            href={child.href}
-                            onClick={onNavigate}
-                            className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
-                              childActive ? "bg-white/12 text-white" : "text-blue-100/75 hover:bg-white/10 hover:text-white"
-                            }`}
-                          >
+                        const childClass = `flex items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
+                          child.disabled
+                            ? "cursor-not-allowed text-blue-100/40"
+                            : childActive
+                              ? "bg-white/12 text-white"
+                              : "text-blue-100/75 hover:bg-white/10 hover:text-white"
+                        }`;
+                        const childContent = (
+                          <>
                             <span className="truncate">{child.label}</span>
                             {child.badge ? <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-blue-50">{child.badge}</span> : null}
+                          </>
+                        );
+                        if (child.disabled || !child.href) {
+                          return (
+                            <div key={`${item.key}-${child.label}`} className={childClass} aria-disabled="true">
+                              {childContent}
+                            </div>
+                          );
+                        }
+                        return (
+                          <Link key={`${item.key}-${child.label}`} href={child.href} onClick={onNavigate} className={childClass}>
+                            {childContent}
                           </Link>
                         );
                       })}
@@ -225,11 +238,19 @@ function MenuPanel({
                   ) : null}
                 </>
               ) : (
-                <Link href={item.href ?? "/"} onClick={onNavigate} className={baseClass}>
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                  {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
-                </Link>
+                item.disabled || !item.href ? (
+                  <div className={`${baseClass} cursor-not-allowed text-blue-50/65 hover:bg-transparent`} aria-disabled="true">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
+                  </div>
+                ) : (
+                  <Link href={item.href} onClick={onNavigate} className={baseClass}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
+                  </Link>
+                )
               )}
             </div>
           );
