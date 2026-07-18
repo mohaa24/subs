@@ -52,6 +52,7 @@ model Organization {
   accountingJournalLines AccountingJournalLine[]
   fundPots           FundPot[]
   fundTransactions   FundTransaction[]
+  cashTransactions   CashTransaction[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -102,6 +103,8 @@ model User {
   createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
   createdAccountingAccounts AccountingAccount[] @relation("AccountingAccountCreatedBy")
   createdAccountingJournalEntries AccountingJournalEntry[] @relation("AccountingJournalEntryCreatedBy")
+  createdCashTransactions CashTransaction[] @relation("CashTransactionCreatedBy")
+  reversedCashTransactions CashTransaction[] @relation("CashTransactionReversedBy")
 }
 
 enum UserRole {
@@ -365,6 +368,7 @@ model Membership {
   creditAllocations MembershipCreditAllocation[]
   activityFeedItems    ActivityFeedItem[]
   dueAdjustments       PaymentDueAdjustment[]
+  cashTransactionsAsCounterparty CashTransaction[] @relation("CashTransactionCounterpartyMembership")
 }
 
 enum DependentGroup {
@@ -575,6 +579,18 @@ enum AccountingJournalLineSide {
   credit
 }
 
+enum CashFlowType {
+  cash_in
+  cash_out
+}
+
+enum CashTransactionCategory {
+  operating_income
+  receivable_collection
+  operating_expense
+  payable_payment
+}
+
 model AccountingAccount {
   id              String                @id @default(cuid())
   organizationId  String
@@ -597,6 +613,8 @@ model AccountingAccount {
   fundPotsAsDeficitAccount FundPot[] @relation("FundPotDeficitAccount")
   fundPotsAsOpeningAssetAccount FundPot[] @relation("FundPotOpeningAssetAccount")
   fundTransactionsAsAssetAccount FundTransaction[] @relation("FundTransactionAssetAccount")
+  cashTransactionsAsAccount CashTransaction[] @relation("CashTransactionAccount")
+  cashTransactionsAsCashBankAccount CashTransaction[] @relation("CashTransactionCashBankAccount")
 
   @@unique([organizationId, name])
   @@unique([organizationId, systemKey])
@@ -692,9 +710,47 @@ model AccountingJournalEntry {
   createdBy    User?        @relation("AccountingJournalEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   lines        AccountingJournalLine[]
   fundTransactions FundTransaction[]
+  cashTransactions CashTransaction[] @relation("CashTransactionJournalEntry")
 
   @@index([organizationId, entryDate])
   @@index([organizationId, referenceType, referenceId])
+}
+
+model CashTransaction {
+  id                       String                  @id @default(cuid())
+  organizationId           String
+  flowType                 CashFlowType
+  category                 CashTransactionCategory
+  accountId                String
+  cashBankAccountId        String
+  amount                   Decimal                 @db.Decimal(12, 2)
+  transactionDate          DateTime
+  counterpartyName         String?
+  counterpartyPhone        String?
+  counterpartyMembershipId String?
+  reference                String?
+  description              String?                 @db.Text
+  documentNumber           String?
+  journalEntryId           String?
+  reversedAt               DateTime?
+  reversedByUserId         String?
+  reversalReason           String?                 @db.Text
+  createdByUserId          String?
+  createdAt                DateTime                @default(now())
+
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  account                AccountingAccount       @relation("CashTransactionAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  cashBankAccount        AccountingAccount       @relation("CashTransactionCashBankAccount", fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  counterpartyMembership Membership?             @relation("CashTransactionCounterpartyMembership", fields: [counterpartyMembershipId], references: [id], onDelete: SetNull)
+  journalEntry           AccountingJournalEntry? @relation("CashTransactionJournalEntry", fields: [journalEntryId], references: [id], onDelete: SetNull)
+  createdBy              User?                   @relation("CashTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  reversedBy             User?                   @relation("CashTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, documentNumber])
+  @@index([organizationId, flowType, category])
+  @@index([organizationId, accountId, transactionDate])
+  @@index([journalEntryId])
+  @@index([counterpartyMembershipId])
 }
 
 model AccountingJournalLine {

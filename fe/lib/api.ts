@@ -321,6 +321,82 @@ export interface AccountingAccount {
   balance?: number;
 }
 
+export type CashFlowType = "cash_in" | "cash_out";
+export type CashTransactionCategory =
+  | "operating_income"
+  | "receivable_collection"
+  | "operating_expense"
+  | "payable_payment";
+
+export interface CashFlowAccountRow {
+  id: string;
+  name: string;
+  accountType?: AccountingAccountType;
+  assetSubtype?: AccountingAssetSubtype;
+  systemKey?: string | null;
+  isActive?: boolean;
+  status?: FundPotStatus;
+  periodTotal: number;
+  thisMonthTotal: number;
+  lastRecordedAt?: string | null;
+  summary?: FundPotSummary;
+}
+
+export interface CashFlowSection {
+  key: string;
+  title: string;
+  total: number;
+  rows: CashFlowAccountRow[];
+}
+
+export interface CashFlowOverview {
+  flowType: CashFlowType;
+  fromDate: string;
+  toDate: string;
+  sections: CashFlowSection[];
+  totals: {
+    periodTotal: number;
+    accountCount: number;
+  };
+}
+
+export interface CashTransaction {
+  id: string;
+  organizationId: string;
+  flowType: CashFlowType;
+  category: CashTransactionCategory;
+  accountId: string;
+  cashBankAccountId: string;
+  amount: number;
+  transactionDate: string;
+  counterpartyName?: string | null;
+  counterpartyPhone?: string | null;
+  counterpartyMembershipId?: string | null;
+  reference?: string | null;
+  description?: string | null;
+  documentNumber?: string | null;
+  journalEntryId?: string | null;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+  createdAt: string;
+  cashBankAccount?: Pick<AccountingAccount, "id" | "name">;
+  counterpartyMembership?: {
+    id: string;
+    membershipNo: string;
+    hod?: { fullName: string; nameWithInitials?: string | null } | null;
+  } | null;
+  createdBy?: { email: string } | null;
+  reversedBy?: { email: string } | null;
+}
+
+export interface CashAccountDetail {
+  account: AccountingAccount;
+  fromDate: string;
+  toDate: string;
+  summary: Record<string, number>;
+  history: CashTransaction[];
+}
+
 export type FundPotStatus = "active" | "closed";
 export type FundTransactionType =
   | "opening"

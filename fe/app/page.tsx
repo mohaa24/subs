@@ -426,6 +426,34 @@ function HomePageContent() {
       ],
     },
     {
+      value: "cash-in",
+      label: "Cash In",
+      actions: [
+        {
+          actionKey: "cash-in-workspace",
+          title: "Cash In",
+          description: "Record income, project fund collections, and receivable collections",
+          icon: Banknote,
+          href: "/cash-in",
+          roles: ["admin", "super_user"],
+        },
+      ],
+    },
+    {
+      value: "cash-out",
+      label: "Cash Out",
+      actions: [
+        {
+          actionKey: "cash-out-workspace",
+          title: "Cash Out",
+          description: "Record expenses, project fund expenses, and payable payments",
+          icon: Receipt,
+          href: "/cash-out",
+          roles: ["admin", "super_user"],
+        },
+      ],
+    },
+    {
       value: "admin",
       label: t("flows.adminFlow"),
       actions: [

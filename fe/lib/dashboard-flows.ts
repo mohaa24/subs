@@ -2,6 +2,8 @@ export const DASHBOARD_FLOWS = [
   "person",
   "membership",
   "payment",
+  "cash-in",
+  "cash-out",
   "admin",
   "announcements",
   "distributions",

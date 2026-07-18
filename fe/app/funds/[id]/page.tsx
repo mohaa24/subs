@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Landmark, Plus, ReceiptText } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
@@ -88,7 +88,10 @@ export default function FundDetailPage() {
   const { user, loading } = useAuth();
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fundId = typeof params.id === "string" ? params.id : "";
+  const mode = searchParams.get("mode");
+  const fundMode = mode === "cash-in" || mode === "cash-out" ? mode : null;
   const canManageFunds = user?.role === "admin" || user?.role === "super_user";
 
   const [fund, setFund] = useState<FundPot | null>(null);
@@ -136,6 +139,8 @@ export default function FundDetailPage() {
   const transferLimit = Math.abs(liveBalance);
   const transferDirection = liveBalance > 0 ? "surplus out of this project fund" : "deficit into this project fund";
   const transferredFromFundPerspective = -(fund?.summary?.netTransferred ?? 0);
+  const backHref = fundMode ? `/${fundMode}` : "/funds";
+  const backLabel = fundMode === "cash-in" ? "Back to Cash In" : fundMode === "cash-out" ? "Back to Cash Out" : "Back to fund summary";
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -309,17 +314,17 @@ export default function FundDetailPage() {
       <main className="relative z-10 p-6 max-w-7xl mx-auto space-y-6">
         <Breadcrumb
           items={[
-            { label: "Dashboard", href: dashboardFlowHref("funds") },
-            { label: "Funds Management", href: "/funds" },
+            { label: "Dashboard", href: dashboardFlowHref(fundMode ?? "funds") },
+            { label: fundMode === "cash-in" ? "Cash In" : fundMode === "cash-out" ? "Cash Out" : "Funds Management", href: backHref },
             { label: fund?.name || "Fund Details" },
           ]}
         />
 
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="space-y-2">
-            <Button variant="ghost" className="px-0 text-muted-foreground" onClick={() => router.push("/funds")}>
+            <Button variant="ghost" className="px-0 text-muted-foreground" onClick={() => router.push(backHref)}>
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to fund summary
+              {backLabel}
             </Button>
             <div>
               <h1 className="text-xl font-semibold text-foreground">{fund?.name || "Fund Details"}</h1>
@@ -340,13 +345,23 @@ export default function FundDetailPage() {
           </div>
           {canManageFunds ? (
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setCollectionOpen(true)} disabled={fundClosed || submitting || loadingData}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Collection
-              </Button>
-              <Button onClick={() => setExpenseOpen(true)} disabled={fundClosed || submitting || loadingData} variant="outline">Add Expense</Button>
-              <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="outline">Transfer Balance</Button>
-              <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="destructive">Close Fund</Button>
+              {fundMode !== "cash-out" ? (
+                <Button onClick={() => setCollectionOpen(true)} disabled={fundClosed || submitting || loadingData}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  {fundMode === "cash-in" ? "Record Income" : "Add Collection"}
+                </Button>
+              ) : null}
+              {fundMode !== "cash-in" ? (
+                <Button onClick={() => setExpenseOpen(true)} disabled={fundClosed || submitting || loadingData} variant={fundMode === "cash-out" ? "default" : "outline"}>
+                  {fundMode === "cash-out" ? "Record Expense" : "Add Expense"}
+                </Button>
+              ) : null}
+              {!fundMode ? (
+                <>
+                  <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="outline">Transfer Balance</Button>
+                  <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="destructive">Close Fund</Button>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>

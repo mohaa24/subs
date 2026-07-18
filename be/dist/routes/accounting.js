@@ -142,6 +142,20 @@ const transferSchema = zod_1.z.object({
     entryDate: zod_1.z.string().optional(),
     description: zod_1.z.string().trim().min(1).max(300),
 });
+const cashTransactionSchema = zod_1.z.object({
+    accountId: zod_1.z.string().min(1),
+    cashBankAccountId: zod_1.z.string().min(1),
+    amount: moneySchema,
+    transactionDate: zod_1.z.string().optional(),
+    counterpartyName: zod_1.z.string().trim().min(1).max(160),
+    counterpartyPhone: zod_1.z.string().trim().max(40).optional().nullable(),
+    counterpartyMembershipId: zod_1.z.string().optional().nullable(),
+    reference: zod_1.z.string().trim().max(120).optional().nullable(),
+    description: zod_1.z.string().trim().max(500).optional().nullable(),
+});
+const cashReverseSchema = zod_1.z.object({
+    reason: zod_1.z.string().trim().min(1, "Reversal reason is required").max(500),
+});
 const createFundSchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(1).max(120),
     description: zod_1.z.string().trim().max(500).optional().nullable(),
@@ -379,6 +393,381 @@ function buildFundReceipt(transaction, collectedByEmail) {
         collectedBy: collectedByEmail ?? null,
     };
 }
+function firstOfMonth(date = new Date()) {
+    return startOfDay(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+function firstOfYear(date = new Date()) {
+    return startOfDay(new Date(date.getFullYear(), 0, 1));
+}
+function cashFlowRange(query) {
+    const from = optionalDateFromQuery(query.fromDate) ?? firstOfYear();
+    const toEnd = optionalDateFromQuery(query.toDate) ? endOfDay(optionalDateFromQuery(query.toDate)) : endOfDay(new Date());
+    return { from, toEnd };
+}
+function cashDocumentPrefix(flowType, transactionDate) {
+    const year = transactionDate.getFullYear();
+    const month = String(transactionDate.getMonth() + 1).padStart(2, "0");
+    return `${flowType === "cash_in" ? "RC" : "PV"}${year}${month}`;
+}
+async function generateCashDocumentNumber(tx, organizationId, flowType, transactionDate) {
+    const prefix = cashDocumentPrefix(flowType, transactionDate);
+    const latest = await tx.cashTransaction.findFirst({
+        where: { organizationId, documentNumber: { startsWith: prefix } },
+        orderBy: { documentNumber: "desc" },
+        select: { documentNumber: true },
+    });
+    const previousSequence = latest?.documentNumber
+        ? parseInt(latest.documentNumber.slice(prefix.length), 10) || 0
+        : 0;
+    return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
+}
+function cashTransactionLabel(category) {
+    if (category === "operating_income")
+        return "Operating income";
+    if (category === "receivable_collection")
+        return "Receivable collection";
+    if (category === "operating_expense")
+        return "Operating expense";
+    return "Payable payment";
+}
+function cashAccountWhere(flowType, category) {
+    if (flowType === "cash_in" && category === "operating_income") {
+        return {
+            accountType: "income",
+            assetSubtype: "operating_income",
+            OR: [{ systemKey: null }, { NOT: { systemKey: { startsWith: "income_due_type_" } } }],
+        };
+    }
+    if (flowType === "cash_in" && category === "receivable_collection") {
+        return { accountType: "asset", assetSubtype: "receivable" };
+    }
+    if (flowType === "cash_out" && category === "operating_expense") {
+        return { accountType: "expense", assetSubtype: "operating_expense" };
+    }
+    return { accountType: "liability", assetSubtype: "payable" };
+}
+function cashAccountBalance(accountType, debit = new library_1.Decimal(0), credit = new library_1.Decimal(0)) {
+    return (0, accounting_js_1.accountBalanceExpression)(accountType, debit, credit);
+}
+async function groupedAccountTotals(tx, organizationId, accountIds, from, toEnd) {
+    if (!accountIds.length)
+        return new Map();
+    const rows = await tx.accountingJournalLine.groupBy({
+        by: ["accountId", "side"],
+        where: {
+            organizationId,
+            accountId: { in: accountIds },
+            journalEntry: {
+                ...(from || toEnd
+                    ? {
+                        entryDate: {
+                            ...(from ? { gte: startOfDay(from) } : {}),
+                            ...(toEnd ? { lte: toEnd } : {}),
+                        },
+                    }
+                    : {}),
+            },
+        },
+        _sum: { amount: true },
+    });
+    const totals = new Map();
+    for (const row of rows) {
+        const existing = totals.get(row.accountId) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+        if (row.side === "debit")
+            existing.debit = existing.debit.add(row._sum.amount ?? new library_1.Decimal(0));
+        else
+            existing.credit = existing.credit.add(row._sum.amount ?? new library_1.Decimal(0));
+        totals.set(row.accountId, existing);
+    }
+    return totals;
+}
+async function latestAccountActivity(tx, organizationId, accountIds) {
+    const latest = new Map();
+    await Promise.all(accountIds.map(async (accountId) => {
+        const line = await tx.accountingJournalLine.findFirst({
+            where: { organizationId, accountId },
+            orderBy: [{ journalEntry: { entryDate: "desc" } }, { createdAt: "desc" }],
+            select: { accountId: true, journalEntry: { select: { entryDate: true } } },
+        });
+        if (line)
+            latest.set(accountId, line.journalEntry.entryDate.toISOString());
+    }));
+    return latest;
+}
+function serializeCashTransaction(txRow) {
+    return {
+        ...txRow,
+        amount: Number(txRow.amount),
+        transactionDate: txRow.transactionDate.toISOString(),
+        createdAt: txRow.createdAt.toISOString(),
+        reversedAt: txRow.reversedAt?.toISOString?.() ?? null,
+    };
+}
+function cashRowFromAccount(account, periodTotals, monthTotals, latest) {
+    const period = periodTotals.get(account.id) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+    const month = monthTotals.get(account.id) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+    return {
+        id: account.id,
+        name: account.name,
+        accountType: account.accountType,
+        assetSubtype: account.assetSubtype,
+        systemKey: account.systemKey,
+        isActive: account.isActive,
+        periodTotal: asNumber(cashAccountBalance(account.accountType, period.debit, period.credit)),
+        thisMonthTotal: asNumber(cashAccountBalance(account.accountType, month.debit, month.credit)),
+        lastRecordedAt: latest.get(account.id) ?? null,
+    };
+}
+async function cashAccountRows(tx, organizationId, flowType, category, from, toEnd, search) {
+    const accounts = await tx.accountingAccount.findMany({
+        where: {
+            organizationId,
+            isActive: true,
+            ...cashAccountWhere(flowType, category),
+            ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+        },
+        orderBy: { name: "asc" },
+    });
+    const ids = accounts.map((account) => account.id);
+    const [periodTotals, monthTotals, latest] = await Promise.all([
+        groupedAccountTotals(tx, organizationId, ids, from, toEnd),
+        groupedAccountTotals(tx, organizationId, ids, firstOfMonth(), endOfDay(new Date())),
+        latestAccountActivity(tx, organizationId, ids),
+    ]);
+    return accounts.map((account) => cashRowFromAccount(account, periodTotals, monthTotals, latest));
+}
+async function cashFundRows(tx, organizationId, flowType, from, toEnd, search) {
+    const funds = await tx.fundPot.findMany({
+        where: {
+            organizationId,
+            status: "active",
+            ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+        },
+        include: {
+            transactions: {
+                where: { transactionDate: { lte: toEnd } },
+                orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+            },
+        },
+        orderBy: { name: "asc" },
+    });
+    const monthStart = firstOfMonth();
+    const monthEnd = endOfDay(new Date());
+    const targetType = flowType === "cash_in" ? "collection" : "expense";
+    return funds.map((fund) => {
+        const periodSummary = summarizeFundTransactions(fund.transactions, from, toEnd);
+        const monthSummary = summarizeFundTransactions(fund.transactions, monthStart, monthEnd);
+        const last = [...fund.transactions]
+            .reverse()
+            .find((txRow) => txRow.transactionType === targetType);
+        return {
+            id: fund.id,
+            name: fund.name,
+            status: fund.status,
+            periodTotal: flowType === "cash_in" ? periodSummary.received : periodSummary.spent,
+            thisMonthTotal: flowType === "cash_in" ? monthSummary.received : monthSummary.spent,
+            lastRecordedAt: last?.transactionDate.toISOString() ?? null,
+            summary: periodSummary,
+        };
+    });
+}
+async function buildCashFlowOverview(req, res, flowType) {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const sections = flowType === "cash_in"
+        ? [
+            { key: "operating_income", title: "Operating Income" },
+            { key: "project_fund_collection", title: "Project Fund Collection" },
+            { key: "receivable_collection", title: "Receivable Collection" },
+        ]
+        : [
+            { key: "operating_expense", title: "Operating Expenses" },
+            { key: "project_fund_expense", title: "Project Fund Expenses" },
+            { key: "payable_payment", title: "Payable Payments" },
+        ];
+    const data = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const operatingCategory = flowType === "cash_in" ? "operating_income" : "operating_expense";
+        const balanceCategory = flowType === "cash_in" ? "receivable_collection" : "payable_payment";
+        const [operatingRows, fundRows, balanceRows] = await Promise.all([
+            cashAccountRows(tx, orgId, flowType, operatingCategory, from, toEnd, search),
+            cashFundRows(tx, orgId, flowType, from, toEnd, search),
+            cashAccountRows(tx, orgId, flowType, balanceCategory, from, toEnd, search),
+        ]);
+        const rowsByKey = flowType === "cash_in"
+            ? { operating_income: operatingRows, project_fund_collection: fundRows, receivable_collection: balanceRows }
+            : { operating_expense: operatingRows, project_fund_expense: fundRows, payable_payment: balanceRows };
+        return sections.map((section) => {
+            const rows = rowsByKey[section.key] ?? [];
+            return {
+                ...section,
+                rows,
+                total: Number(rows.reduce((sum, row) => sum + row.periodTotal, 0).toFixed(2)),
+            };
+        });
+    });
+    const totals = data.reduce((sum, section) => ({
+        periodTotal: sum.periodTotal + section.total,
+        accountCount: sum.accountCount + section.rows.length,
+    }), { periodTotal: 0, accountCount: 0 });
+    return res.json({
+        flowType,
+        fromDate: from.toISOString(),
+        toDate: toEnd.toISOString(),
+        sections: data,
+        totals: { ...totals, periodTotal: Number(totals.periodTotal.toFixed(2)) },
+    });
+}
+async function loadCashAccountDetail(req, res, flowType) {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const account = await prisma_js_1.prisma.accountingAccount.findFirst({
+        where: { id: req.params.id, organizationId: orgId },
+    });
+    if (!account)
+        return res.status(404).json({ error: "Account not found" });
+    const [periodTotals, allTotals, history] = await prisma_js_1.prisma.$transaction(async (tx) => Promise.all([
+        groupedAccountTotals(tx, orgId, [account.id], from, toEnd),
+        groupedAccountTotals(tx, orgId, [account.id], null, null),
+        tx.cashTransaction.findMany({
+            where: {
+                organizationId: orgId,
+                accountId: account.id,
+                flowType,
+                transactionDate: { gte: from, lte: toEnd },
+            },
+            include: {
+                cashBankAccount: { select: { id: true, name: true } },
+                counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
+                createdBy: { select: { email: true } },
+                reversedBy: { select: { email: true } },
+            },
+            orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
+            take: 100,
+        }),
+    ]));
+    const period = periodTotals.get(account.id) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+    const all = allTotals.get(account.id) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+    const summary = account.accountType === "asset" && account.assetSubtype === "receivable"
+        ? {
+            totalGiven: asNumber(all.debit),
+            totalCollected: asNumber(all.credit),
+            outstandingBalance: asNumber(all.debit.sub(all.credit)),
+        }
+        : account.accountType === "liability" && account.assetSubtype === "payable"
+            ? {
+                totalPayable: asNumber(all.credit),
+                totalPaid: asNumber(all.debit),
+                outstandingBalance: asNumber(all.credit.sub(all.debit)),
+            }
+            : {
+                periodTotal: asNumber(cashAccountBalance(account.accountType, period.debit, period.credit)),
+                debitTotal: asNumber(period.debit),
+                creditTotal: asNumber(period.credit),
+            };
+    return res.json({
+        account: serializeAccount({ ...account, debitTotal: all.debit, creditTotal: all.credit, balance: cashAccountBalance(account.accountType, all.debit, all.credit) }),
+        fromDate: from.toISOString(),
+        toDate: toEnd.toISOString(),
+        summary,
+        history: history.map(serializeCashTransaction),
+    });
+}
+async function createCashTransaction(req, res, flowType, category) {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = cashTransactionSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const amount = new library_1.Decimal(parsed.data.amount);
+    const transactionDate = parsed.data.transactionDate ? new Date(parsed.data.transactionDate) : new Date();
+    const transaction = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const [account, cashBankAccount] = await Promise.all([
+            tx.accountingAccount.findFirst({
+                where: { id: parsed.data.accountId, organizationId: orgId, isActive: true, ...cashAccountWhere(flowType, category) },
+            }),
+            tx.accountingAccount.findFirst({
+                where: {
+                    id: parsed.data.cashBankAccountId,
+                    organizationId: orgId,
+                    accountType: "asset",
+                    assetSubtype: "cash_bank",
+                    isActive: true,
+                },
+            }),
+        ]);
+        if (!account)
+            throw new Error("Selected account is not valid for this cash flow");
+        if (!cashBankAccount)
+            throw new Error("Payment method must be an active cash/bank account");
+        let counterpartyPhone = parsed.data.counterpartyPhone ?? null;
+        if (parsed.data.counterpartyMembershipId) {
+            const membership = await tx.membership.findFirst({
+                where: { id: parsed.data.counterpartyMembershipId, organizationId: orgId },
+                select: { id: true, hod: { select: { mobileNumber: true, whatsAppNumber: true } } },
+            });
+            if (!membership)
+                throw new Error("Selected member was not found");
+            counterpartyPhone = counterpartyPhone || membership.hod?.mobileNumber || membership.hod?.whatsAppNumber || null;
+        }
+        const documentNumber = await generateCashDocumentNumber(tx, orgId, flowType, transactionDate);
+        const label = cashTransactionLabel(category);
+        const description = parsed.data.description || `${label}: ${account.name}`;
+        const lines = flowType === "cash_in"
+            ? [
+                { accountId: cashBankAccount.id, side: "debit", amount, memo: parsed.data.reference ?? null },
+                { accountId: account.id, side: "credit", amount, memo: parsed.data.reference ?? null },
+            ]
+            : [
+                { accountId: account.id, side: "debit", amount, memo: parsed.data.reference ?? null },
+                { accountId: cashBankAccount.id, side: "credit", amount, memo: parsed.data.reference ?? null },
+            ];
+        const journalEntry = await (0, accounting_js_1.createJournalEntry)(tx, {
+            organizationId: orgId,
+            entryDate: transactionDate,
+            entryType: category === "operating_expense" ? "expense" : "manual_adjustment",
+            description,
+            referenceType: category,
+            isSystemEntry: false,
+            createdByUserId: req.auth.userId,
+            lines,
+        });
+        const cashTransaction = await tx.cashTransaction.create({
+            data: {
+                organizationId: orgId,
+                flowType,
+                category,
+                accountId: account.id,
+                cashBankAccountId: cashBankAccount.id,
+                amount,
+                transactionDate,
+                counterpartyName: parsed.data.counterpartyName,
+                counterpartyPhone,
+                counterpartyMembershipId: parsed.data.counterpartyMembershipId || null,
+                reference: parsed.data.reference ?? null,
+                description,
+                documentNumber,
+                journalEntryId: journalEntry.id,
+                createdByUserId: req.auth.userId,
+            },
+            include: { account: true, cashBankAccount: true, journalEntry: true },
+        });
+        await tx.accountingJournalEntry.update({
+            where: { id: journalEntry.id },
+            data: { referenceId: cashTransaction.id },
+        });
+        return cashTransaction;
+    });
+    return res.status(201).json(serializeCashTransaction(transaction));
+}
 function serializeFundPot(fund, summary) {
     return {
         ...fund,
@@ -465,6 +854,61 @@ exports.accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRou
         },
     });
     return res.json(updated);
+}));
+exports.accountingRouter.get("/cash-in/overview", asyncRoute((req, res) => buildCashFlowOverview(req, res, "cash_in")));
+exports.accountingRouter.get("/cash-out/overview", asyncRoute((req, res) => buildCashFlowOverview(req, res, "cash_out")));
+exports.accountingRouter.get("/cash-in/accounts/:id", asyncRoute((req, res) => loadCashAccountDetail(req, res, "cash_in")));
+exports.accountingRouter.get("/cash-out/accounts/:id", asyncRoute((req, res) => loadCashAccountDetail(req, res, "cash_out")));
+exports.accountingRouter.post("/cash-in/operating-income", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "operating_income")));
+exports.accountingRouter.post("/cash-in/receivable-collections", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "receivable_collection")));
+exports.accountingRouter.post("/cash-out/operating-expenses", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "operating_expense")));
+exports.accountingRouter.post("/cash-out/payable-payments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "payable_payment")));
+exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = cashReverseSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const updated = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const transaction = await tx.cashTransaction.findFirst({
+            where: { id: req.params.id, organizationId: orgId },
+            include: { journalEntry: { include: { lines: true } } },
+        });
+        if (!transaction)
+            throw new Error("Cash transaction not found");
+        if (transaction.reversedAt)
+            throw new Error("Cash transaction is already reversed");
+        if (!transaction.journalEntry)
+            throw new Error("Original journal entry was not found");
+        await (0, accounting_js_1.createJournalEntry)(tx, {
+            organizationId: orgId,
+            entryDate: new Date(),
+            entryType: "manual_adjustment",
+            description: `Cash transaction reversal: ${parsed.data.reason}`,
+            referenceType: "cash_transaction_reversal",
+            referenceId: transaction.id,
+            isSystemEntry: true,
+            createdByUserId: req.auth.userId,
+            lines: transaction.journalEntry.lines.map((line) => ({
+                accountId: line.accountId,
+                side: line.side === "debit" ? "credit" : "debit",
+                amount: line.amount,
+                memo: `Reversal for ${transaction.documentNumber ?? transaction.id}`,
+            })),
+        });
+        return tx.cashTransaction.update({
+            where: { id: transaction.id },
+            data: {
+                reversedAt: new Date(),
+                reversedByUserId: req.auth.userId,
+                reversalReason: parsed.data.reason,
+            },
+            include: { account: true, cashBankAccount: true, reversedBy: { select: { email: true } } },
+        });
+    });
+    return res.json(serializeCashTransaction(updated));
 }));
 exports.accountingRouter.get("/funds", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
