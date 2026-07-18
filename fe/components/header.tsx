@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { RefObject } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useTranslation } from "@/lib/i18n";
 import { api } from "@/lib/api";
@@ -11,6 +11,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   BarChart3,
+  Bell,
   Building2,
   ChevronDown,
   ClipboardList,
@@ -23,6 +24,7 @@ import {
   PiggyBank,
   QrCode,
   ReceiptText,
+  Search,
   Settings,
   Shield,
   Users,
@@ -58,6 +60,13 @@ type NavItem = {
   badge?: string;
   disabled?: boolean;
   children?: NavChild[];
+};
+
+type SearchItem = {
+  label: string;
+  description: string;
+  href?: string;
+  disabled?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -143,6 +152,27 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const SEARCH_ITEMS: SearchItem[] = NAV_ITEMS.flatMap((item) => {
+  const firstChildHref = item.children?.find((child) => !child.disabled && child.href)?.href;
+  const groupItem: SearchItem[] = item.href || firstChildHref || item.disabled
+    ? [
+        {
+          label: item.label,
+          description: item.disabled ? "Coming soon" : "Open section",
+          href: item.href ?? firstChildHref,
+          disabled: item.disabled,
+        },
+      ]
+    : [{ label: item.label, description: "Navigation group", disabled: true }];
+  const children = item.children?.map((child) => ({
+    label: child.label,
+    description: `${item.label}${child.disabled ? " - Coming soon" : ""}`,
+    href: child.href,
+    disabled: child.disabled,
+  })) ?? [];
+  return [...groupItem, ...children];
+});
+
 function isActivePath(pathname: string, href?: string) {
   if (!href) return false;
   const cleanHref = href.split("?")[0];
@@ -156,10 +186,8 @@ function itemIsActive(pathname: string, item: NavItem) {
 
 function MenuPanel({
   onNavigate,
-  footer,
 }: {
   onNavigate?: () => void;
-  footer: ReactNode;
 }) {
   const pathname = usePathname();
   const initialOpen = useMemo(() => {
@@ -257,7 +285,6 @@ function MenuPanel({
         })}
       </nav>
 
-      {footer}
     </div>
   );
 }
@@ -268,8 +295,10 @@ export function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const langRef = useRef<HTMLDivElement>(null);
+  const desktopUserMenuRef = useRef<HTMLDivElement>(null);
+  const mobileUserMenuRef = useRef<HTMLDivElement>(null);
+  const desktopLangRef = useRef<HTMLDivElement>(null);
+  const mobileLangRef = useRef<HTMLDivElement>(null);
 
   const currentLocaleOption = LOCALE_OPTIONS.find((o) => o.value === locale) || LOCALE_OPTIONS[0];
   const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : "??";
@@ -289,10 +318,16 @@ export function Header() {
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const clickedUserMenu =
+        desktopUserMenuRef.current?.contains(target) || mobileUserMenuRef.current?.contains(target);
+      const clickedLangMenu =
+        desktopLangRef.current?.contains(target) || mobileLangRef.current?.contains(target);
+
+      if (!clickedUserMenu) {
         setUserMenuOpen(false);
       }
-      if (langRef.current && !langRef.current.contains(e.target as Node)) {
+      if (!clickedLangMenu) {
         setLangOpen(false);
       }
     }
@@ -300,42 +335,52 @@ export function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [userMenuOpen, langOpen]);
 
-  const footer = (
-    <div className="border-t border-white/10 p-4">
-      <div className="mb-3 rounded-md bg-white/8 px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Building2 className="h-4 w-4 text-blue-100" />
-          <span className="truncate">{orgName || "Membership"}</span>
-        </div>
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <LanguageMenu
-          compact
-          langRef={langRef}
-          langOpen={langOpen}
-          setLangOpen={setLangOpen}
-          currentLocaleOption={currentLocaleOption}
-          setLocale={setLocale}
-        />
-        <UserMenu
-          dark
-          initials={initials}
-          user={user}
-          userMenuRef={userMenuRef}
-          open={userMenuOpen}
-          setOpen={setUserMenuOpen}
-          logout={logout}
-          t={t}
-        />
-      </div>
-    </div>
-  );
-
   return (
     <>
       <aside className="civica-sidebar fixed inset-y-0 left-0 z-50 hidden w-[17rem] lg:block">
-        <MenuPanel footer={footer} />
+        <MenuPanel />
       </aside>
+
+      <header className="civica-toolbar sticky top-0 z-40 hidden h-[4.5rem] items-center justify-between border-b border-border/60 bg-background/95 px-6 backdrop-blur-sm lg:flex">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10">
+            <Building2 className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{orgName || "Membership"}</p>
+            <p className="text-xs text-muted-foreground">Workspace</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <NavigationSearch />
+          <LanguageMenu
+            langRef={desktopLangRef}
+            langOpen={langOpen}
+            setLangOpen={setLangOpen}
+            currentLocaleOption={currentLocaleOption}
+            setLocale={setLocale}
+          />
+          <button
+            type="button"
+            className="relative flex h-10 w-10 items-center justify-center rounded-md border border-border/70 bg-card shadow-sm transition-colors hover:bg-accent/50"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5 text-muted-foreground" />
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+              3
+            </span>
+          </button>
+          <UserMenu
+            initials={initials}
+            user={user}
+            userMenuRef={desktopUserMenuRef}
+            open={userMenuOpen}
+            setOpen={setUserMenuOpen}
+            logout={logout}
+            t={t}
+          />
+        </div>
+      </header>
 
       <header className="sticky top-0 z-50 flex items-center justify-between border-b border-border/60 bg-card/90 px-4 py-3 backdrop-blur-sm lg:hidden">
         <button
@@ -352,7 +397,7 @@ export function Header() {
         </Link>
         <div className="flex items-center gap-2">
           <LanguageMenu
-            langRef={langRef}
+            langRef={mobileLangRef}
             langOpen={langOpen}
             setLangOpen={setLangOpen}
             currentLocaleOption={currentLocaleOption}
@@ -361,7 +406,7 @@ export function Header() {
           <UserMenu
             initials={initials}
             user={user}
-            userMenuRef={userMenuRef}
+            userMenuRef={mobileUserMenuRef}
             open={userMenuOpen}
             setOpen={setUserMenuOpen}
             logout={logout}
@@ -387,11 +432,83 @@ export function Header() {
             >
               <X className="h-4 w-4" />
             </button>
-            <MenuPanel onNavigate={() => setMenuOpen(false)} footer={footer} />
+            <MenuPanel onNavigate={() => setMenuOpen(false)} />
           </div>
         </div>
       ) : null}
     </>
+  );
+}
+
+function NavigationSearch() {
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const trimmedQuery = query.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (!trimmedQuery) return [];
+    return SEARCH_ITEMS.filter((item) => {
+      const haystack = `${item.label} ${item.description}`.toLowerCase();
+      return haystack.includes(trimmedQuery);
+    }).slice(0, 5);
+  }, [trimmedQuery]);
+  const showPanel = focused && trimmedQuery.length > 0;
+
+  return (
+    <div className="relative w-[320px]">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+        placeholder="Search anything..."
+        className="h-11 w-full rounded-md border border-border/70 bg-card pl-10 pr-3 text-sm shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+      />
+      {showPanel ? (
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-md border border-border/80 bg-popover shadow-xl shadow-black/10">
+          {results.length ? (
+            <div className="py-1.5">
+              {results.map((item) => {
+                const content = (
+                  <>
+                    <span className="truncate text-sm font-medium text-foreground">{item.label}</span>
+                    <span className="truncate text-xs text-muted-foreground">{item.description}</span>
+                  </>
+                );
+
+                if (item.disabled || !item.href) {
+                  return (
+                    <div
+                      key={`${item.label}-${item.description}`}
+                      className="flex cursor-not-allowed flex-col gap-0.5 px-3 py-2 opacity-60"
+                      aria-disabled="true"
+                    >
+                      {content}
+                    </div>
+                  );
+                }
+
+                return (
+                  <Link
+                    key={`${item.label}-${item.description}`}
+                    href={item.href}
+                    onClick={() => {
+                      setQuery("");
+                      setFocused(false);
+                    }}
+                    className="flex flex-col gap-0.5 px-3 py-2 transition-colors hover:bg-accent"
+                  >
+                    {content}
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="px-3 py-3 text-sm text-muted-foreground">No navigation results</div>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

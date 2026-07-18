@@ -40,6 +40,11 @@
 
 @layer components {
   @media (min-width: 1024px) {
+    .civica-toolbar {
+      margin-left: 17rem;
+      width: calc(100vw - 17rem);
+    }
+
     .civica-sidebar ~ main {
       margin-left: 17rem !important;
       max-width: calc(100vw - 17rem) !important;
