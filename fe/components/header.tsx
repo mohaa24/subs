@@ -21,7 +21,6 @@ import {
   LogOut,
   Menu,
   PieChart,
-  PiggyBank,
   QrCode,
   ReceiptText,
   Search,
@@ -108,7 +107,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Bank Transfers", badge: "Soon", disabled: true },
     ],
   },
-  { key: "funds", label: "Special Funds", icon: PiggyBank, href: "/funds" },
+  { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds" },
   { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables" },
   { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables" },
   {

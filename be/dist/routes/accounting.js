@@ -459,7 +459,11 @@ function cashAccountWhere(flowType, category) {
     if (flowType === "cash_out" && category === "operating_expense") {
         return { accountType: "expense", assetSubtype: "operating_expense" };
     }
-    return { accountType: "liability", assetSubtype: { in: payableSubtypes } };
+    return {
+        accountType: "liability",
+        assetSubtype: { in: payableSubtypes },
+        OR: [{ systemKey: null }, { systemKey: { not: "liability_member_credit" } }],
+    };
 }
 function isReceivableSubtype(subtype) {
     return receivableSubtypes.includes(subtype);
@@ -645,8 +649,8 @@ async function cashFundRows(tx, organizationId, flowType, from, toEnd, search) {
             id: fund.id,
             name: fund.name,
             status: fund.status,
-            periodTotal: flowType === "cash_in" ? periodSummary.received : periodSummary.spent,
-            thisMonthTotal: flowType === "cash_in" ? monthSummary.received : monthSummary.spent,
+            periodTotal: flowType === "cash_in" ? periodSummary.opening + periodSummary.received : periodSummary.spent,
+            thisMonthTotal: flowType === "cash_in" ? monthSummary.opening + monthSummary.received : monthSummary.spent,
             lastRecordedAt: last?.transactionDate.toISOString() ?? null,
             summary: periodSummary,
         };

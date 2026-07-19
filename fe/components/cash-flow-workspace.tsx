@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -166,8 +167,8 @@ function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
 }
 
 function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null, sectionKey?: string) {
-  if (category === "receivable_payment") return "Record Payment";
-  if (category === "receivable_collection") return "Add Collection";
+  if (category === "receivable_payment") return "Disburse Payment";
+  if (category === "receivable_collection") return "Recover Payment";
   if (category === "payable_recovery") return "Recover";
   if (category === "payable_payment") return "Make Payment";
   return buttonLabel(flow, sectionKey);
@@ -667,8 +668,8 @@ function AccountDetailView({
       <div className="grid gap-3 md:grid-cols-3">
         {isReceivable ? (
           <>
-            <MetricCard icon={ReceiptText} label="Total Given" value={formatRs(detail.summary.totalGiven ?? 0)} />
-            <MetricCard icon={WalletCards} label="Total Collected" value={formatRs(detail.summary.totalCollected ?? 0)} />
+            <MetricCard icon={ReceiptText} label="Total Disbursed" value={formatRs(detail.summary.totalGiven ?? 0)} />
+            <MetricCard icon={WalletCards} label="Total Repaid" value={formatRs(detail.summary.totalCollected ?? 0)} />
             <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} />
           </>
         ) : isPayable ? (
@@ -686,76 +687,124 @@ function AccountDetailView({
         )}
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">{historyTitle}</CardTitle>
-          <div className="flex flex-wrap justify-end gap-2">
-            {isReceivable ? (
-              <>
-                <Button variant="outline" onClick={() => onRecord("receivable_payment")} disabled={!canManage}>Record Payment</Button>
-                <Button onClick={() => onRecord("receivable_collection")} disabled={!canManage}>Add Collection</Button>
-              </>
-            ) : isPayable ? (
-              <>
+      {isReceivable ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <CashHistoryCard
+            title="Disburse History (Cash Out)"
+            action={<Button onClick={() => onRecord("receivable_payment")} disabled={!canManage}>Disburse Payment</Button>}
+            flow={flow}
+            rows={detail.history.filter((transaction) => transaction.category === "receivable_payment")}
+            loadingData={loadingData}
+            canManage={canManage}
+            onReverse={onReverse}
+          />
+          <CashHistoryCard
+            title="Recovery History (Cash In)"
+            action={<Button onClick={() => onRecord("receivable_collection")} disabled={!canManage}>Recover Payment</Button>}
+            flow={flow}
+            rows={detail.history.filter((transaction) => transaction.category === "receivable_collection")}
+            loadingData={loadingData}
+            canManage={canManage}
+            onReverse={onReverse}
+          />
+        </div>
+      ) : (
+        <CashHistoryCard
+          title={historyTitle}
+          action={
+            isPayable ? (
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" onClick={() => onRecord("payable_recovery")} disabled={!canManage}>Recover</Button>
                 <Button onClick={() => onRecord("payable_payment")} disabled={!canManage}>Make Payment</Button>
-              </>
+              </div>
             ) : (
               <Button onClick={() => onRecord()} disabled={!canManage}>{config.actionLabel}</Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingData ? <div className="h-20 rounded-md bg-muted animate-pulse" /> : null}
-          {!loadingData && detail.history.length === 0 ? (
-            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No transactions recorded yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b text-left text-xs text-muted-foreground">
-                  <tr>
-                    <th className="p-2">Date</th>
-                    <th className="p-2">Details</th>
-                    <th className="p-2">Document</th>
-                    <th className="p-2 text-right">Amount</th>
-                    <th className="p-2">Status</th>
-                    <th className="p-2 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.history.map((transaction) => (
-                    <tr key={transaction.id} className="border-b last:border-0">
-                      <td className="p-2 whitespace-nowrap">{dateLabel(transaction.transactionDate)}</td>
-                      <td className="p-2">
-                        <div className="font-medium">{transaction.description || transaction.counterpartyName}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {actionLabel(flow, transaction.category)}
-                          {transaction.counterpartyName ? ` - ${transaction.counterpartyName}` : ""}
-                          {transaction.reference ? ` - ${transaction.reference}` : ""}
-                        </div>
-                      </td>
-                      <td className="p-2">
-                        <div className="font-mono text-xs">{transaction.documentNumber ?? "-"}</div>
-                        <div className="text-[10px] text-muted-foreground">{actionDocumentLabel(flow, transaction.category)}</div>
-                      </td>
-                      <td className="p-2 text-right font-semibold">{formatRs(transaction.amount)}</td>
-                      <td className="p-2">{transaction.reversedAt ? <span className="text-destructive">Reversed</span> : <span className="text-emerald-700">Posted</span>}</td>
-                      <td className="p-2 text-right">
-                        {!transaction.reversedAt && canManage ? (
-                          <Button size="sm" variant="outline" onClick={() => onReverse(transaction)}>
-                            <Undo2 className="mr-2 h-4 w-4" />
-                            Reverse
-                          </Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            )
+          }
+          flow={flow}
+          rows={detail.history}
+          loadingData={loadingData}
+          canManage={canManage}
+          onReverse={onReverse}
+        />
+      )}
     </div>
+  );
+}
+
+function CashHistoryCard({
+  title,
+  action,
+  flow,
+  rows,
+  loadingData,
+  canManage,
+  onReverse,
+}: {
+  title: string;
+  action: ReactNode;
+  flow: CashFlowSlug;
+  rows: CashTransaction[];
+  loadingData: boolean;
+  canManage: boolean;
+  onReverse: (transaction: CashTransaction) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardTitle className="text-base">{title}</CardTitle>
+        {action}
+      </CardHeader>
+      <CardContent>
+        {loadingData ? <div className="h-20 rounded-md bg-muted animate-pulse" /> : null}
+        {!loadingData && rows.length === 0 ? (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No transactions recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="p-2">Date</th>
+                  <th className="p-2">Details</th>
+                  <th className="p-2">Receipt Number</th>
+                  <th className="p-2 text-right">Amount</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((transaction) => (
+                  <tr key={transaction.id} className="border-b last:border-0">
+                    <td className="p-2 whitespace-nowrap">{dateLabel(transaction.transactionDate)}</td>
+                    <td className="p-2">
+                      <div className="font-medium">{transaction.description || transaction.counterpartyName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {actionLabel(flow, transaction.category)}
+                        {transaction.counterpartyName ? ` - ${transaction.counterpartyName}` : ""}
+                        {transaction.reference ? ` - ${transaction.reference}` : ""}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <div className="font-mono text-xs">{transaction.documentNumber ?? "-"}</div>
+                      <div className="text-[10px] text-muted-foreground">{actionDocumentLabel(flow, transaction.category)}</div>
+                    </td>
+                    <td className="p-2 text-right font-semibold">{formatRs(transaction.amount)}</td>
+                    <td className="p-2">{transaction.reversedAt ? <span className="text-destructive">Reversed</span> : <span className="text-emerald-700">Posted</span>}</td>
+                    <td className="p-2 text-right">
+                      {!transaction.reversedAt && canManage ? (
+                        <Button size="sm" variant="outline" onClick={() => onReverse(transaction)}>
+                          <Undo2 className="mr-2 h-4 w-4" />
+                          Reverse
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

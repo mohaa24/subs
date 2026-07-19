@@ -193,30 +193,60 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
               </CardHeader>
               <CardContent className="space-y-2">
                 {groupRows.map((row) => (
-                  <div key={row.id} className="grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center">
-                    <div>
-                      <div className="font-medium text-foreground">{row.name}</div>
-                      <div className="text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><ReceiptText className="h-3.5 w-3.5" />YTD Total</div>
-                      <div className="font-semibold text-foreground">{formatRs(row.periodTotal)}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><WalletCards className="h-3.5 w-3.5" />This Month</div>
-                      <div className="font-semibold text-foreground">{formatRs(row.thisMonthTotal)}</div>
-                    </div>
-                    <div className="text-xs text-muted-foreground md:text-right">
-                      <div className="flex items-center gap-1.5 md:justify-end"><CalendarDays className="h-3.5 w-3.5" />Last Recorded</div>
-                      <div className="font-medium text-foreground">{dateLabel(row.lastRecordedAt)}</div>
-                    </div>
-                    <div className="flex items-center gap-2 md:justify-end">
-                      <Button asChild size="sm">
-                      <Link href={`${cfg.detailBase}/${row.id}`}>{cfg.actionLabel}</Link>
+                  <div key={row.id}>
+                    <div className="rounded-md border bg-card p-4 md:hidden">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-foreground">{row.name}</div>
+                          <div className="text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype}</div>
+                        </div>
+                        <Button asChild size="icon" variant="ghost" aria-label="Open account">
+                          <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
+                        </Button>
+                      </div>
+                      <div className="mt-4 grid gap-3 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex items-center gap-1.5 text-muted-foreground"><ReceiptText className="h-3.5 w-3.5" />YTD Total</span>
+                          <span className="font-semibold">{formatRs(row.periodTotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex items-center gap-1.5 text-muted-foreground"><WalletCards className="h-3.5 w-3.5" />This Month</span>
+                          <span className="font-semibold">{formatRs(row.thisMonthTotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex items-center gap-1.5 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />Last Recorded</span>
+                          <span className="font-medium">{dateLabel(row.lastRecordedAt)}</span>
+                        </div>
+                      </div>
+                      <Button asChild className="mt-4 w-full" size="sm">
+                        <Link href={`${cfg.detailBase}/${row.id}`}>{cfg.actionLabel}</Link>
                       </Button>
-                      <Button asChild size="icon" variant="ghost" aria-label="Open account">
-                        <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                      </Button>
+                    </div>
+                    <div className="hidden gap-3 rounded-md border bg-card p-3 md:grid md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center">
+                      <div>
+                        <div className="font-medium text-foreground">{row.name}</div>
+                        <div className="text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><ReceiptText className="h-3.5 w-3.5" />YTD Total</div>
+                        <div className="font-semibold text-foreground">{formatRs(row.periodTotal)}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><WalletCards className="h-3.5 w-3.5" />This Month</div>
+                        <div className="font-semibold text-foreground">{formatRs(row.thisMonthTotal)}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground md:text-right">
+                        <div className="flex items-center gap-1.5 md:justify-end"><CalendarDays className="h-3.5 w-3.5" />Last Recorded</div>
+                        <div className="font-medium text-foreground">{dateLabel(row.lastRecordedAt)}</div>
+                      </div>
+                      <div className="flex items-center gap-2 md:justify-end">
+                        <Button asChild size="sm">
+                          <Link href={`${cfg.detailBase}/${row.id}`}>{cfg.actionLabel}</Link>
+                        </Button>
+                        <Button asChild size="icon" variant="ghost" aria-label="Open account">
+                          <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}

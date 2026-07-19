@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -115,7 +116,7 @@ export default function FundDetailPage() {
     paidByName: "",
     paidByPhone: "",
     paidByMembershipId: "",
-    isMember: false,
+    reference: "",
     memo: "",
   });
   const [expense, setExpense] = useState({
@@ -123,6 +124,9 @@ export default function FundDetailPage() {
     transactionDate: todayString(),
     assetAccountId: "",
     description: "",
+    paidToPhone: "",
+    paidToMembershipId: "",
+    reference: "",
     memo: "",
   });
   const [transfer, setTransfer] = useState({
@@ -143,7 +147,7 @@ export default function FundDetailPage() {
   const transfers = fund?.transactions?.filter((tx) => tx.transactionType === "surplus_transfer" || tx.transactionType === "deficit_transfer") ?? [];
   const liveBalance = fund?.summary?.activeRemaining ?? 0;
   const transferLimit = Math.abs(liveBalance);
-  const transferDirection = liveBalance > 0 ? "surplus out of this project fund" : "deficit into this project fund";
+  const transferDirection = liveBalance > 0 ? "surplus out of this special fund" : "deficit into this special fund";
   const transferredFromFundPerspective = -(fund?.summary?.netTransferred ?? 0);
   const backHref = fundMode ? `/${fundMode}` : "/funds";
   const backLabel = fundMode === "cash-in" ? "Back to Cash In" : fundMode === "cash-out" ? "Back to Cash Out" : "Back to fund summary";
@@ -159,7 +163,7 @@ export default function FundDetailPage() {
   }, [fundId, user]);
 
   useEffect(() => {
-    if (!collection.isMember || memberQuery.trim().length < 2) {
+    if (memberQuery.trim().length < 2) {
       setMemberOptions([]);
       return;
     }
@@ -169,7 +173,7 @@ export default function FundDetailPage() {
         .catch(() => setMemberOptions([]));
     }, 250);
     return () => clearTimeout(timer);
-  }, [collection.isMember, memberQuery]);
+  }, [memberQuery]);
 
   async function loadFundDetails() {
     setLoadingData(true);
@@ -209,12 +213,12 @@ export default function FundDetailPage() {
           assetAccountId: collection.assetAccountId,
           paidByName: collection.paidByName,
           paidByPhone: collection.paidByPhone || null,
-          paidByMembershipId: collection.isMember ? collection.paidByMembershipId || null : null,
-          memo: collection.memo || null,
+          paidByMembershipId: collection.paidByMembershipId || null,
+          memo: [collection.reference, collection.memo].filter(Boolean).join(" - ") || null,
         }),
       });
       setCollectionOpen(false);
-      setCollection({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", isMember: false, memo: "" });
+      setCollection({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", reference: "", memo: "" });
       setMemberQuery("");
       await loadFundDetails();
       await openCollectionReceipt(transaction.id);
@@ -238,11 +242,11 @@ export default function FundDetailPage() {
           transactionDate: expense.transactionDate,
           assetAccountId: expense.assetAccountId,
           description: expense.description,
-          memo: expense.memo || null,
+          memo: [expense.reference, expense.paidToPhone, expense.memo].filter(Boolean).join(" - ") || null,
         }),
       });
       setExpenseOpen(false);
-      setExpense({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", description: "", memo: "" });
+      setExpense({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", description: "", paidToPhone: "", paidToMembershipId: "", reference: "", memo: "" });
       await loadFundDetails();
       toast({ title: "Expense added", description: "Restricted fund expense has been recorded." });
     } catch (err) {
@@ -279,6 +283,28 @@ export default function FundDetailPage() {
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to reverse fund transaction", description: err instanceof Error ? err.message : "Unable to reverse" });
     }
+  }
+
+  function handleSelectMember(member: MemberLookup) {
+    const memberName = member.hod?.fullName || member.hod?.nameWithInitials || "Member";
+    const label = `${member.membershipNo} - ${memberName}`;
+    if (expenseOpen) {
+      setExpense((v) => ({
+        ...v,
+        description: label,
+        paidToPhone: member.phoneNumber || v.paidToPhone,
+        paidToMembershipId: member.id,
+      }));
+    } else {
+      setCollection((v) => ({
+        ...v,
+        paidByName: label,
+        paidByPhone: member.phoneNumber || v.paidByPhone,
+        paidByMembershipId: member.id,
+      }));
+    }
+    setMemberQuery(label);
+    setMemberOptions([]);
   }
 
   async function handleTransferBalance(event: FormEvent) {
@@ -369,13 +395,13 @@ export default function FundDetailPage() {
           {canManageFunds ? (
             <div className="flex flex-wrap gap-2">
               {fundMode !== "cash-out" ? (
-                <Button onClick={() => setCollectionOpen(true)} disabled={fundClosed || submitting || loadingData}>
+                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
                   <Plus className="mr-2 h-4 w-4" />
                   {fundMode === "cash-in" ? "Record Income" : "Add Collection"}
                 </Button>
               ) : null}
               {fundMode !== "cash-in" ? (
-                <Button onClick={() => setExpenseOpen(true)} disabled={fundClosed || submitting || loadingData} variant={fundMode === "cash-out" ? "default" : "outline"}>
+                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant={fundMode === "cash-out" ? "default" : "outline"}>
                   {fundMode === "cash-out" ? "Record Expense" : "Add Expense"}
                 </Button>
               ) : null}
@@ -419,110 +445,117 @@ export default function FundDetailPage() {
       </main>
 
       <Dialog open={collectionOpen} onOpenChange={setCollectionOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Collection</DialogTitle></DialogHeader>
-          <form className="space-y-3" onSubmit={handleAddCollection}>
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={collection.transactionDate} onChange={(e) => setCollection((v) => ({ ...v, transactionDate: e.target.value }))} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Amount</Label>
-              <Input type="number" min="0" step="0.01" value={collection.amount} onChange={(e) => setCollection((v) => ({ ...v, amount: e.target.value }))} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Received Into</Label>
-              <Select value={collection.assetAccountId} onValueChange={(value) => setCollection((v) => ({ ...v, assetAccountId: value }))}>
-                <SelectTrigger><SelectValue placeholder="Select cash/bank account" /></SelectTrigger>
-                <SelectContent>{cashBankAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={collection.isMember}
-                onChange={(e) => setCollection((v) => ({ ...v, isMember: e.target.checked, paidByMembershipId: "", paidByName: "", paidByPhone: "" }))}
-              />
-              Paid by existing member
-            </label>
-            {collection.isMember ? (
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{fundMode === "cash-in" ? "Record Income" : "Add Collection"}</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={handleAddCollection}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={collection.transactionDate} onChange={(e) => setCollection((v) => ({ ...v, transactionDate: e.target.value }))} required />
+              </div>
+              <div>
+                <Label>Amount</Label>
+                <Input type="number" min="0" step="0.01" value={collection.amount} onChange={(e) => setCollection((v) => ({ ...v, amount: e.target.value }))} required />
+              </div>
+              <div>
+                <Label>Received From</Label>
+                <Input value={collection.paidByName} onChange={(e) => setCollection((v) => ({ ...v, paidByName: e.target.value, paidByMembershipId: "" }))} required />
+              </div>
               <div className="space-y-1.5">
-                <Label>Search Member</Label>
-                <Input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Search by membership number, name, or phone" />
+                <Label>Member Search</Label>
+                <Input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Search by name or membership no" />
                 {memberOptions.length > 0 ? (
-                  <Select
-                    value={collection.paidByMembershipId}
-                    onValueChange={(value) => {
-                      const member = memberOptions.find((item) => item.id === value);
-                      const memberName = member?.hod?.fullName || member?.hod?.nameWithInitials || "Member";
-                      setCollection((v) => ({
-                        ...v,
-                        paidByMembershipId: value,
-                        paidByName: member ? `${member.membershipNo} - ${memberName}` : v.paidByName,
-                        paidByPhone: member?.phoneNumber || v.paidByPhone,
-                      }));
-                    }}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
-                    <SelectContent>
-                      {memberOptions.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>
-                          {member.membershipNo} - {member.hod?.fullName || member.hod?.nameWithInitials || "Member"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="mt-1 max-h-36 overflow-auto rounded-md border bg-popover p-1">
+                    {memberOptions.map((member) => (
+                      <button type="button" key={member.id} className="w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" onClick={() => handleSelectMember(member)}>
+                        {member.membershipNo} - {member.hod?.fullName || member.hod?.nameWithInitials || "Member"}
+                      </button>
+                    ))}
+                  </div>
                 ) : null}
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label>Paid By</Label>
-                <Input value={collection.paidByName} onChange={(e) => setCollection((v) => ({ ...v, paidByName: e.target.value }))} required />
+              <div>
+                <Label>Payment Method</Label>
+                <Select value={collection.assetAccountId} onValueChange={(value) => setCollection((v) => ({ ...v, assetAccountId: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Select cash/bank account" /></SelectTrigger>
+                  <SelectContent>{cashBankAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Phone Number (Optional)</Label>
-              <Input value={collection.paidByPhone} onChange={(e) => setCollection((v) => ({ ...v, paidByPhone: e.target.value }))} placeholder="Auto-filled for existing members when available" />
+              <div>
+                <Label>Phone Number</Label>
+                <Input value={collection.paidByPhone} onChange={(e) => setCollection((v) => ({ ...v, paidByPhone: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Reference</Label>
+                <Input value={collection.reference} onChange={(e) => setCollection((v) => ({ ...v, reference: e.target.value }))} />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Optional Notes</Label>
-              <Input value={collection.memo} onChange={(e) => setCollection((v) => ({ ...v, memo: e.target.value }))} placeholder="Invoice, reference, or approval note" />
+            <div>
+              <Label>Description</Label>
+              <Textarea value={collection.memo} onChange={(e) => setCollection((v) => ({ ...v, memo: e.target.value }))} />
             </div>
-            <Button className="w-full" disabled={submitting || (collection.isMember && !collection.paidByMembershipId)}>
-              {submitting ? "Saving..." : "Add Collection"}
-            </Button>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setCollectionOpen(false)}>Cancel</Button>
+              <Button disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-in" ? "Record Income" : "Add Collection"}</Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={expenseOpen} onOpenChange={setExpenseOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Expense</DialogTitle></DialogHeader>
-          <form className="space-y-3" onSubmit={handleAddExpense}>
-            <div className="space-y-1.5">
-              <Label>Date</Label>
-              <Input type="date" value={expense.transactionDate} onChange={(e) => setExpense((v) => ({ ...v, transactionDate: e.target.value }))} required />
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{fundMode === "cash-out" ? "Record Expense" : "Add Expense"}</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={handleAddExpense}>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={expense.transactionDate} onChange={(e) => setExpense((v) => ({ ...v, transactionDate: e.target.value }))} required />
+              </div>
+              <div>
+                <Label>Amount</Label>
+                <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
+              </div>
+              <div>
+                <Label>Paid To</Label>
+                <Input value={expense.description} onChange={(e) => setExpense((v) => ({ ...v, description: e.target.value, paidToMembershipId: "" }))} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Member Search</Label>
+                <Input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)} placeholder="Search by name or membership no" />
+                {memberOptions.length > 0 ? (
+                  <div className="mt-1 max-h-36 overflow-auto rounded-md border bg-popover p-1">
+                    {memberOptions.map((member) => (
+                      <button type="button" key={member.id} className="w-full rounded px-2 py-1 text-left text-sm hover:bg-accent" onClick={() => handleSelectMember(member)}>
+                        {member.membershipNo} - {member.hod?.fullName || member.hod?.nameWithInitials || "Member"}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div>
+                <Label>Payment Method</Label>
+                <Select value={expense.assetAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, assetAccountId: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Select cash/bank account" /></SelectTrigger>
+                  <SelectContent>{cashBankAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Phone Number</Label>
+                <Input value={expense.paidToPhone} onChange={(e) => setExpense((v) => ({ ...v, paidToPhone: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Reference</Label>
+                <Input value={expense.reference} onChange={(e) => setExpense((v) => ({ ...v, reference: e.target.value }))} />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Amount</Label>
-              <Input type="number" min="0" step="0.01" value={expense.amount} onChange={(e) => setExpense((v) => ({ ...v, amount: e.target.value }))} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Paid From</Label>
-              <Select value={expense.assetAccountId} onValueChange={(value) => setExpense((v) => ({ ...v, assetAccountId: value }))}>
-                <SelectTrigger><SelectValue placeholder="Select cash/bank account" /></SelectTrigger>
-                <SelectContent>{cashBankAccounts.map((account) => <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
+            <div>
               <Label>Description</Label>
-              <Input value={expense.description} onChange={(e) => setExpense((v) => ({ ...v, description: e.target.value }))} required />
+              <Textarea value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Optional Notes</Label>
-              <Input value={expense.memo} onChange={(e) => setExpense((v) => ({ ...v, memo: e.target.value }))} placeholder="Invoice, reference, or approval note" />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setExpenseOpen(false)}>Cancel</Button>
+              <Button disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-out" ? "Record Expense" : "Add Expense"}</Button>
             </div>
-            <Button className="w-full" disabled={submitting}>{submitting ? "Saving..." : "Add Expense"}</Button>
           </form>
         </DialogContent>
       </Dialog>
@@ -639,7 +672,7 @@ function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
     note: receipt.note || null,
     collectedBy: receipt.collectedBy || undefined,
     memberQrValue: "",
-    receiptTitle: "PROJECT FUND RECEIPT",
+    receiptTitle: "SPECIAL FUND RECEIPT",
     primaryLabel: "Fund",
     nameLabel: "Paid By",
     amountLabel: "Collected",
