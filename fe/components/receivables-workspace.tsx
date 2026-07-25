@@ -302,6 +302,14 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
   async function handleCloseAccount() {
     if (!detail) return;
     const balance = detail.summary.outstandingBalance;
+    if (balance < 0) {
+      toast({
+        variant: "destructive",
+        title: "Cannot close receivable",
+        description: `This account has an overpayment of ${formatRs(Math.abs(balance))}. Please refund the overpayment before closing the account`,
+      });
+      return;
+    }
     const message = balance > 0
       ? `Close this account and write off ${formatRs(balance)} to Bad Debt Write-Off Expense?`
       : "Close this receivable account?";

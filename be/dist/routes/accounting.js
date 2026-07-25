@@ -677,8 +677,33 @@ async function receivableSums(tx, organizationId, accountIds, range) {
     }
     return { given, repaid };
 }
-function receivableBalance(given, repaid) {
-    return (given ?? new library_1.Decimal(0)).sub(repaid ?? new library_1.Decimal(0));
+async function receivableWriteOffSums(tx, organizationId, accountIds, range) {
+    if (!accountIds.length)
+        return new Map();
+    const rows = await tx.accountingJournalLine.groupBy({
+        by: ["accountId"],
+        where: {
+            organizationId,
+            accountId: { in: accountIds },
+            side: "credit",
+            journalEntry: {
+                referenceType: "receivable_write_off",
+                ...(range?.from || range?.toEnd
+                    ? {
+                        entryDate: {
+                            ...(range.from ? { gte: range.from } : {}),
+                            ...(range.toEnd ? { lte: range.toEnd } : {}),
+                        },
+                    }
+                    : {}),
+            },
+        },
+        _sum: { amount: true },
+    });
+    return new Map(rows.map((row) => [row.accountId, row._sum.amount ?? new library_1.Decimal(0)]));
+}
+function receivableBalance(given, repaid, writeOff) {
+    return (given ?? new library_1.Decimal(0)).sub(repaid ?? new library_1.Decimal(0)).sub(writeOff ?? new library_1.Decimal(0));
 }
 async function buildReceivableRows(tx, organizationId, input) {
     const accounts = await tx.accountingAccount.findMany({
@@ -690,15 +715,18 @@ async function buildReceivableRows(tx, organizationId, input) {
     });
     const ids = accounts.map((account) => account.id);
     const openingEnd = new Date(input.from.getTime() - 1);
-    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }] = await Promise.all([
+    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, openingWriteOffs, periodWriteOffs] = await Promise.all([
         receivableSums(tx, organizationId, ids, { toEnd: openingEnd }),
         receivableSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
+        receivableWriteOffSums(tx, organizationId, ids, { toEnd: openingEnd }),
+        receivableWriteOffSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
     ]);
     const rows = accounts.map((account) => {
-        const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id));
+        const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id), openingWriteOffs.get(account.id));
         const totalGiven = periodGiven.get(account.id) ?? new library_1.Decimal(0);
         const totalRepaid = periodRepaid.get(account.id) ?? new library_1.Decimal(0);
-        const outstandingBalance = openingBalance.add(totalGiven).sub(totalRepaid);
+        const periodWriteOff = periodWriteOffs.get(account.id) ?? new library_1.Decimal(0);
+        const outstandingBalance = openingBalance.add(totalGiven).sub(totalRepaid).sub(periodWriteOff);
         return {
             id: account.id,
             name: account.name,
@@ -731,9 +759,11 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
     });
     if (!account)
         return null;
-    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, history] = await Promise.all([
+    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, openingWriteOffs, periodWriteOffs, history] = await Promise.all([
         receivableSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
         receivableSums(tx, organizationId, [account.id], { from, toEnd }),
+        receivableWriteOffSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
+        receivableWriteOffSums(tx, organizationId, [account.id], { from, toEnd }),
         tx.cashTransaction.findMany({
             where: {
                 organizationId,
@@ -754,7 +784,7 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
             take: 300,
         }),
     ]);
-    const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id));
+    const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id), openingWriteOffs.get(account.id));
     let runningBalance = openingBalance;
     const serializedHistory = history.map((transaction) => {
         if (!transaction.reversedAt) {
@@ -772,6 +802,7 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
     }).reverse();
     const totalGiven = periodGiven.get(account.id) ?? new library_1.Decimal(0);
     const totalRepaid = periodRepaid.get(account.id) ?? new library_1.Decimal(0);
+    const totalWriteOff = periodWriteOffs.get(account.id) ?? new library_1.Decimal(0);
     return {
         account: {
             ...serializeAccount(account),
@@ -784,7 +815,7 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
         summary: {
             totalGiven: asNumber(totalGiven),
             totalRepaid: asNumber(totalRepaid),
-            outstandingBalance: asNumber(openingBalance.add(totalGiven).sub(totalRepaid)),
+            outstandingBalance: asNumber(openingBalance.add(totalGiven).sub(totalRepaid).sub(totalWriteOff)),
         },
         history: serializedHistory,
     };
@@ -1279,8 +1310,11 @@ exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, 
             throw new Error("Receivable account not found");
         if (!account.isActive || account.closedAt)
             throw new Error("Receivable account is already closed");
-        const { given, repaid } = await receivableSums(tx, orgId, [account.id]);
-        const outstanding = receivableBalance(given.get(account.id), repaid.get(account.id));
+        const [{ given, repaid }, writeOffs] = await Promise.all([
+            receivableSums(tx, orgId, [account.id]),
+            receivableWriteOffSums(tx, orgId, [account.id]),
+        ]);
+        const outstanding = receivableBalance(given.get(account.id), repaid.get(account.id), writeOffs.get(account.id));
         if (outstanding.lt(0)) {
             const amount = asNumber(outstanding.abs());
             const error = new Error(`This account has an overpayment of Rs. ${amount.toFixed(2)}. Please refund the overpayment before closing the account`);
