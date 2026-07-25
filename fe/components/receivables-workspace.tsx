@@ -27,7 +27,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
-import { api, type AccountingAccount, type CashTransaction, type ReceivableDetail, type ReceivableOverview } from "@/lib/api";
+import { PaymentReceiptDialog, type PaymentReceiptData } from "@/components/payment-receipt-dialog";
+import {
+  api,
+  apiAssetUrl,
+  type AccountingAccount,
+  type CashTransaction,
+  type CashTransactionReceipt,
+  type ReceivableDetail,
+  type ReceivableOverview,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 type Period = "this_month" | "this_year" | "all_time" | "custom";
@@ -99,6 +108,40 @@ function defaultTransactionForm(cashBankAccountId = "") {
   };
 }
 
+function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData {
+  return {
+    paymentKind: "fund",
+    organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
+    membershipNo: receipt.accountName,
+    membershipId: "",
+    memberName: receipt.counterpartyName,
+    paymentId: receipt.transactionId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.transactionDate,
+    paymentMethod: receipt.paymentMethod || "Cash/Bank",
+    paidAmount: receipt.amount,
+    appliedToDue: 0,
+    overpaymentToCredit: 0,
+    remainingAfter: 0,
+    outstandingAfterPayment: 0,
+    creditBalanceAfterPayment: 0,
+    note: receipt.reversalReason || receipt.description || receipt.reference || null,
+    collectedBy: receipt.collectedBy || undefined,
+    memberQrValue: "",
+    receiptTitle: receipt.receiptTitle,
+    primaryLabel: "Account",
+    nameLabel: receipt.counterpartyLabel,
+    amountLabel: receipt.amountLabel,
+    showBalanceAfterPayment: false,
+    extraRows: [
+      receipt.originalReceiptNumber ? { label: "Original Receipt", value: receipt.originalReceiptNumber } : null,
+      receipt.reference ? { label: "Reference", value: receipt.reference } : null,
+      receipt.counterpartyPhone ? { label: "Phone", value: receipt.counterpartyPhone } : null,
+    ].filter(Boolean) as Array<{ label: string; value: string }>,
+  };
+}
+
 function pill(status: "active" | "closed") {
   return status === "active"
     ? "bg-emerald-100 text-emerald-700"
@@ -127,7 +170,8 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
   const [addOpen, setAddOpen] = useState(false);
   const [transactionMode, setTransactionMode] = useState<"given" | "repaid" | null>(null);
   const [reverseTarget, setReverseTarget] = useState<CashTransaction | null>(null);
-  const [reversalReceiptTarget, setReversalReceiptTarget] = useState<CashTransaction | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<PaymentReceiptData | null>(null);
   const [reverseReason, setReverseReason] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
   const [memberOptions, setMemberOptions] = useState<MemberLookup[]>([]);
@@ -271,6 +315,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
       });
       setTransactionMode(null);
       toast({ title: transactionMode === "given" ? "Amount due added" : "Repayment recorded", description: saved.documentNumber ?? saved.id });
+      await openCashReceipt(saved.id);
       await loadDetail();
     } catch (err) {
       toast({ variant: "destructive", title: "Unable to save transaction", description: err instanceof Error ? err.message : "Please try again" });
@@ -291,6 +336,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
       setReverseTarget(null);
       setReverseReason("");
       toast({ title: "Transaction reversed", description: reverseTarget.documentNumber ?? reverseTarget.id });
+      await openCashReceipt(reverseTarget.id, "reversal");
       await loadDetail();
     } catch (err) {
       toast({ variant: "destructive", title: "Unable to reverse transaction", description: err instanceof Error ? err.message : "Please try again" });
@@ -320,6 +366,22 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
       await loadDetail();
     } catch (err) {
       toast({ variant: "destructive", title: "Unable to close receivable", description: err instanceof Error ? err.message : "Please try again" });
+    }
+  }
+
+  async function openCashReceipt(transactionId: string, type?: "reversal") {
+    try {
+      const receipt = await api<CashTransactionReceipt>(`/accounting/cash-transactions/${transactionId}/receipt`, {
+        params: type ? { type } : undefined,
+      });
+      setReceiptData(toCashReceiptData(receipt));
+      setReceiptOpen(true);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Receipt could not be loaded",
+        description: err instanceof Error ? err.message : "The transaction was saved, but the receipt could not be opened.",
+      });
     }
   }
 
@@ -355,7 +417,8 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
             onRepaid={() => openTransaction("repaid")}
             onClose={handleCloseAccount}
             onReverse={(tx) => setReverseTarget(tx)}
-            onReversalReceipt={(tx) => setReversalReceiptTarget(tx)}
+            onReceipt={(tx) => openCashReceipt(tx.id)}
+            onReversalReceipt={(tx) => openCashReceipt(tx.id, "reversal")}
           />
         ) : (
           <ReceivableDashboard
@@ -437,34 +500,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!reversalReceiptTarget} onOpenChange={(open) => !open && setReversalReceiptTarget(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Reversal Receipt</DialogTitle></DialogHeader>
-          {reversalReceiptTarget ? (
-            <div className="space-y-4">
-              <div className="rounded-md border bg-muted/30 p-4">
-                <div className="text-xs text-muted-foreground">Linked reversal receipt</div>
-                <div className="mt-1 font-mono text-lg font-semibold text-primary">{reversalReceiptTarget.reversalDocumentNumber ?? "-"}</div>
-              </div>
-              <div className="grid gap-3 text-sm md:grid-cols-2">
-                <Mini label="Original receipt" value={reversalReceiptTarget.documentNumber ?? "-"} />
-                <Mini label="Transaction" value={reversalReceiptTarget.transactionLabel ?? "-"} />
-                <Mini label="Amount" value={formatRs(reversalReceiptTarget.amount)} />
-                <Mini label="Reversed on" value={dateLabel(reversalReceiptTarget.reversedAt)} />
-                <Mini label="Reversed by" value={reversalReceiptTarget.reversedBy?.email ?? "-"} />
-                <Mini label="Actioned by" value={reversalReceiptTarget.createdBy?.email ?? "-"} />
-              </div>
-              <div>
-                <div className="text-xs text-muted-foreground">Reversal reason</div>
-                <div className="mt-1 rounded-md border bg-background p-3 text-sm">{reversalReceiptTarget.reversalReason ?? "-"}</div>
-              </div>
-              <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setReversalReceiptTarget(null)}>Close</Button>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <PaymentReceiptDialog open={receiptOpen} onOpenChange={setReceiptOpen} receipt={receiptData} />
     </div>
   );
 }
@@ -632,6 +668,7 @@ function ReceivableDetailView(props: {
   onRepaid: () => void;
   onClose: () => void;
   onReverse: (tx: CashTransaction) => void;
+  onReceipt: (tx: CashTransaction) => void;
   onReversalReceipt: (tx: CashTransaction) => void;
 }) {
   const account = props.detail.account;
@@ -685,6 +722,7 @@ function ReceivableDetailView(props: {
                     expanded={!!props.expandedRows[tx.id]}
                     onToggle={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !props.expandedRows[tx.id] })}
                     onReverse={props.onReverse}
+                    onReceipt={props.onReceipt}
                     onReversalReceipt={props.onReversalReceipt}
                   />
                 ))}
@@ -728,7 +766,7 @@ function ReceivableDetailView(props: {
                       </Button>
                     ) : null}
                   </div>
-                  {open && tx.reversedAt ? <HistoryDetail tx={tx} onReversalReceipt={props.onReversalReceipt} /> : null}
+                  {open && tx.reversedAt ? <HistoryDetail tx={tx} onReceipt={props.onReceipt} onReversalReceipt={props.onReversalReceipt} /> : null}
                 </Card>
               );
             })}
@@ -745,6 +783,7 @@ function HistoryRows({
   expanded,
   onToggle,
   onReverse,
+  onReceipt,
   onReversalReceipt,
 }: {
   tx: CashTransaction;
@@ -752,6 +791,7 @@ function HistoryRows({
   expanded: boolean;
   onToggle: () => void;
   onReverse: (tx: CashTransaction) => void;
+  onReceipt: (tx: CashTransaction) => void;
   onReversalReceipt: (tx: CashTransaction) => void;
 }) {
   return (
@@ -780,7 +820,7 @@ function HistoryRows({
       {tx.reversedAt && expanded ? (
         <tr className="border-b bg-destructive/5">
           <td colSpan={7} className="p-3">
-            <HistoryMeta tx={tx} onReversalReceipt={onReversalReceipt} />
+            <HistoryMeta tx={tx} onReceipt={onReceipt} onReversalReceipt={onReversalReceipt} />
           </td>
         </tr>
       ) : null}
@@ -788,19 +828,28 @@ function HistoryRows({
   );
 }
 
-function HistoryDetail({ tx, onReversalReceipt }: { tx: CashTransaction; onReversalReceipt: (tx: CashTransaction) => void }) {
+function HistoryDetail({ tx, onReceipt, onReversalReceipt }: { tx: CashTransaction; onReceipt: (tx: CashTransaction) => void; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
     <div className="border-t bg-destructive/5 p-3">
-      <HistoryMeta tx={tx} onReversalReceipt={onReversalReceipt} />
+      <HistoryMeta tx={tx} onReceipt={onReceipt} onReversalReceipt={onReversalReceipt} />
     </div>
   );
 }
 
-function HistoryMeta({ tx, onReversalReceipt }: { tx: CashTransaction; onReversalReceipt: (tx: CashTransaction) => void }) {
+function HistoryMeta({ tx, onReceipt, onReversalReceipt }: { tx: CashTransaction; onReceipt: (tx: CashTransaction) => void; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
     <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-6">
       <Mini label="Actioned by" value={tx.createdBy?.email ?? "-"} />
-      <Mini label="Receipt no" value={tx.documentNumber ?? "-"} />
+      <div>
+        <div className="text-muted-foreground">Receipt no</div>
+        {tx.documentNumber ? (
+          <button type="button" onClick={() => onReceipt(tx)} className="font-mono font-semibold text-primary underline-offset-2 hover:underline">
+            {tx.documentNumber}
+          </button>
+        ) : (
+          <div className="font-medium text-foreground">-</div>
+        )}
+      </div>
       <Mini label="Reversal reason" value={tx.reversalReason ?? "-"} />
       <Mini label="Reversed on" value={dateLabel(tx.reversedAt)} />
       <Mini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />

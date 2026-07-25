@@ -548,6 +548,27 @@ export interface FundCollectionReceipt {
   collectedBy?: string | null;
 }
 
+export interface CashTransactionReceipt {
+  receiptNumber: string;
+  originalReceiptNumber?: string | null;
+  transactionId: string;
+  transactionDate: string;
+  organizationName: string;
+  organizationReceiptLogoUrl?: string | null;
+  accountName: string;
+  counterpartyName: string;
+  counterpartyPhone?: string | null;
+  amount: number;
+  paymentMethod?: string | null;
+  reference?: string | null;
+  description?: string | null;
+  reversalReason?: string | null;
+  collectedBy?: string | null;
+  receiptTitle: string;
+  counterpartyLabel: string;
+  amountLabel: string;
+}
+
 export interface PaymentReceipt {
   paymentKind: PaymentKind;
   paymentId: string;

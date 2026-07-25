@@ -413,6 +413,55 @@ function buildFundReceipt(transaction, collectedByEmail) {
         collectedBy: collectedByEmail ?? null,
     };
 }
+function cashTransactionTitle(category, reversal = false) {
+    if (reversal)
+        return "CASH TRANSACTION REVERSAL RECEIPT";
+    if (category === "receivable_collection")
+        return "RECEIVABLE REPAYMENT RECEIPT";
+    if (category === "receivable_payment")
+        return "RECEIVABLE PAYMENT VOUCHER";
+    if (category === "operating_income")
+        return "INCOME RECEIPT";
+    if (category === "operating_expense")
+        return "EXPENSE PAYMENT VOUCHER";
+    if (category === "payable_recovery")
+        return "PAYABLE RECOVERY RECEIPT";
+    return "PAYABLE PAYMENT VOUCHER";
+}
+function cashTransactionCounterpartyLabel(category) {
+    if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense")
+        return "Paid To";
+    return "Received From";
+}
+function cashTransactionAmountLabel(category, reversal = false) {
+    if (reversal)
+        return "Reversed Amount";
+    if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense")
+        return "Paid";
+    return "Received";
+}
+function buildCashTransactionReceipt(transaction, createdByEmail, reversal = false) {
+    return {
+        receiptNumber: reversal ? transaction.reversalDocumentNumber : transaction.documentNumber,
+        originalReceiptNumber: reversal ? transaction.documentNumber : null,
+        transactionId: transaction.id,
+        transactionDate: (reversal ? transaction.reversedAt : transaction.transactionDate).toISOString(),
+        organizationName: transaction.organization.name,
+        organizationReceiptLogoUrl: transaction.organization.receiptLogoUrl,
+        accountName: transaction.account.name,
+        counterpartyName: transaction.counterpartyName,
+        counterpartyPhone: transaction.counterpartyPhone,
+        amount: Number(transaction.amount),
+        paymentMethod: reversal ? "System Reversal" : transaction.cashBankAccount?.name ?? null,
+        reference: transaction.reference,
+        description: transaction.description,
+        reversalReason: reversal ? transaction.reversalReason : null,
+        collectedBy: createdByEmail ?? null,
+        receiptTitle: cashTransactionTitle(transaction.category, reversal),
+        counterpartyLabel: cashTransactionCounterpartyLabel(transaction.category),
+        amountLabel: cashTransactionAmountLabel(transaction.category, reversal),
+    };
+}
 function firstOfMonth(date = new Date()) {
     return startOfDay(new Date(date.getFullYear(), date.getMonth(), 1));
 }
@@ -1403,6 +1452,31 @@ exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountin
         });
     });
     return res.json(serializeCashTransaction(updated));
+}));
+exports.accountingRouter.get("/cash-transactions/:id/receipt", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const reversal = req.query.type === "reversal";
+    const transaction = await prisma_js_1.prisma.cashTransaction.findFirst({
+        where: { id: req.params.id, organizationId: orgId },
+        include: {
+            organization: { select: { name: true, receiptLogoUrl: true } },
+            account: { select: { name: true } },
+            cashBankAccount: { select: { name: true } },
+            createdBy: { select: { email: true } },
+            reversedBy: { select: { email: true } },
+        },
+    });
+    if (!transaction)
+        return res.status(404).json({ error: "Cash transaction not found" });
+    if (reversal && (!transaction.reversalDocumentNumber || !transaction.reversedAt)) {
+        return res.status(404).json({ error: "Reversal receipt not found" });
+    }
+    if (!reversal && !transaction.documentNumber) {
+        return res.status(404).json({ error: "Cash transaction receipt not found" });
+    }
+    return res.json(buildCashTransactionReceipt(transaction, reversal ? transaction.reversedBy?.email ?? null : transaction.createdBy?.email ?? null, reversal));
 }));
 exports.accountingRouter.get("/funds", asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
