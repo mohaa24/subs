@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Info,
   Plus,
   ReceiptText,
   Search,
@@ -488,12 +489,17 @@ function ReceivableDashboard(props: {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Receivables</h1>
-          <p className="mt-1 text-sm text-muted-foreground">View and manage all receivable accounts.</p>
-          <div className="mt-3 rounded-md border border-blue-100 bg-blue-50/70 p-3 text-sm text-blue-950">
-            <div className="font-semibold">Receivable (Money to Collect)</div>
-            <div>Money that other people or organisations owe to your organisation</div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold text-foreground">Receivables</h1>
+            <span
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              title="Money that other people or organisations owe to your organisation"
+              aria-label="Money that other people or organisations owe to your organisation"
+            >
+              <Info className="h-4 w-4" />
+            </span>
           </div>
+          <p className="mt-1 text-sm text-muted-foreground">View and manage all receivable accounts.</p>
         </div>
         <Button onClick={props.onAdd} disabled={!props.canManage}>
           <Plus className="mr-2 h-4 w-4" />
