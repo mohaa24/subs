@@ -126,6 +126,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
   const [addOpen, setAddOpen] = useState(false);
   const [transactionMode, setTransactionMode] = useState<"given" | "repaid" | null>(null);
   const [reverseTarget, setReverseTarget] = useState<CashTransaction | null>(null);
+  const [reversalReceiptTarget, setReversalReceiptTarget] = useState<CashTransaction | null>(null);
   const [reverseReason, setReverseReason] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
   const [memberOptions, setMemberOptions] = useState<MemberLookup[]>([]);
@@ -345,6 +346,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
             onRepaid={() => openTransaction("repaid")}
             onClose={handleCloseAccount}
             onReverse={(tx) => setReverseTarget(tx)}
+            onReversalReceipt={(tx) => setReversalReceiptTarget(tx)}
           />
         ) : (
           <ReceivableDashboard
@@ -422,6 +424,35 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
                 <Button type="submit" disabled={submitting || !reverseReason.trim()}>Confirm Reversal</Button>
               </div>
             </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!reversalReceiptTarget} onOpenChange={(open) => !open && setReversalReceiptTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Reversal Receipt</DialogTitle></DialogHeader>
+          {reversalReceiptTarget ? (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4">
+                <div className="text-xs text-muted-foreground">Linked reversal receipt</div>
+                <div className="mt-1 font-mono text-lg font-semibold text-primary">{reversalReceiptTarget.reversalDocumentNumber ?? "-"}</div>
+              </div>
+              <div className="grid gap-3 text-sm md:grid-cols-2">
+                <Mini label="Original receipt" value={reversalReceiptTarget.documentNumber ?? "-"} />
+                <Mini label="Transaction" value={reversalReceiptTarget.transactionLabel ?? "-"} />
+                <Mini label="Amount" value={formatRs(reversalReceiptTarget.amount)} />
+                <Mini label="Reversed on" value={dateLabel(reversalReceiptTarget.reversedAt)} />
+                <Mini label="Reversed by" value={reversalReceiptTarget.reversedBy?.email ?? "-"} />
+                <Mini label="Actioned by" value={reversalReceiptTarget.createdBy?.email ?? "-"} />
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Reversal reason</div>
+                <div className="mt-1 rounded-md border bg-background p-3 text-sm">{reversalReceiptTarget.reversalReason ?? "-"}</div>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setReversalReceiptTarget(null)}>Close</Button>
+              </div>
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
@@ -587,6 +618,7 @@ function ReceivableDetailView(props: {
   onRepaid: () => void;
   onClose: () => void;
   onReverse: (tx: CashTransaction) => void;
+  onReversalReceipt: (tx: CashTransaction) => void;
 }) {
   const account = props.detail.account;
   return (
@@ -639,6 +671,7 @@ function ReceivableDetailView(props: {
                     expanded={!!props.expandedRows[tx.id]}
                     onToggle={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !props.expandedRows[tx.id] })}
                     onReverse={props.onReverse}
+                    onReversalReceipt={props.onReversalReceipt}
                   />
                 ))}
               </tbody>
@@ -681,7 +714,7 @@ function ReceivableDetailView(props: {
                       </Button>
                     ) : null}
                   </div>
-                  {open && tx.reversedAt ? <HistoryDetail tx={tx} /> : null}
+                  {open && tx.reversedAt ? <HistoryDetail tx={tx} onReversalReceipt={props.onReversalReceipt} /> : null}
                 </Card>
               );
             })}
@@ -698,12 +731,14 @@ function HistoryRows({
   expanded,
   onToggle,
   onReverse,
+  onReversalReceipt,
 }: {
   tx: CashTransaction;
   canManage: boolean;
   expanded: boolean;
   onToggle: () => void;
   onReverse: (tx: CashTransaction) => void;
+  onReversalReceipt: (tx: CashTransaction) => void;
 }) {
   return (
     <>
@@ -731,7 +766,7 @@ function HistoryRows({
       {tx.reversedAt && expanded ? (
         <tr className="border-b bg-destructive/5">
           <td colSpan={7} className="p-3">
-            <HistoryMeta tx={tx} />
+            <HistoryMeta tx={tx} onReversalReceipt={onReversalReceipt} />
           </td>
         </tr>
       ) : null}
@@ -739,15 +774,15 @@ function HistoryRows({
   );
 }
 
-function HistoryDetail({ tx }: { tx: CashTransaction }) {
+function HistoryDetail({ tx, onReversalReceipt }: { tx: CashTransaction; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
     <div className="border-t bg-destructive/5 p-3">
-      <HistoryMeta tx={tx} />
+      <HistoryMeta tx={tx} onReversalReceipt={onReversalReceipt} />
     </div>
   );
 }
 
-function HistoryMeta({ tx }: { tx: CashTransaction }) {
+function HistoryMeta({ tx, onReversalReceipt }: { tx: CashTransaction; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
     <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-6">
       <Mini label="Actioned by" value={tx.createdBy?.email ?? "-"} />
@@ -755,7 +790,16 @@ function HistoryMeta({ tx }: { tx: CashTransaction }) {
       <Mini label="Reversal reason" value={tx.reversalReason ?? "-"} />
       <Mini label="Reversed on" value={dateLabel(tx.reversedAt)} />
       <Mini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
-      <Mini label="Linked reversal receipt" value={tx.reversalDocumentNumber ?? "-"} />
+      <div>
+        <div className="text-muted-foreground">Linked reversal receipt</div>
+        {tx.reversalDocumentNumber ? (
+          <button type="button" onClick={() => onReversalReceipt(tx)} className="font-mono font-semibold text-primary underline-offset-2 hover:underline">
+            {tx.reversalDocumentNumber}
+          </button>
+        ) : (
+          <div className="font-medium text-foreground">-</div>
+        )}
+      </div>
     </div>
   );
 }
