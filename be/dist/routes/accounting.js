@@ -441,6 +441,20 @@ async function generateCashDocumentNumber(tx, organizationId, flowType, transact
         : 0;
     return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
 }
+async function generateCashReversalDocumentNumber(tx, organizationId, reversalDate) {
+    const year = reversalDate.getFullYear();
+    const month = String(reversalDate.getMonth() + 1).padStart(2, "0");
+    const prefix = `RV${year}${month}`;
+    const latest = await tx.cashTransaction.findFirst({
+        where: { organizationId, reversalDocumentNumber: { startsWith: prefix } },
+        orderBy: { reversalDocumentNumber: "desc" },
+        select: { reversalDocumentNumber: true },
+    });
+    const previousSequence = latest?.reversalDocumentNumber
+        ? parseInt(latest.reversalDocumentNumber.slice(prefix.length), 10) || 0
+        : 0;
+    return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
+}
 function cashTransactionLabel(category) {
     if (category === "operating_income")
         return "Operating income";
@@ -1325,11 +1339,13 @@ exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountin
             throw new Error("Cash transaction is already reversed");
         if (!transaction.journalEntry)
             throw new Error("Original journal entry was not found");
+        const reversedAt = new Date();
+        const reversalDocumentNumber = await generateCashReversalDocumentNumber(tx, orgId, reversedAt);
         await (0, accounting_js_1.createJournalEntry)(tx, {
             organizationId: orgId,
-            entryDate: new Date(),
+            entryDate: reversedAt,
             entryType: "manual_adjustment",
-            description: `Cash transaction reversal: ${parsed.data.reason}`,
+            description: `Cash transaction reversal ${reversalDocumentNumber}: ${parsed.data.reason}`,
             referenceType: "cash_transaction_reversal",
             referenceId: transaction.id,
             isSystemEntry: true,
@@ -1344,9 +1360,10 @@ exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountin
         return tx.cashTransaction.update({
             where: { id: transaction.id },
             data: {
-                reversedAt: new Date(),
+                reversedAt,
                 reversedByUserId: req.auth.userId,
                 reversalReason: parsed.data.reason,
+                reversalDocumentNumber,
             },
             include: { account: true, cashBankAccount: true, reversedBy: { select: { email: true } } },
         });

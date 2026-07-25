@@ -9,7 +9,6 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  FileText,
   Plus,
   ReceiptText,
   Search,
@@ -631,7 +630,18 @@ function ReceivableDetailView(props: {
               <thead className="border-b text-left text-xs text-muted-foreground">
                 <tr><th className="p-3">Date</th><th className="p-3">Transaction</th><th className="p-3">Payment Method</th><th className="p-3 text-right">Amount</th><th className="p-3 text-right">Balance</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr>
               </thead>
-              <tbody>{props.detail.history.map((tx) => <HistoryRows key={tx.id} tx={tx} canManage={props.canManage} onReverse={props.onReverse} />)}</tbody>
+              <tbody>
+                {props.detail.history.map((tx) => (
+                  <HistoryRows
+                    key={tx.id}
+                    tx={tx}
+                    canManage={props.canManage}
+                    expanded={!!props.expandedRows[tx.id]}
+                    onToggle={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !props.expandedRows[tx.id] })}
+                    onReverse={props.onReverse}
+                  />
+                ))}
+              </tbody>
             </table>
           </div>
           <div className="space-y-2 p-3 md:hidden">
@@ -639,7 +649,11 @@ function ReceivableDetailView(props: {
               const open = props.expandedRows[tx.id];
               return (
                 <Card key={tx.id}>
-                  <button type="button" onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })} className="w-full p-3 text-left">
+                  <button
+                    type="button"
+                    onClick={() => tx.reversedAt ? props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open }) : undefined}
+                    className="w-full p-3 text-left"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="font-semibold">{tx.transactionLabel}</div>
@@ -653,7 +667,21 @@ function ReceivableDetailView(props: {
                       <span className="text-right">{formatRs(tx.balance ?? 0)}</span>
                     </div>
                   </button>
-                  {open ? <HistoryDetail tx={tx} canManage={props.canManage} onReverse={props.onReverse} /> : null}
+                  <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+                    <span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span>
+                    {tx.reversedAt ? (
+                      <Button size="sm" variant="outline" onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })}>
+                        View details
+                        <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+                      </Button>
+                    ) : props.canManage ? (
+                      <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
+                        <Undo2 className="mr-2 h-4 w-4" />
+                        Reverse
+                      </Button>
+                    ) : null}
+                  </div>
+                  {open && tx.reversedAt ? <HistoryDetail tx={tx} /> : null}
                 </Card>
               );
             })}
@@ -664,7 +692,19 @@ function ReceivableDetailView(props: {
   );
 }
 
-function HistoryRows({ tx, canManage, onReverse }: { tx: CashTransaction; canManage: boolean; onReverse: (tx: CashTransaction) => void }) {
+function HistoryRows({
+  tx,
+  canManage,
+  expanded,
+  onToggle,
+  onReverse,
+}: {
+  tx: CashTransaction;
+  canManage: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onReverse: (tx: CashTransaction) => void;
+}) {
   return (
     <>
       <tr className="border-b">
@@ -678,35 +718,44 @@ function HistoryRows({ tx, canManage, onReverse }: { tx: CashTransaction; canMan
         <td className="p-3 text-right font-semibold">{formatRs(tx.balance ?? 0)}</td>
         <td className="p-3"><span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span></td>
         <td className="p-3 text-right">
-          {!tx.reversedAt && canManage ? <Button size="sm" variant="outline" onClick={() => onReverse(tx)}><Undo2 className="mr-2 h-4 w-4" />Reverse</Button> : null}
+          {tx.reversedAt ? (
+            <Button size="sm" variant="outline" onClick={onToggle}>
+              View details
+              <ChevronDown className={`ml-2 h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
+            </Button>
+          ) : canManage ? (
+            <Button size="sm" variant="outline" onClick={() => onReverse(tx)}><Undo2 className="mr-2 h-4 w-4" />Reverse</Button>
+          ) : null}
         </td>
       </tr>
-      <tr className="border-b bg-muted/30">
-        <td colSpan={7} className="p-3">
-          <HistoryMeta tx={tx} />
-        </td>
-      </tr>
+      {tx.reversedAt && expanded ? (
+        <tr className="border-b bg-destructive/5">
+          <td colSpan={7} className="p-3">
+            <HistoryMeta tx={tx} />
+          </td>
+        </tr>
+      ) : null}
     </>
   );
 }
 
-function HistoryDetail({ tx, canManage, onReverse }: { tx: CashTransaction; canManage: boolean; onReverse: (tx: CashTransaction) => void }) {
+function HistoryDetail({ tx }: { tx: CashTransaction }) {
   return (
-    <div className="border-t p-3">
+    <div className="border-t bg-destructive/5 p-3">
       <HistoryMeta tx={tx} />
-      {!tx.reversedAt && canManage ? <Button className="mt-3" size="sm" variant="outline" onClick={() => onReverse(tx)}><Undo2 className="mr-2 h-4 w-4" />Reverse</Button> : null}
     </div>
   );
 }
 
 function HistoryMeta({ tx }: { tx: CashTransaction }) {
   return (
-    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-5">
+    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-6">
       <Mini label="Actioned by" value={tx.createdBy?.email ?? "-"} />
       <Mini label="Receipt no" value={tx.documentNumber ?? "-"} />
       <Mini label="Reversal reason" value={tx.reversalReason ?? "-"} />
       <Mini label="Reversed on" value={dateLabel(tx.reversedAt)} />
       <Mini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
+      <Mini label="Linked reversal receipt" value={tx.reversalDocumentNumber ?? "-"} />
     </div>
   );
 }

@@ -387,6 +387,7 @@ export interface CashTransaction {
   journalEntryId?: string | null;
   reversedAt?: string | null;
   reversalReason?: string | null;
+  reversalDocumentNumber?: string | null;
   createdAt: string;
   cashBankAccount?: Pick<AccountingAccount, "id" | "name">;
   counterpartyMembership?: {

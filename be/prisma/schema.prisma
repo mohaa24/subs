@@ -753,6 +753,7 @@ model CashTransaction {
   reversedAt               DateTime?
   reversedByUserId         String?
   reversalReason           String?                 @db.Text
+  reversalDocumentNumber   String?
   createdByUserId          String?
   createdAt                DateTime                @default(now())
 
@@ -765,6 +766,7 @@ model CashTransaction {
   reversedBy             User?                   @relation("CashTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, documentNumber])
+  @@unique([organizationId, reversalDocumentNumber])
   @@index([organizationId, flowType, category])
   @@index([organizationId, accountId, transactionDate])
   @@index([journalEntryId])
