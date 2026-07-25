@@ -52,7 +52,8 @@ function asyncRoute(handler) {
         Promise.resolve(handler(req, res, next)).catch((error) => {
             console.error("[Accounting] Route error:", error);
             if (!res.headersSent) {
-                res.status(500).json({ error: "Accounting request failed" });
+                const statusCode = typeof error?.statusCode === "number" ? error.statusCode : 500;
+                res.status(statusCode).json({ error: statusCode === 500 ? "Accounting request failed" : error?.message ?? "Accounting request failed" });
                 return;
             }
             next(error);
@@ -161,6 +162,14 @@ const cashTransactionSchema = zod_1.z.object({
 });
 const cashReverseSchema = zod_1.z.object({
     reason: zod_1.z.string().trim().min(1, "Reversal reason is required").max(500),
+});
+const createReceivableSchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(1).max(120),
+    assetSubtype: zod_1.z.literal("loan_receivable"),
+    counterpartyName: zod_1.z.string().trim().max(160).optional().nullable(),
+    counterpartyPhone: zod_1.z.string().trim().max(40).optional().nullable(),
+    counterpartyMembershipId: zod_1.z.string().optional().nullable(),
+    description: zod_1.z.string().trim().max(500).optional().nullable(),
 });
 const createFundSchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(1).max(120),
@@ -603,6 +612,169 @@ async function cashTransactionAmount(tx, organizationId, input) {
         count: result._count._all,
     };
 }
+function receivableAccountTypeLabel(subtype) {
+    if (subtype === "loan_receivable")
+        return "Loan";
+    if (subtype === "service_receivable")
+        return "Service";
+    return "Receivable";
+}
+function receivableAccountWhere(status, search, type) {
+    return {
+        accountType: "asset",
+        assetSubtype: type === "loan_receivable" || type === "service_receivable" ? type : { in: receivableSubtypes },
+        ...(status === "closed"
+            ? { OR: [{ isActive: false }, { closedAt: { not: null } }] }
+            : status === "all"
+                ? {}
+                : { isActive: true, closedAt: null }),
+        ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+    };
+}
+async function receivableSums(tx, organizationId, accountIds, range) {
+    if (!accountIds.length)
+        return { given: new Map(), repaid: new Map() };
+    const rows = await tx.cashTransaction.groupBy({
+        by: ["accountId", "category"],
+        where: {
+            organizationId,
+            accountId: { in: accountIds },
+            reversedAt: null,
+            OR: [
+                { flowType: "cash_out", category: "receivable_payment" },
+                { flowType: "cash_in", category: "receivable_collection" },
+            ],
+            ...(range?.from || range?.toEnd
+                ? {
+                    transactionDate: {
+                        ...(range.from ? { gte: range.from } : {}),
+                        ...(range.toEnd ? { lte: range.toEnd } : {}),
+                    },
+                }
+                : {}),
+        },
+        _sum: { amount: true },
+    });
+    const given = new Map();
+    const repaid = new Map();
+    for (const row of rows) {
+        const target = row.category === "receivable_payment" ? given : repaid;
+        target.set(row.accountId, row._sum.amount ?? new library_1.Decimal(0));
+    }
+    return { given, repaid };
+}
+function receivableBalance(given, repaid) {
+    return (given ?? new library_1.Decimal(0)).sub(repaid ?? new library_1.Decimal(0));
+}
+async function buildReceivableRows(tx, organizationId, input) {
+    const accounts = await tx.accountingAccount.findMany({
+        where: {
+            organizationId,
+            ...receivableAccountWhere(input.status, input.search, input.type),
+        },
+        orderBy: { name: "asc" },
+    });
+    const ids = accounts.map((account) => account.id);
+    const openingEnd = new Date(input.from.getTime() - 1);
+    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }] = await Promise.all([
+        receivableSums(tx, organizationId, ids, { toEnd: openingEnd }),
+        receivableSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
+    ]);
+    const rows = accounts.map((account) => {
+        const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id));
+        const totalGiven = periodGiven.get(account.id) ?? new library_1.Decimal(0);
+        const totalRepaid = periodRepaid.get(account.id) ?? new library_1.Decimal(0);
+        const outstandingBalance = openingBalance.add(totalGiven).sub(totalRepaid);
+        return {
+            id: account.id,
+            name: account.name,
+            accountType: receivableAccountTypeLabel(account.assetSubtype),
+            assetSubtype: account.assetSubtype,
+            counterpartyName: account.counterpartyName,
+            counterpartyPhone: account.counterpartyPhone,
+            openingBalance: asNumber(openingBalance),
+            totalGiven: asNumber(totalGiven),
+            totalRepaid: asNumber(totalRepaid),
+            outstandingBalance: asNumber(outstandingBalance),
+            status: account.isActive && !account.closedAt ? "active" : "closed",
+        };
+    });
+    rows.sort((a, b) => {
+        if (input.sort === "outstanding_desc")
+            return b.outstandingBalance - a.outstandingBalance;
+        if (input.sort === "given_desc")
+            return b.totalGiven - a.totalGiven;
+        if (input.sort === "repaid_desc")
+            return b.totalRepaid - a.totalRepaid;
+        return a.name.localeCompare(b.name);
+    });
+    return rows;
+}
+async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
+    const account = await tx.accountingAccount.findFirst({
+        where: { id: accountId, organizationId, accountType: "asset", assetSubtype: { in: receivableSubtypes } },
+        include: { counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } } },
+    });
+    if (!account)
+        return null;
+    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, history] = await Promise.all([
+        receivableSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
+        receivableSums(tx, organizationId, [account.id], { from, toEnd }),
+        tx.cashTransaction.findMany({
+            where: {
+                organizationId,
+                accountId: account.id,
+                OR: [
+                    { flowType: "cash_out", category: "receivable_payment" },
+                    { flowType: "cash_in", category: "receivable_collection" },
+                ],
+                transactionDate: { gte: from, lte: toEnd },
+            },
+            include: {
+                cashBankAccount: { select: { id: true, name: true } },
+                counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
+                createdBy: { select: { email: true } },
+                reversedBy: { select: { email: true } },
+            },
+            orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+            take: 300,
+        }),
+    ]);
+    const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id));
+    let runningBalance = openingBalance;
+    const serializedHistory = history.map((transaction) => {
+        if (!transaction.reversedAt) {
+            runningBalance = transaction.category === "receivable_payment"
+                ? runningBalance.add(transaction.amount)
+                : runningBalance.sub(transaction.amount);
+        }
+        return {
+            ...serializeCashTransaction(transaction),
+            transactionLabel: transaction.category === "receivable_payment" ? "Given" : "Repaid",
+            paymentMethod: transaction.cashBankAccount?.name ?? null,
+            balance: asNumber(runningBalance),
+            status: transaction.reversedAt ? "reversed" : "posted",
+        };
+    }).reverse();
+    const totalGiven = periodGiven.get(account.id) ?? new library_1.Decimal(0);
+    const totalRepaid = periodRepaid.get(account.id) ?? new library_1.Decimal(0);
+    return {
+        account: {
+            ...serializeAccount(account),
+            accountTypeLabel: receivableAccountTypeLabel(account.assetSubtype),
+            status: account.isActive && !account.closedAt ? "active" : "closed",
+            closedAt: account.closedAt?.toISOString?.() ?? null,
+        },
+        fromDate: from.toISOString(),
+        toDate: toEnd.toISOString(),
+        summary: {
+            totalGiven: asNumber(totalGiven),
+            totalRepaid: asNumber(totalRepaid),
+            outstandingBalance: asNumber(openingBalance.add(totalGiven).sub(totalRepaid)),
+        },
+        history: serializedHistory,
+    };
+}
 async function cashAccountRows(tx, organizationId, flowType, category, from, toEnd, search) {
     const accounts = await tx.accountingAccount.findMany({
         where: {
@@ -993,6 +1165,141 @@ exports.accountingRouter.get("/cash-in/overview", asyncRoute((req, res) => build
 exports.accountingRouter.get("/cash-out/overview", asyncRoute((req, res) => buildCashFlowOverview(req, res, "cash_out")));
 exports.accountingRouter.get("/cash-in/accounts/:id", asyncRoute((req, res) => loadCashAccountDetail(req, res, "cash_in")));
 exports.accountingRouter.get("/cash-out/accounts/:id", asyncRoute((req, res) => loadCashAccountDetail(req, res, "cash_out")));
+exports.accountingRouter.get("/receivables/overview", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const type = typeof req.query.type === "string" && req.query.type !== "all" ? req.query.type : null;
+    const status = typeof req.query.status === "string" ? req.query.status : "active";
+    const sort = typeof req.query.sort === "string" ? req.query.sort : "name_asc";
+    const rows = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        return buildReceivableRows(tx, orgId, { from, toEnd, search, type, status, sort });
+    });
+    const totals = rows.reduce((sum, row) => ({
+        openingBalance: sum.openingBalance + row.openingBalance,
+        totalGiven: sum.totalGiven + row.totalGiven,
+        totalRepaid: sum.totalRepaid + row.totalRepaid,
+        outstandingBalance: sum.outstandingBalance + row.outstandingBalance,
+    }), { openingBalance: 0, totalGiven: 0, totalRepaid: 0, outstandingBalance: 0 });
+    return res.json({
+        fromDate: from.toISOString(),
+        toDate: toEnd.toISOString(),
+        totals: {
+            openingBalance: Number(totals.openingBalance.toFixed(2)),
+            totalGiven: Number(totals.totalGiven.toFixed(2)),
+            totalRepaid: Number(totals.totalRepaid.toFixed(2)),
+            outstandingBalance: Number(totals.outstandingBalance.toFixed(2)),
+        },
+        rows,
+    });
+}));
+exports.accountingRouter.post("/receivables", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = createReceivableSchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const account = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const duplicate = await tx.accountingAccount.findFirst({
+            where: { organizationId: orgId, name: { equals: parsed.data.name, mode: "insensitive" } },
+            select: { id: true },
+        });
+        if (duplicate) {
+            const error = new Error("An account with this name already exists");
+            error.statusCode = 409;
+            throw error;
+        }
+        if (parsed.data.counterpartyMembershipId) {
+            const member = await tx.membership.findFirst({
+                where: { id: parsed.data.counterpartyMembershipId, organizationId: orgId },
+                select: { id: true },
+            });
+            if (!member) {
+                const error = new Error("Selected member was not found");
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+        return tx.accountingAccount.create({
+            data: {
+                organizationId: orgId,
+                name: parsed.data.name,
+                accountType: "asset",
+                assetSubtype: parsed.data.assetSubtype,
+                counterpartyName: parsed.data.counterpartyName || null,
+                counterpartyPhone: parsed.data.counterpartyPhone || null,
+                counterpartyMembershipId: parsed.data.counterpartyMembershipId || null,
+                description: parsed.data.description || null,
+                createdByUserId: req.auth.userId,
+            },
+        });
+    });
+    return res.status(201).json(serializeAccount(account));
+}));
+exports.accountingRouter.get("/receivables/:id", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const detail = await prisma_js_1.prisma.$transaction((tx) => receivableDetail(tx, orgId, req.params.id, from, toEnd));
+    if (!detail)
+        return res.status(404).json({ error: "Receivable account not found" });
+    return res.json(detail);
+}));
+exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const result = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const account = await tx.accountingAccount.findFirst({
+            where: { id: req.params.id, organizationId: orgId, accountType: "asset", assetSubtype: { in: receivableSubtypes } },
+        });
+        if (!account)
+            throw new Error("Receivable account not found");
+        if (!account.isActive || account.closedAt)
+            throw new Error("Receivable account is already closed");
+        const { given, repaid } = await receivableSums(tx, orgId, [account.id]);
+        const outstanding = receivableBalance(given.get(account.id), repaid.get(account.id));
+        if (outstanding.lt(0)) {
+            const amount = asNumber(outstanding.abs());
+            const error = new Error(`This account has an overpayment of Rs. ${amount.toFixed(2)}. Please refund the overpayment before closing the account`);
+            error.statusCode = 409;
+            throw error;
+        }
+        let journalEntryId = null;
+        if (outstanding.gt(0)) {
+            const badDebt = await (0, accounting_js_1.getSystemAccount)(tx, orgId, accounting_js_1.BAD_DEBT_EXPENSE_KEY);
+            const entry = await (0, accounting_js_1.createJournalEntry)(tx, {
+                organizationId: orgId,
+                entryDate: new Date(),
+                entryType: "expense",
+                description: `Bad debt write-off: ${account.name}`,
+                referenceType: "receivable_write_off",
+                referenceId: account.id,
+                isSystemEntry: true,
+                createdByUserId: req.auth.userId,
+                lines: [
+                    { accountId: badDebt.id, side: "debit", amount: outstanding, memo: account.name },
+                    { accountId: account.id, side: "credit", amount: outstanding, memo: "Receivable account closure" },
+                ],
+            });
+            journalEntryId = entry.id;
+        }
+        const updated = await tx.accountingAccount.update({
+            where: { id: account.id },
+            data: { isActive: false, closedAt: new Date() },
+        });
+        return { account: serializeAccount(updated), outstandingBalance: asNumber(outstanding), journalEntryId };
+    });
+    return res.json(result);
+}));
 exports.accountingRouter.post("/cash-in/operating-income", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "operating_income")));
 exports.accountingRouter.post("/cash-in/receivable-collections", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "receivable_collection")));
 exports.accountingRouter.post("/cash-in/receivable-payments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "receivable_payment")));

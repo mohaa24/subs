@@ -363,6 +363,7 @@ model Membership {
   persons      Person[]              @relation("MembershipPersons")
   createdBy    User?                 @relation("CreatedByUser", fields: [createdByUserId], references: [id])
   dependents   MembershipDependent[]
+  counterpartyAccountingAccounts AccountingAccount[] @relation("AccountingAccountCounterpartyMembership")
   dues         PaymentDue[]
   payments     Payment[]
   creditLedgerEntries MembershipCreditLedger[]
@@ -605,12 +606,17 @@ model AccountingAccount {
   assetSubtype    AccountingAssetSubtype @default(other)
   systemKey       String?
   description     String?               @db.Text
+  counterpartyName String?
+  counterpartyPhone String?
+  counterpartyMembershipId String?
   isActive        Boolean               @default(true)
+  closedAt        DateTime?
   createdByUserId String?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  counterpartyMembership Membership? @relation("AccountingAccountCounterpartyMembership", fields: [counterpartyMembershipId], references: [id], onDelete: SetNull)
   createdBy    User?        @relation("AccountingAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   journalLines AccountingJournalLine[]
   paymentDeposits Payment[] @relation("PaymentDepositAccount")
@@ -625,6 +631,7 @@ model AccountingAccount {
   @@unique([organizationId, name])
   @@unique([organizationId, systemKey])
   @@index([organizationId, accountType])
+  @@index([counterpartyMembershipId])
 }
 
 enum FundPotStatus {

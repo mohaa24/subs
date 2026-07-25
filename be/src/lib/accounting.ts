@@ -8,6 +8,7 @@ const CASH_ACCOUNT_KEY = "asset_cash_on_hand";
 const BANK_ACCOUNT_KEY = "asset_bank_account";
 const MEMBER_CREDIT_KEY = "liability_member_credit";
 const GENERAL_EXPENSE_KEY = "expense_general";
+export const BAD_DEBT_EXPENSE_KEY = "expense_bad_debt_write_off";
 const FUND_BALANCE_KEY = "equity_fund_balance";
 const OTHER_INCOME_KEY = "income_other";
 
@@ -59,6 +60,13 @@ const DEFAULT_ACCOUNTS: Array<{
     assetSubtype: "operating_expense",
     systemKey: GENERAL_EXPENSE_KEY,
     description: "Default expense account",
+  },
+  {
+    name: "Bad Debt Write-Off Expense",
+    accountType: "expense",
+    assetSubtype: "operating_expense",
+    systemKey: BAD_DEBT_EXPENSE_KEY,
+    description: "Expense account used when closing receivables with uncollectable balances",
   },
 ];
 

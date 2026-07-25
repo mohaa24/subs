@@ -320,6 +320,10 @@ export interface AccountingAccount {
   assetSubtype: AccountingAssetSubtype;
   systemKey?: string | null;
   description?: string | null;
+  counterpartyName?: string | null;
+  counterpartyPhone?: string | null;
+  counterpartyMembershipId?: string | null;
+  closedAt?: string | null;
   isActive: boolean;
   balance?: number;
 }
@@ -392,6 +396,10 @@ export interface CashTransaction {
   } | null;
   createdBy?: { email: string } | null;
   reversedBy?: { email: string } | null;
+  transactionLabel?: string;
+  paymentMethod?: string | null;
+  balance?: number;
+  status?: "posted" | "reversed";
 }
 
 export interface CashAccountDetail {
@@ -399,6 +407,44 @@ export interface CashAccountDetail {
   fromDate: string;
   toDate: string;
   summary: Record<string, number>;
+  history: CashTransaction[];
+}
+
+export interface ReceivableOverviewRow {
+  id: string;
+  name: string;
+  accountType: string;
+  assetSubtype: AccountingAssetSubtype;
+  counterpartyName?: string | null;
+  counterpartyPhone?: string | null;
+  openingBalance: number;
+  totalGiven: number;
+  totalRepaid: number;
+  outstandingBalance: number;
+  status: "active" | "closed";
+}
+
+export interface ReceivableOverview {
+  fromDate: string;
+  toDate: string;
+  totals: {
+    openingBalance: number;
+    totalGiven: number;
+    totalRepaid: number;
+    outstandingBalance: number;
+  };
+  rows: ReceivableOverviewRow[];
+}
+
+export interface ReceivableDetail {
+  account: AccountingAccount & { accountTypeLabel?: string; status?: "active" | "closed" };
+  fromDate: string;
+  toDate: string;
+  summary: {
+    totalGiven: number;
+    totalRepaid: number;
+    outstandingBalance: number;
+  };
   history: CashTransaction[];
 }
 

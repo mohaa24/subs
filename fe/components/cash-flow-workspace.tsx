@@ -161,14 +161,14 @@ function subtypeLabel(subtype?: string | null) {
 }
 
 function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
-  if (sectionKey === "receivable_collection") return "Add Collection";
+  if (sectionKey === "receivable_collection") return "Record Repayment";
   if (sectionKey === "payable_payment") return "Make Payment";
   return flow === "cash-in" ? "Record Income" : "Record Expense";
 }
 
 function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null, sectionKey?: string) {
-  if (category === "receivable_payment") return "Disburse Payment";
-  if (category === "receivable_collection") return "Recover Payment";
+  if (category === "receivable_payment") return "Add Amount Due";
+  if (category === "receivable_collection") return "Record Repayment";
   if (category === "payable_recovery") return "Recover";
   if (category === "payable_payment") return "Make Payment";
   return buttonLabel(flow, sectionKey);
@@ -504,8 +504,23 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                     {section.rows.map((row) => {
                       const category = sectionCategories[section.key];
                       const isFund = !category;
+                      const isReceivableCard = section.key === "receivable_collection" && isReceivableSubtype(row.assetSubtype);
+                      const detailHref = isFund
+                        ? `/funds/${row.id}?mode=${flow}`
+                        : isReceivableCard
+                          ? `/receivables/${row.id}?source=cash-in`
+                          : `/${flow}/accounts/${row.id}`;
                       return (
-                        <div key={row.id} className="grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center">
+                        <div
+                          key={row.id}
+                          role={isReceivableCard ? "button" : undefined}
+                          tabIndex={isReceivableCard ? 0 : undefined}
+                          onClick={isReceivableCard ? () => router.push(detailHref) : undefined}
+                          onKeyDown={isReceivableCard ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") router.push(detailHref);
+                          } : undefined}
+                          className={`grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center ${isReceivableCard ? "cursor-pointer transition hover:bg-muted/40" : ""}`}
+                        >
                           <div>
                             <div className="font-medium text-foreground">{row.name}</div>
                             <div className="text-xs text-muted-foreground">{isFund ? "Special Fund" : subtypeLabel(row.assetSubtype)}</div>
@@ -528,10 +543,10 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                                 {buttonLabel(flow, section.key)}
                               </Button>
                             ) : (
-                              <Button size="sm" onClick={() => openRecord(row, category, section.key)} disabled={!canManage}>{buttonLabel(flow, section.key)}</Button>
+                              <Button size="sm" onClick={(event) => { event.stopPropagation(); openRecord(row, category, section.key); }} disabled={!canManage}>{buttonLabel(flow, section.key)}</Button>
                             )}
-                            <Button asChild size="icon" variant="ghost" aria-label={isFund ? "Open fund" : "Open account"}>
-                              <Link href={isFund ? `/funds/${row.id}?mode=${flow}` : `/${flow}/accounts/${row.id}`}>
+                            <Button asChild size="icon" variant="ghost" aria-label={isFund ? "Open fund" : "Open account"} onClick={(event) => event.stopPropagation()}>
+                              <Link href={detailHref}>
                                 <ChevronRight className="h-4 w-4" />
                               </Link>
                             </Button>
