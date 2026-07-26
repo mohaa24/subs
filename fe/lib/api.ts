@@ -637,6 +637,33 @@ export interface DashboardStats {
   overpaymentsThisMonth: number;
   activePaymentsInPeriod: number;
   period: string;
+  financialOverview?: {
+    totalIncome: number;
+    totalExpense: number;
+    netIncome: number;
+    memberCollection: number;
+    collectionRate: number;
+    series: Array<{
+      label: string;
+      memberCollection: number;
+      income: number;
+      expense: number;
+      cashIn: number;
+      cashOut: number;
+      netIncome: number;
+      outstanding: number;
+    }>;
+  } | null;
+  recentActivity?: Array<{
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    amount?: number | null;
+    occurredAt: string;
+    href?: string | null;
+    tone?: "emerald" | "rose" | "blue" | "orange" | "violet" | "slate";
+  }> | null;
 }
 
 export interface MembershipBalance {

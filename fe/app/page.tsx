@@ -2,7 +2,8 @@
 
 import { useAuth } from "@/lib/auth-context";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -15,6 +16,7 @@ import {
   Home,
   Receipt,
   Banknote,
+  ChevronRight,
   ScanLine,
   Repeat,
   Star,
@@ -24,6 +26,9 @@ import {
   Settings,
   BarChart3,
   Landmark,
+  Clock3,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +50,20 @@ import {
 } from "@/components/ui/select";
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+} from "recharts";
 
 function formatRs(n: number) {
   return new Intl.NumberFormat("en-LK", {
@@ -83,6 +102,79 @@ function formatPeriod(period: string) {
   const [start, end] = period.split(":");
   if (!start || !end) return period;
   return `${start} to ${end}`;
+}
+
+function relativeTime(value: string) {
+  const date = new Date(value);
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 60) return `${Math.max(diffMinutes, 1)}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return "Yesterday";
+  return `${diffDays}d ago`;
+}
+
+function activityToneClass(tone?: string | null) {
+  if (tone === "emerald") return "bg-emerald-100 text-emerald-700";
+  if (tone === "rose") return "bg-rose-100 text-rose-700";
+  if (tone === "orange") return "bg-orange-100 text-orange-700";
+  if (tone === "violet") return "bg-violet-100 text-violet-700";
+  if (tone === "slate") return "bg-slate-100 text-slate-700";
+  return "bg-blue-100 text-blue-700";
+}
+
+function ActivityIcon({ kind, className }: { kind: string; className?: string }) {
+  if (kind === "payment" || kind === "payment_reversal") return <CreditCard className={className} />;
+  if (kind === "cash_out" || kind === "fund_expense") return <ArrowDownRight className={className} />;
+  if (kind === "cash_in" || kind === "fund_collection" || kind === "income") return <ArrowUpRight className={className} />;
+  if (kind === "remark") return <MessageSquare className={className} />;
+  return <Receipt className={className} />;
+}
+
+function MiniSparkline({
+  data,
+  dataKey,
+  stroke,
+}: {
+  data: Array<Record<string, any>>;
+  dataKey: string;
+  stroke: string;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data}>
+        <Line type="monotone" dataKey={dataKey} stroke={stroke} strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ChartCard({
+  title,
+  subtitle,
+  children,
+  className,
+  colorA,
+  colorB,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+  className?: string;
+  colorA?: string;
+  colorB?: string;
+}) {
+  return (
+    <div className={`rounded-2xl border bg-card p-4 shadow-sm ${className ?? ""}`}>
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        <div className="text-xs text-muted-foreground">{subtitle}</div>
+      </div>
+      <div className="h-56">{children}</div>
+    </div>
+  );
 }
 
 type FlowAction = {
@@ -132,6 +224,7 @@ function HomePageContent() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
+  const [now, setNow] = useState(() => new Date());
   const scannerRef = useRef<any>(null);
   const scannerContainerId = "qr-reader";
 
@@ -242,6 +335,11 @@ function HomePageContent() {
     if (user) fetchBookmarks();
   }, [user, fetchBookmarks]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const toggleBookmark = useCallback(
     async (actionKey: string) => {
       const isBookmarked = bookmarks.some((b) => b.actionKey === actionKey);
@@ -274,34 +372,59 @@ function HomePageContent() {
   }
   if (!user) return null;
 
+  const displayName = user.email.split("@")[0].replace(/[._-]+/g, " ");
+  const greeting =
+    now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
+  const financial = stats?.financialOverview ?? null;
+  const financialSeries = financial?.series ?? [];
+  const recentActivity = stats?.recentActivity ?? [];
+  const latestSeries = financialSeries.length ? financialSeries : Array.from({ length: 7 }, (_, idx) => ({
+    label: `Day ${idx + 1}`,
+    memberCollection: 0,
+    income: 0,
+    expense: 0,
+    cashIn: 0,
+    cashOut: 0,
+    netIncome: 0,
+    outstanding: 0,
+  }));
+
   const ROW1_CARDS = [
     {
-      label: "Dues Generated",
-      value: stats ? formatCompactRs(stats.totalDueThisMonth) : "—",
-      icon: Receipt,
-      color: "text-rose-500",
-      bg: "bg-rose-500/10",
-    },
-    {
-      label: "No of Payments",
-      value: stats ? formatCompactInteger(stats.activePaymentsInPeriod) : "—",
-      icon: CreditCard,
-      color: "text-sky-500",
-      bg: "bg-sky-500/10",
-    },
-    {
-      label: "Net Collected",
+      label: "Member Collect",
       value: stats ? formatCompactRs(stats.netCollectedInPeriod) : "—",
-      icon: Banknote,
-      color: "text-emerald-500",
+      delta: stats ? `${Math.round((stats.netCollectedInPeriod / Math.max(stats.totalDueThisMonth || 1, 1)) * 100)}% collected` : "",
+      icon: Users,
+      color: "text-emerald-600",
       bg: "bg-emerald-500/10",
+      dataKey: "memberCollection",
     },
     {
-      label: "Outstanding(Current)",
-      value: stats ? formatCompactRs(stats.currentOutstanding) : "—",
+      label: "Total Income",
+      value: stats ? formatCompactRs(financial?.totalIncome ?? 0) : "—",
+      delta: "From P&L",
+      icon: Banknote,
+      color: "text-blue-600",
+      bg: "bg-blue-500/10",
+      dataKey: "income",
+    },
+    {
+      label: "Total Expense",
+      value: stats ? formatCompactRs(financial?.totalExpense ?? 0) : "—",
+      delta: "From P&L",
       icon: Receipt,
-      color: "text-amber-500",
-      bg: "bg-amber-500/10",
+      color: "text-red-500",
+      bg: "bg-red-500/10",
+      dataKey: "expense",
+    },
+    {
+      label: "Net Income",
+      value: stats ? formatCompactRs(financial?.netIncome ?? 0) : "—",
+      delta: "Income - Expense",
+      icon: ArrowUpRight,
+      color: "text-violet-600",
+      bg: "bg-violet-500/10",
+      dataKey: "netIncome",
     },
   ];
 
@@ -342,6 +465,15 @@ function HomePageContent() {
       bg: "bg-amber-500/10",
     },
   ];
+
+  const quickActionItems = [
+    { label: "Record Cash In", href: "/cash-in", icon: Banknote, tone: "text-emerald-600 bg-emerald-500/10" },
+    { label: "Record Cash Out", href: "/cash-out", icon: Receipt, tone: "text-red-600 bg-red-500/10" },
+    { label: "Add Member", href: "/members/new", icon: UserPlus, tone: "text-blue-600 bg-blue-500/10" },
+    { label: "Create Fund", href: "/funds", icon: Landmark, tone: "text-violet-600 bg-violet-500/10" },
+    { label: "View Reports", href: "/reports", icon: FileText, tone: "text-amber-600 bg-amber-500/10" },
+    { label: "Scan QR Code", href: "/?scan=membership", icon: ScanLine, tone: "text-cyan-600 bg-cyan-500/10" },
+  ] as const;
 
   const FLOW_TABS: FlowTab[] = [
     {
@@ -583,88 +715,237 @@ function HomePageContent() {
     <div className="min-h-screen bg-background relative">
       <AbstractBg />
       <Header />
-      <main className="relative z-10 p-6 max-w-5xl mx-auto">
-        <div className="mb-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-foreground">{t("dashboard.title")}</h2>
-              <p className="text-sm text-muted-foreground mt-0.5">
+      <main className="relative z-10 mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold text-foreground md:text-3xl">
+              {greeting}, {displayName}
+            </h1>
+            <div className="text-sm text-muted-foreground">
+              {user.organization?.name ?? "Organization"}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1">
+                <Clock3 className="h-3.5 w-3.5" />
+                {now.toLocaleString(undefined, {
+                  weekday: "short",
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span className="rounded-full border bg-card px-3 py-1">
                 {stats ? formatPeriod(stats.period) : t("dashboard.overview")}
-              </p>
+              </span>
             </div>
-            <div className="w-full sm:w-[180px]">
-              <Select value={statsWindowDays} onValueChange={setStatsWindowDays}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select period" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Today</SelectItem>
-                  <SelectItem value="7">Last 7 Days</SelectItem>
-                  <SelectItem value="14">Last 14 Days</SelectItem>
-                  <SelectItem value="30">Last 1 Month</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          </div>
+          <div className="w-full max-w-[220px]">
+            <Select value={statsWindowDays} onValueChange={setStatsWindowDays}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Today</SelectItem>
+                <SelectItem value="7">Last 7 Days</SelectItem>
+                <SelectItem value="14">Last 14 Days</SelectItem>
+                <SelectItem value="30">Last 1 Month</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
-        {/* ── Stat cards — Row 1 ────────────────────────────── */}
-        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {ROW1_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
-            <Card key={label} className="relative overflow-hidden">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
-                <p className="pr-2 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
-                  {label}
-                </p>
-                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${bg} sm:h-7 sm:w-7`}>
-                  <Icon className={`h-3.5 w-3.5 ${color}`} />
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {ROW1_CARDS.map(({ label, value, delta, icon: Icon, color, bg, dataKey }) => (
+            <Card key={label} className="overflow-hidden">
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                    <p className="text-2xl font-semibold tracking-tight text-foreground">{statsLoading ? "—" : value}</p>
+                    {delta ? <p className="text-xs text-muted-foreground">{delta}</p> : null}
+                  </div>
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bg}`}>
+                    <Icon className={`h-5 w-5 ${color}`} />
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
-                {statsLoading ? (
-                  <div className="h-7 w-20 rounded bg-muted animate-pulse" />
-                ) : (
-                  <p className="truncate text-lg font-bold leading-none tracking-tight text-foreground sm:text-xl">
-                    {value}
-                  </p>
-                )}
+                <div className="h-14">
+                  {statsLoading ? (
+                    <div className="h-full rounded-md bg-muted/70 animate-pulse" />
+                  ) : (
+                    <MiniSparkline data={latestSeries} dataKey={dataKey} stroke={color} />
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* ── Stat cards — Row 2 ────────────────────────────── */}
-        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {ROW2_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
-            <Card key={label} className="relative overflow-hidden">
-              <CardHeader className="flex flex-row items-start justify-between space-y-0 px-3 pb-1 pt-3 sm:px-4 sm:pt-4">
-                <p className="pr-2 text-[11px] font-medium leading-tight text-muted-foreground sm:text-xs">
-                  {label}
-                </p>
-                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${bg} sm:h-7 sm:w-7`}>
-                  <Icon className={`h-3.5 w-3.5 ${color}`} />
+            <Card key={label} className="overflow-hidden">
+              <CardContent className="flex items-center gap-3 p-4">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bg}`}>
+                  <Icon className={`h-5 w-5 ${color}`} />
                 </div>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
-                {statsLoading ? (
-                  <div className="h-7 w-20 rounded bg-muted animate-pulse" />
-                ) : (
-                  <p className="truncate text-lg font-bold leading-none tracking-tight text-foreground sm:text-xl">
-                    {value}
-                  </p>
-                )}
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="truncate text-xl font-semibold text-foreground">{statsLoading ? "—" : value}</p>
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* ── Quick Actions (bookmarks) ─────────────────────── */}
+        <div>
+          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Quick Actions</h3>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            {quickActionItems.map(({ label, href, icon: Icon, tone }) => (
+              <Link key={label} href={href} className="group">
+                <Card className="h-full transition hover:border-primary/30 hover:bg-accent/20">
+                  <CardContent className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center">
+                    <div className={`flex h-12 w-12 items-center justify-center rounded-full ${tone.split(" ")[1]}`}>
+                      <Icon className={`h-5 w-5 ${tone.split(" ")[0]}`} />
+                    </div>
+                    <div className="text-sm font-medium text-foreground">{label}</div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <Card className="overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
+              <div>
+                <CardTitle className="text-base">Recent Activity</CardTitle>
+                <p className="text-sm text-muted-foreground">Latest transactions and updates across the organization</p>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {statsLoading ? (
+                <div className="p-4 space-y-3">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <div key={idx} className="h-16 rounded-xl bg-muted/60 animate-pulse" />
+                  ))}
+                </div>
+              ) : recentActivity.length > 0 ? (
+                <div className="divide-y">
+                  {recentActivity.map((item) => (
+                    <Link key={item.id} href={item.href ?? "#"} className={`flex items-center gap-3 p-4 transition ${item.href ? "hover:bg-muted/40" : "cursor-default"}`}>
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${activityToneClass(item.tone)}`}>
+                        <ActivityIcon kind={item.type} className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-foreground">{item.title}</div>
+                        <div className="truncate text-sm text-muted-foreground">{item.description}</div>
+                      </div>
+                      <div className="text-right">
+                        {typeof item.amount === "number" ? (
+                          <div className="font-semibold text-foreground">{formatCompactRs(item.amount)}</div>
+                        ) : null}
+                        <div className="text-xs text-muted-foreground">{relativeTime(item.occurredAt)}</div>
+                      </div>
+                      {item.href ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : null}
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-muted-foreground">No recent activity yet.</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <CardHeader className="border-b pb-4">
+              <CardTitle className="text-base">Financial Overview</CardTitle>
+              <p className="text-sm text-muted-foreground">Income, expense, cash flow, and collection performance</p>
+            </CardHeader>
+            <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+              <ChartCard title="Income vs Expenses" subtitle="Daily totals" colorA="#2563eb" colorB="#ef4444">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={latestSeries}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <Tooltip />
+                    <Bar dataKey="income" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Cash Flow" subtitle="Inflows vs outflows" colorA="#16a34a" colorB="#f97316">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={latestSeries}>
+                    <defs>
+                      <linearGradient id="cashInFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.28} />
+                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="cashOutFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f97316" stopOpacity={0.28} />
+                        <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="cashIn" stroke="#16a34a" fill="url(#cashInFill)" strokeWidth={2} dot={false} />
+                    <Area type="monotone" dataKey="cashOut" stroke="#f97316" fill="url(#cashOutFill)" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+
+              <ChartCard title="Collection Rate" subtitle="Current period" colorA="#10b981" colorB="#e5e7eb">
+                <div className="flex h-full items-center justify-center">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Collected", value: financial?.collectionRate ?? 0 },
+                          { name: "Remaining", value: Math.max(100 - (financial?.collectionRate ?? 0), 0) },
+                        ]}
+                        dataKey="value"
+                        innerRadius={68}
+                        outerRadius={92}
+                        paddingAngle={4}
+                      >
+                        <Cell fill="#10b981" />
+                        <Cell fill="#e5e7eb" />
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-[-28px] text-center">
+                  <div className="text-3xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
+                  <div className="text-xs text-muted-foreground">Collected this period</div>
+                </div>
+              </ChartCard>
+
+              <ChartCard title="Outstanding Dues" subtitle="Balance movement" colorA="#ef4444" colorB="#fde2e2" className="md:col-span-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={latestSeries}>
+                    <defs>
+                      <linearGradient id="outstandingFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.24} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="outstanding" stroke="#ef4444" fill="url(#outstandingFill)" strokeWidth={2} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </CardContent>
+          </Card>
+        </div>
+
         {bookmarks.length > 0 && (
-          <>
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">{t("dashboard.quickActions")}</h3>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-8">
+          <div>
+            <h3 className="mb-3 text-sm font-medium text-muted-foreground">{t("dashboard.quickActions")}</h3>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {bookmarks
                 .sort((a, b) => a.displayOrder - b.displayOrder)
                 .map((bm) => {
@@ -733,7 +1014,7 @@ function HomePageContent() {
                   );
                 })}
             </div>
-          </>
+          </div>
         )}
 
       </main>
