@@ -70,7 +70,7 @@ const groupLabels: Record<string, string> = {
 
 function config(kind: BalanceKind) {
   return kind === "receivable"
-    ? {
+      ? {
         title: "Receivables",
         description: "Review loan and service receivable accounts.",
         overviewPath: "/accounting/cash-in/overview",
@@ -83,7 +83,7 @@ function config(kind: BalanceKind) {
         title: "Payables",
         description: "Review loan and service payable accounts.",
         overviewPath: "/accounting/cash-out/overview",
-        sectionKey: "payable_payment",
+        sectionKey: "payable_repayment",
         detailBase: "/cash-out/accounts",
         actionLabel: "Open Payment",
         dashboardFlow: "cash-out" as const,

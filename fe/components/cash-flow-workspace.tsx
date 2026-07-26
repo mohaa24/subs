@@ -76,7 +76,8 @@ const sectionCategories: Record<string, CashTransactionCategory | null> = {
   operating_income: "operating_income",
   receivable_collection: "receivable_collection",
   operating_expense: "operating_expense",
-  payable_payment: "payable_payment",
+  payable_repayment: "payable_repayment",
+  payable_payment: "payable_repayment",
   project_fund_collection: null,
   project_fund_expense: null,
 };
@@ -139,9 +140,12 @@ function endpointFor(flow: CashFlowSlug, category: CashTransactionCategory) {
   if (flow === "cash-in" && category === "operating_income") return "/accounting/cash-in/operating-income";
   if (flow === "cash-in" && category === "receivable_payment") return "/accounting/cash-in/receivable-payments";
   if (flow === "cash-in" && category === "receivable_collection") return "/accounting/cash-in/receivable-collections";
+  if (flow === "cash-in" && category === "payable_borrowing") return "/accounting/cash-in/payable-borrowings";
   if (flow === "cash-out" && category === "operating_expense") return "/accounting/cash-out/operating-expenses";
+  if (flow === "cash-out" && category === "payable_repayment") return "/accounting/cash-out/payable-repayments";
+  if (flow === "cash-out" && category === "payable_payment") return "/accounting/cash-out/payable-repayments";
   if (flow === "cash-out" && category === "payable_recovery") return "/accounting/cash-out/payable-recoveries";
-  return "/accounting/cash-out/payable-payments";
+  return "/accounting/cash-out/payable-repayments";
 }
 
 function isCashBankSubtype(subtype?: string | null) {
@@ -162,27 +166,27 @@ function subtypeLabel(subtype?: string | null) {
 
 function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
   if (sectionKey === "receivable_collection") return "Record Repayment";
-  if (sectionKey === "payable_payment") return "Make Payment";
+  if (sectionKey === "payable_repayment") return "Record Repayment";
   return flow === "cash-in" ? "Record Income" : "Record Expense";
 }
 
 function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null, sectionKey?: string) {
   if (category === "receivable_payment") return "Add Amount Due";
   if (category === "receivable_collection") return "Record Repayment";
-  if (category === "payable_recovery") return "Recover";
-  if (category === "payable_payment") return "Make Payment";
+  if (category === "payable_borrowing" || category === "payable_recovery") return "Add Borrowing";
+  if (category === "payable_repayment" || category === "payable_payment") return "Record Repayment";
   return buttonLabel(flow, sectionKey);
 }
 
 function actionCounterpartyLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null) {
-  if (category === "receivable_payment" || category === "payable_payment") return "Paid To";
-  if (category === "receivable_collection" || category === "payable_recovery") return "Received From";
+  if (category === "receivable_payment" || category === "payable_repayment" || category === "payable_payment") return "Paid To";
+  if (category === "receivable_collection" || category === "payable_borrowing" || category === "payable_recovery") return "Received From";
   return flow === "cash-in" ? "Received From" : "Paid To";
 }
 
 function actionDocumentLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null) {
-  if (category === "receivable_payment" || category === "payable_payment") return "Payment Voucher Number";
-  if (category === "receivable_collection" || category === "payable_recovery") return "Receipt Number";
+  if (category === "receivable_payment" || category === "payable_repayment" || category === "payable_payment") return "Payment Voucher Number";
+  if (category === "receivable_collection" || category === "payable_borrowing" || category === "payable_recovery") return "Receipt Number";
   return flow === "cash-in" ? "Receipt Number" : "Payment Voucher Number";
 }
 
@@ -460,7 +464,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
             loadingData={loadingData}
             onRecord={(category) => openRecord(
               { ...detail.account, periodTotal: detail.summary.periodTotal ?? 0, thisMonthTotal: 0 },
-              category ?? (isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_payment" : flow === "cash-in" ? "operating_income" : "operating_expense")
+              category ?? (isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_repayment" : flow === "cash-in" ? "operating_income" : "operating_expense")
             )}
             onReverse={handleReverse}
           />
@@ -689,8 +693,8 @@ function AccountDetailView({
           </>
         ) : isPayable ? (
           <>
-            <MetricCard icon={ReceiptText} label="Total Payable" value={formatRs(detail.summary.totalPayable ?? 0)} />
-            <MetricCard icon={WalletCards} label="Total Paid" value={formatRs(detail.summary.totalPaid ?? 0)} />
+            <MetricCard icon={ReceiptText} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} />
+            <MetricCard icon={WalletCards} label="Total Repaid" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} />
             <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} />
           </>
         ) : (
@@ -702,8 +706,8 @@ function AccountDetailView({
         )}
       </div>
 
-      {isReceivable ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        {isReceivable ? (
+          <div className="grid gap-4 xl:grid-cols-2">
           <CashHistoryCard
             title="Disburse History (Cash Out)"
             action={<Button onClick={() => onRecord("receivable_payment")} disabled={!canManage}>Disburse Payment</Button>}
@@ -729,8 +733,8 @@ function AccountDetailView({
           action={
             isPayable ? (
               <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="outline" onClick={() => onRecord("payable_recovery")} disabled={!canManage}>Recover</Button>
-                <Button onClick={() => onRecord("payable_payment")} disabled={!canManage}>Make Payment</Button>
+                <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
+                <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Repayment (Cash Out)</Button>
               </div>
             ) : (
               <Button onClick={() => onRecord()} disabled={!canManage}>{config.actionLabel}</Button>

@@ -37,6 +37,11 @@ const accountSubtypesByType = {
 const cashBankSubtypes = ["cash", "bank"];
 const receivableSubtypes = ["loan_receivable", "service_receivable"];
 const payableSubtypes = ["loan_payable", "service_payable"];
+const payableBorrowingCategories = ["payable_borrowing", "payable_recovery"];
+const payableRepaymentCategories = ["payable_repayment", "payable_payment"];
+function categoryFilter(category) {
+    return Array.isArray(category) ? { in: category } : category;
+}
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
@@ -426,9 +431,9 @@ function cashTransactionTitle(category, reversal = false) {
         return "INCOME RECEIPT";
     if (category === "operating_expense")
         return "EXPENSE PAYMENT VOUCHER";
-    if (category === "payable_recovery")
-        return "PAYABLE RECOVERY RECEIPT";
-    return "PAYABLE PAYMENT VOUCHER";
+    if (category === "payable_borrowing" || category === "payable_recovery")
+        return "PAYABLE BORROWING RECEIPT";
+    return "PAYABLE REPAYMENT VOUCHER";
 }
 function cashTransactionCounterpartyLabel(category) {
     if (category === "receivable_write_off")
@@ -442,7 +447,11 @@ function cashTransactionAmountLabel(category, reversal = false) {
         return "Reversed Amount";
     if (category === "receivable_write_off")
         return "Written Off";
+    if (category === "payable_borrowing" || category === "payable_recovery")
+        return "Borrowed";
     if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense")
+        return "Paid";
+    if (category === "payable_repayment")
         return "Paid";
     return "Received";
 }
@@ -539,22 +548,23 @@ function cashTransactionLabel(category) {
         return "Write off";
     if (category === "operating_expense")
         return "Operating expense";
-    if (category === "payable_recovery")
-        return "Payable recovery";
-    return "Payable payment";
+    if (category === "payable_borrowing" || category === "payable_recovery")
+        return "Borrowed";
+    return "Repaid";
 }
 function cashAccountWhere(flowType, category) {
-    if (flowType === "cash_in" && category === "operating_income") {
+    const categories = Array.isArray(category) ? category : [category];
+    if (flowType === "cash_in" && categories.includes("operating_income")) {
         return {
             accountType: "income",
             assetSubtype: "operating_income",
             OR: [{ systemKey: null }, { NOT: { systemKey: { startsWith: "income_due_type_" } } }],
         };
     }
-    if (category === "receivable_collection" || category === "receivable_payment" || category === "receivable_write_off") {
+    if (categories.some((value) => value === "receivable_collection" || value === "receivable_payment" || value === "receivable_write_off")) {
         return { accountType: "asset", assetSubtype: { in: receivableSubtypes } };
     }
-    if (flowType === "cash_out" && category === "operating_expense") {
+    if (flowType === "cash_out" && categories.includes("operating_expense")) {
         return { accountType: "expense", assetSubtype: "operating_expense" };
     }
     return {
@@ -655,7 +665,7 @@ async function groupedCashTransactionTotals(tx, organizationId, accountIds, flow
             organizationId,
             accountId: { in: accountIds },
             flowType,
-            category,
+            category: categoryFilter(category),
             reversedAt: null,
             transactionDate: { gte: from, lte: toEnd },
         },
@@ -667,7 +677,7 @@ async function latestCashTransactionActivity(tx, organizationId, accountIds, flo
     const latest = new Map();
     await Promise.all(accountIds.map(async (accountId) => {
         const txRow = await tx.cashTransaction.findFirst({
-            where: { organizationId, accountId, flowType, category, reversedAt: null },
+            where: { organizationId, accountId, flowType, category: categoryFilter(category), reversedAt: null },
             orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
             select: { accountId: true, transactionDate: true },
         });
@@ -682,7 +692,7 @@ async function cashTransactionAmount(tx, organizationId, input) {
             organizationId,
             accountId: input.accountId,
             flowType: input.flowType,
-            category: input.category,
+            category: categoryFilter(input.category),
             reversedAt: null,
             ...(input.from || input.toEnd
                 ? {
@@ -942,12 +952,12 @@ async function buildCashFlowOverview(req, res, flowType) {
         : [
             { key: "operating_expense", title: "Operating Expenses" },
             { key: "project_fund_expense", title: "Special Fund Expenses" },
-            { key: "payable_payment", title: "Payable Payments" },
+            { key: "payable_repayment", title: "Payable Repayments" },
         ];
     const data = await prisma_js_1.prisma.$transaction(async (tx) => {
         await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
         const operatingCategory = flowType === "cash_in" ? "operating_income" : "operating_expense";
-        const balanceCategory = flowType === "cash_in" ? "receivable_collection" : "payable_payment";
+        const balanceCategory = flowType === "cash_in" ? "receivable_collection" : payableRepaymentCategories;
         const [operatingRows, fundRows, balanceRows] = await Promise.all([
             cashAccountRows(tx, orgId, flowType, operatingCategory, from, toEnd, search),
             cashFundRows(tx, orgId, flowType, from, toEnd, search),
@@ -955,7 +965,7 @@ async function buildCashFlowOverview(req, res, flowType) {
         ]);
         const rowsByKey = flowType === "cash_in"
             ? { operating_income: operatingRows, project_fund_collection: fundRows, receivable_collection: balanceRows }
-            : { operating_expense: operatingRows, project_fund_expense: fundRows, payable_payment: balanceRows };
+            : { operating_expense: operatingRows, project_fund_expense: fundRows, payable_repayment: balanceRows };
         return sections.map((section) => {
             const rows = rowsByKey[section.key] ?? [];
             return {
@@ -990,14 +1000,14 @@ async function loadCashAccountDetail(req, res, flowType) {
     const detailCategory = isReceivableSubtype(account.assetSubtype)
         ? "receivable_collection"
         : isPayableSubtype(account.assetSubtype)
-            ? "payable_payment"
+            ? payableRepaymentCategories
             : flowType === "cash_in"
                 ? "operating_income"
                 : "operating_expense";
     const oppositeCategory = isReceivableSubtype(account.assetSubtype)
         ? "receivable_payment"
         : isPayableSubtype(account.assetSubtype)
-            ? "payable_recovery"
+            ? payableBorrowingCategories
             : null;
     const historyWhere = isReceivableSubtype(account.assetSubtype)
         ? {
@@ -1014,8 +1024,8 @@ async function loadCashAccountDetail(req, res, flowType) {
                 organizationId: orgId,
                 accountId: account.id,
                 OR: [
-                    { flowType: "cash_out", category: "payable_payment" },
-                    { flowType: "cash_in", category: "payable_recovery" },
+                    { flowType: "cash_out", category: { in: payableRepaymentCategories } },
+                    { flowType: "cash_in", category: { in: payableBorrowingCategories } },
                 ],
                 transactionDate: { gte: from, lte: toEnd },
             }
@@ -1063,6 +1073,8 @@ async function loadCashAccountDetail(req, res, flowType) {
         }
         : account.accountType === "liability" && isPayableSubtype(account.assetSubtype)
             ? {
+                totalBorrowed: asNumber(oppositeAll.amount),
+                totalRepaid: asNumber(postedAll.amount),
                 totalPayable: asNumber(oppositeAll.amount),
                 totalPaid: asNumber(postedAll.amount),
                 outstandingBalance: asNumber(oppositeAll.amount.sub(postedAll.amount)),
@@ -1429,8 +1441,10 @@ exports.accountingRouter.post("/cash-in/operating-income", requireAccountingAdmi
 exports.accountingRouter.post("/cash-in/receivable-collections", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "receivable_collection")));
 exports.accountingRouter.post("/cash-in/receivable-payments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "receivable_payment")));
 exports.accountingRouter.post("/cash-out/operating-expenses", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "operating_expense")));
-exports.accountingRouter.post("/cash-out/payable-recoveries", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "payable_recovery")));
-exports.accountingRouter.post("/cash-out/payable-payments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "payable_payment")));
+exports.accountingRouter.post("/cash-in/payable-borrowings", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "payable_borrowing")));
+exports.accountingRouter.post("/cash-out/payable-repayments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "payable_repayment")));
+exports.accountingRouter.post("/cash-out/payable-recoveries", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_in", "payable_borrowing")));
+exports.accountingRouter.post("/cash-out/payable-payments", requireAccountingAdmin, asyncRoute((req, res) => createCashTransaction(req, res, "cash_out", "payable_repayment")));
 exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountingAdmin, asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId)

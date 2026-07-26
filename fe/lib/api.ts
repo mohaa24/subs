@@ -335,7 +335,9 @@ export type CashTransactionCategory =
   | "receivable_collection"
   | "receivable_write_off"
   | "operating_expense"
+  | "payable_borrowing"
   | "payable_recovery"
+  | "payable_repayment"
   | "payable_payment";
 
 export interface CashFlowAccountRow {
