@@ -92,6 +92,15 @@ function dateLabel(value?: string | null) {
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getFullYear()).slice(2)}`;
 }
 
+function initials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "R";
+}
+
 function isCashBank(account: AccountingAccount) {
   return account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive;
 }
@@ -148,6 +157,10 @@ function pill(status: "active" | "closed") {
   return status === "active"
     ? "bg-emerald-100 text-emerald-700"
     : "bg-slate-100 text-slate-600";
+}
+
+function pillForType(kind?: string | null) {
+  return "bg-primary/10 text-primary";
 }
 
 export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
@@ -534,9 +547,9 @@ function ReceivableDashboard(props: {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
+        <div className="max-w-2xl">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-foreground">Receivables</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Receivable (Money to Collect)</h1>
             <span
               className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
               title="Money that other people or organisations owe to your organisation"
@@ -545,7 +558,7 @@ function ReceivableDashboard(props: {
               <Info className="h-4 w-4" />
             </span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">View and manage all receivable accounts.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Money that other people or organisations owe to your organisation.</p>
         </div>
         <Button onClick={props.onAdd} disabled={!props.canManage}>
           <Plus className="mr-2 h-4 w-4" />
@@ -553,7 +566,9 @@ function ReceivableDashboard(props: {
         </Button>
       </div>
 
-      <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} />
+      </div>
 
       <div className="grid gap-3 md:grid-cols-4">
         <Metric icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} />
@@ -563,57 +578,70 @@ function ReceivableDashboard(props: {
       </div>
 
       <Card>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-9" value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Search accounts..." />
-          </div>
-          <Select value={props.type} onValueChange={props.setType}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="loan_receivable">Loan</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={props.status} onValueChange={props.setStatus}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active only</SelectItem>
-              <SelectItem value="closed">Closed only</SelectItem>
-              <SelectItem value="all">All Status</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={props.sort} onValueChange={props.setSort}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="name_asc">Account Name (A-Z)</SelectItem>
-              <SelectItem value="outstanding_desc">Outstanding (High-Low)</SelectItem>
-              <SelectItem value="given_desc">Given (High-Low)</SelectItem>
-              <SelectItem value="repaid_desc">Repaid (High-Low)</SelectItem>
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
-      <Card className="hidden md:block">
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-3 text-xs font-medium text-muted-foreground">
+          <div className="grid gap-3 border-b px-4 py-4 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input className="pl-9" value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Search accounts..." />
+            </div>
+            <Select value={props.type} onValueChange={props.setType}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="loan_receivable">Loan</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={props.status} onValueChange={props.setStatus}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active only</SelectItem>
+                <SelectItem value="closed">Closed only</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={props.sort} onValueChange={props.setSort}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name_asc">Account Name (A-Z)</SelectItem>
+                <SelectItem value="outstanding_desc">Outstanding (High-Low)</SelectItem>
+                <SelectItem value="given_desc">Given (High-Low)</SelectItem>
+                <SelectItem value="repaid_desc">Repaid (High-Low)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="hidden grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-3 text-xs font-medium text-muted-foreground md:grid">
             <div>Account Name</div><div>Account Type</div><div>Opening Balance</div><div>Total Given</div><div>Total Repaid</div><div>Outstanding Balance</div><div>Status</div><div />
           </div>
           {props.loadingData ? <div className="m-5 h-20 rounded-md bg-muted animate-pulse" /> : null}
           {!props.loadingData && rows.length === 0 ? <p className="p-5 text-sm text-muted-foreground">No receivable accounts found.</p> : null}
-          {rows.map((row) => (
-            <button key={row.id} type="button" onClick={() => props.onOpen(row.id)} className="grid w-full grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-4 text-left text-sm transition hover:bg-muted/50 last:border-0">
-              <div className="font-semibold text-foreground">{row.name}</div>
-              <div><span className="rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{row.accountType}</span></div>
-              <div>{formatRs(row.openingBalance)}</div>
-              <div className="font-semibold text-emerald-700">{formatRs(row.totalGiven)}</div>
-              <div className="font-semibold text-indigo-700">{formatRs(row.totalRepaid)}</div>
-              <div className="font-semibold text-orange-700">{formatRs(row.outstandingBalance)}</div>
-              <div><span className={`rounded px-2 py-1 text-xs capitalize ${pill(row.status)}`}>{row.status}</span></div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </button>
-          ))}
+          <div className="hidden md:block">
+            {rows.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => props.onOpen(row.id)}
+                className="grid w-full grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-4 text-left text-sm transition hover:bg-muted/50 last:border-0"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {initials(row.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-foreground">{row.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">{row.assetSubtype ? row.assetSubtype.replace(/_/g, " ") : "-"}</div>
+                  </div>
+                </div>
+                <div><span className={`rounded px-2 py-1 text-xs font-medium ${pillForType(row.accountType)}`}>{row.accountType}</span></div>
+                <div>{formatRs(row.openingBalance)}</div>
+                <div className="font-semibold text-emerald-700">{formatRs(row.totalGiven)}</div>
+                <div className="font-semibold text-indigo-700">{formatRs(row.totalRepaid)}</div>
+                <div className="font-semibold text-orange-700">{formatRs(row.outstandingBalance)}</div>
+                <div><span className={`rounded px-2 py-1 text-xs capitalize ${pill(row.status)}`}>{row.status}</span></div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -623,9 +651,14 @@ function ReceivableDashboard(props: {
           return (
             <Card key={row.id}>
               <button type="button" onClick={() => props.onOpen(row.id)} className="flex w-full items-center justify-between gap-3 p-4 text-left">
-                <div>
-                  <div className="font-semibold">{row.name}</div>
-                  <div className="text-xs text-muted-foreground">{row.accountType}</div>
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {initials(row.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-foreground">{row.name}</div>
+                    <div className="text-xs text-muted-foreground">{row.accountType}</div>
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-muted-foreground">Outstanding</div>
@@ -637,10 +670,11 @@ function ReceivableDashboard(props: {
                 Breakdown
               </button>
               {open ? (
-                <div className="grid grid-cols-2 gap-2 border-t p-4 text-sm">
+                <div className="grid grid-cols-2 gap-3 border-t p-4 text-sm">
                   <Mini label="Opening" value={formatRs(row.openingBalance)} />
                   <Mini label="Given" value={formatRs(row.totalGiven)} />
                   <Mini label="Repaid" value={formatRs(row.totalRepaid)} />
+                  <Mini label="Outstanding" value={formatRs(row.outstandingBalance)} />
                   <Mini label="Status" value={row.status} />
                 </div>
               ) : null}
@@ -674,18 +708,47 @@ function ReceivableDetailView(props: {
   onReversalReceipt: (tx: CashTransaction) => void;
 }) {
   const account = props.detail.account;
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState<"all" | "posted" | "reversed">("all");
+  const filteredHistory = useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return props.detail.history.filter((tx) => {
+      const matchesStatus = historyStatus === "all" || (historyStatus === "posted" && !tx.reversedAt) || (historyStatus === "reversed" && !!tx.reversedAt);
+      const haystack = [
+        tx.transactionLabel,
+        tx.description,
+        tx.counterpartyName,
+        tx.paymentMethod,
+        tx.documentNumber,
+        tx.reversalDocumentNumber,
+        tx.reference,
+      ].filter(Boolean).join(" ").toLowerCase();
+      return matchesStatus && (!q || haystack.includes(q));
+    });
+  }, [historySearch, historyStatus, props.detail.history]);
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-3">
           <Button variant="ghost" size="sm" onClick={props.onBack} className="-ml-2 mb-2">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back
           </Button>
-          <h1 className="text-2xl font-semibold text-foreground">{account.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>Account Type: {account.accountTypeLabel ?? "Loan"}</span>
-            <span className={`rounded px-2 py-1 text-xs capitalize ${pill(account.status ?? "active")}`}>{account.status ?? "active"}</span>
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+              {initials(account.name)}
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-foreground">{account.name}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span className={`rounded px-2 py-1 text-xs font-medium ${pillForType(account.accountTypeLabel ?? "Loan")}`}>{account.accountTypeLabel ?? "Loan"}</span>
+                <span className={`rounded px-2 py-1 text-xs capitalize ${pill(account.status ?? "active")}`}>{account.status ?? "active"}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Created on {dateLabel(account.createdAt)}
+              </div>
+            </div>
           </div>
         </div>
         <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} compact />
@@ -705,18 +768,45 @@ function ReceivableDetailView(props: {
 
       <Card>
         <CardContent className="p-0">
-          <div className="border-b p-4">
-            <h2 className="font-semibold">Transaction History</h2>
+          <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="font-semibold">Transaction History</h2>
+              <p className="text-sm text-muted-foreground">A complete history of amounts borrowed, repayments, and reversals.</p>
+            </div>
+            <div className="grid gap-2 md:w-[28rem] md:grid-cols-[1fr_180px]">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9" value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search transactions..." />
+              </div>
+              <Select value={historyStatus} onValueChange={(value) => setHistoryStatus(value as typeof historyStatus)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="posted">Posted</SelectItem>
+                  <SelectItem value="reversed">Reversed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {props.loadingData ? <div className="m-5 h-20 rounded-md bg-muted animate-pulse" /> : null}
-          {!props.loadingData && props.detail.history.length === 0 ? <p className="p-5 text-sm text-muted-foreground">No transactions recorded yet.</p> : null}
+          {!props.loadingData && filteredHistory.length === 0 ? <p className="p-5 text-sm text-muted-foreground">No transactions recorded yet.</p> : null}
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead className="border-b text-left text-xs text-muted-foreground">
-                <tr><th className="p-3">Date</th><th className="p-3">Transaction</th><th className="p-3">Payment Method</th><th className="p-3 text-right">Amount</th><th className="p-3 text-right">Balance</th><th className="p-3">Status</th><th className="p-3 text-right">Action</th></tr>
+                <tr>
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Transaction</th>
+                  <th className="p-3">Payment Method</th>
+                  <th className="p-3 text-right">Amount</th>
+                  <th className="p-3 text-right">Balance</th>
+                  <th className="p-3">Actioned By</th>
+                  <th className="p-3">Receipt No.</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
               </thead>
               <tbody>
-                {props.detail.history.map((tx) => (
+                {filteredHistory.map((tx) => (
                   <HistoryRows
                     key={tx.id}
                     tx={tx}
@@ -732,7 +822,7 @@ function ReceivableDetailView(props: {
             </table>
           </div>
           <div className="space-y-2 p-3 md:hidden">
-            {props.detail.history.map((tx) => {
+            {filteredHistory.map((tx) => {
               const open = props.expandedRows[tx.id];
               return (
                 <Card key={tx.id}>
@@ -748,22 +838,25 @@ function ReceivableDetailView(props: {
                       </div>
                       <div className="text-right font-semibold">{formatRs(tx.amount)}</div>
                     </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                       <span>{dateLabel(tx.transactionDate)}</span>
                       <span className="inline-flex items-center gap-1">
                         <Banknote className="h-3.5 w-3.5" />
                         {tx.paymentMethod ?? "-"}
                       </span>
-                      <span className="text-right">{`Balance: ${formatRs(tx.balance ?? 0)}`}</span>
+                      <span>{`Balance: ${formatRs(tx.balance ?? 0)}`}</span>
+                      <span className="text-right">{tx.documentNumber ?? "-"}</span>
                     </div>
                   </button>
                   <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                     <span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })}>
-                        {open ? "Hide details" : "View details"}
-                        <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
-                      </Button>
+                      {tx.reversedAt ? (
+                        <Button size="sm" variant="outline" onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })}>
+                          {open ? "Hide details" : "View details"}
+                          <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+                        </Button>
+                      ) : null}
                       {!tx.reversedAt && props.canManage ? (
                         <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
                           <Undo2 className="mr-2 h-4 w-4" />
@@ -772,7 +865,7 @@ function ReceivableDetailView(props: {
                       ) : null}
                     </div>
                   </div>
-                  {open ? <HistoryDetail tx={tx} onReceipt={props.onReceipt} onReversalReceipt={props.onReversalReceipt} /> : null}
+                  {open && tx.reversedAt ? <HistoryDetail tx={tx} onReceipt={props.onReceipt} onReversalReceipt={props.onReversalReceipt} /> : null}
                 </Card>
               );
             })}
@@ -811,7 +904,21 @@ function HistoryRows({
         <td className="p-3">{tx.paymentMethod ?? tx.cashBankAccount?.name ?? "-"}</td>
         <td className="p-3 text-right font-semibold">{formatRs(tx.amount)}</td>
         <td className="p-3 text-right font-semibold">{formatRs(tx.balance ?? 0)}</td>
-        <td className="p-3"><span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span></td>
+        <td className="p-3">{tx.createdBy?.email ?? "-"}</td>
+        <td className="p-3">
+          {tx.documentNumber ? (
+            <button type="button" onClick={() => onReceipt(tx)} className="font-mono text-xs font-semibold text-primary underline-offset-2 hover:underline">
+              {tx.documentNumber}
+            </button>
+          ) : (
+            "-"
+          )}
+        </td>
+        <td className="p-3">
+          <span className={`rounded px-2 py-1 text-xs capitalize ${tx.reversedAt ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+            {tx.reversedAt ? "Reversed" : "Posted"}
+          </span>
+        </td>
         <td className="p-3 text-right">
           <div className="flex items-center justify-end gap-2">
             {canManage && !tx.reversedAt ? (
@@ -820,16 +927,18 @@ function HistoryRows({
                 Reverse
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" onClick={onToggle}>
-              {expanded ? "Hide details" : "View details"}
-              <ChevronDown className={`ml-2 h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
-            </Button>
+            {tx.reversedAt ? (
+              <Button size="sm" variant="outline" onClick={onToggle}>
+                {expanded ? "Hide details" : "View details"}
+                <ChevronDown className={`ml-2 h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
+              </Button>
+            ) : null}
           </div>
         </td>
       </tr>
-      {expanded ? (
+      {expanded && tx.reversedAt ? (
         <tr className={`border-b ${tx.reversedAt ? "bg-destructive/5" : "bg-muted/30"}`}>
-          <td colSpan={7} className="p-3">
+          <td colSpan={9} className="p-3">
             <HistoryMeta tx={tx} onReceipt={onReceipt} onReversalReceipt={onReversalReceipt} />
           </td>
         </tr>

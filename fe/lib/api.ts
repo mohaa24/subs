@@ -323,6 +323,8 @@ export interface AccountingAccount {
   counterpartyName?: string | null;
   counterpartyPhone?: string | null;
   counterpartyMembershipId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   closedAt?: string | null;
   isActive: boolean;
   balance?: number;
