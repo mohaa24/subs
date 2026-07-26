@@ -244,7 +244,7 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
             </div>
             {kind === "payable" ? (
               <Button asChild className="mt-5">
-                <Link href="/cash-out">Add New Borrowing</Link>
+                <Link href="/accounting?tab=accounts&accountType=liability&assetSubtype=loan_payable">Add New Borrowing</Link>
               </Button>
             ) : null}
           </div>

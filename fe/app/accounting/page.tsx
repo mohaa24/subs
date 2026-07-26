@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -226,8 +226,17 @@ function accountSubtypeLabel(account: Pick<Account, "assetSubtype">) {
 }
 
 export default function AccountingPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-muted-foreground">Loading…</div>}>
+      <AccountingPageContent />
+    </Suspense>
+  );
+}
+
+function AccountingPageContent() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const canManageAccounting = user?.role === "admin" || user?.role === "super_user";
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -318,6 +327,26 @@ export default function AccountingPage() {
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, router, user]);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "accounts" || tab === "expenses" || tab === "income" || tab === "transfers" || tab === "reports" || tab === "journal") {
+      setActiveTab(tab);
+    }
+
+    const accountType = searchParams.get("accountType");
+    const assetSubtype = searchParams.get("assetSubtype");
+    if (accountType === "asset" || accountType === "liability" || accountType === "equity" || accountType === "income" || accountType === "expense") {
+      setNewAccount((current) => ({
+        ...current,
+        accountType,
+        assetSubtype:
+          assetSubtype && subtypesByAccountType[accountType].includes(assetSubtype as AssetSubtype)
+            ? (assetSubtype as AssetSubtype)
+            : defaultSubtypeByAccountType[accountType],
+      }));
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!loading && user) void loadAccounting();
