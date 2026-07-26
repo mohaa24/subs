@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, ChevronRight, ReceiptText, Search, WalletCards } from "lucide-react";
+import { ArrowLeftRight, CalendarDays, ChevronRight, Info, ReceiptText, Search, WalletCards } from "lucide-react";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Header } from "@/components/header";
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api, type CashFlowAccountRow, type CashFlowOverview } from "@/lib/api";
+import { api, type CashAccountDetail, type CashFlowAccountRow, type CashFlowOverview } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { useAuth } from "@/lib/auth-context";
 
@@ -68,6 +68,25 @@ const groupLabels: Record<string, string> = {
   service_payable: "Service Payables",
 };
 
+function initials(value: string) {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "P";
+}
+
+function pill(status?: string | null) {
+  return status === "closed"
+    ? "bg-slate-100 text-slate-600"
+    : "bg-emerald-100 text-emerald-700";
+}
+
+function typePill() {
+  return "bg-primary/10 text-primary";
+}
+
 function config(kind: BalanceKind) {
   return kind === "receivable"
       ? {
@@ -80,15 +99,23 @@ function config(kind: BalanceKind) {
         dashboardFlow: "cash-in" as const,
       }
     : {
-        title: "Payables",
-        description: "Review loan and service payable accounts.",
+        title: "Payable (Money to Pay)",
+        description: "Money that your organisation owes to other people or organisations.",
         overviewPath: "/accounting/cash-out/overview",
         sectionKey: "payable_repayment",
         detailBase: "/cash-out/accounts",
-        actionLabel: "Open Payment",
+        actionLabel: "Open Payable",
         dashboardFlow: "cash-out" as const,
       };
 }
+
+type PayableRow = Omit<CashFlowAccountRow, "status"> & {
+  openingBalance: number;
+  totalBorrowed: number;
+  totalRepaid: number;
+  outstandingBalance: number;
+  status: "open" | "closed";
+};
 
 export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
   const { user, loading } = useAuth();
@@ -97,6 +124,7 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
   const [period, setPeriod] = useState<Period>("this_year");
   const [search, setSearch] = useState("");
   const [overview, setOverview] = useState<CashFlowOverview | null>(null);
+  const [payableRows, setPayableRows] = useState<PayableRow[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState("");
 
@@ -114,9 +142,32 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
     setLoadingData(true);
     setError("");
     try {
-      setOverview(await api<CashFlowOverview>(cfg.overviewPath, {
+      const data = await api<CashFlowOverview>(cfg.overviewPath, {
         params: { ...rangeFor(period), ...(search.trim() ? { q: search.trim() } : {}) },
-      }));
+      });
+      setOverview(data);
+      if (kind === "payable") {
+        const rows = data.sections.find((section) => section.key === cfg.sectionKey)?.rows ?? [];
+        const next = await Promise.all(rows.map(async (row) => {
+          const detail = await api<CashAccountDetail>(`/accounting/cash-out/accounts/${row.id}`, {
+            params: rangeFor(period),
+          });
+          const borrowed = detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0;
+          const repaid = detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0;
+          const outstanding = detail.summary.outstandingBalance ?? 0;
+          return {
+            ...row,
+            openingBalance: Number((outstanding - borrowed + repaid).toFixed(2)),
+            totalBorrowed: Number(borrowed.toFixed(2)),
+            totalRepaid: Number(repaid.toFixed(2)),
+            outstandingBalance: Number(outstanding.toFixed(2)),
+            status: (detail.account.isActive && !detail.account.closedAt ? "open" : "closed") as "open" | "closed",
+          };
+        }));
+        setPayableRows(next);
+      } else {
+        setPayableRows([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : `Unable to load ${cfg.title}`);
     } finally {
@@ -125,17 +176,23 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
   }
 
   const rows = useMemo(() => {
+    if (kind === "payable") return payableRows;
     return overview?.sections.find((section) => section.key === cfg.sectionKey)?.rows ?? [];
-  }, [cfg.sectionKey, overview]);
+  }, [cfg.sectionKey, kind, overview, payableRows]);
 
-  const grouped = useMemo(() => {
-    const next = new Map<string, CashFlowAccountRow[]>();
-    for (const row of rows) {
-      const key = row.assetSubtype ?? "other";
-      next.set(key, [...(next.get(key) ?? []), row]);
+  const totals = useMemo(() => {
+    if (kind !== "payable") {
+      return null;
     }
-    return Array.from(next.entries());
-  }, [rows]);
+    const payable = rows as PayableRow[];
+    return payable.reduce((acc, row) => ({
+      openingBalance: acc.openingBalance + row.openingBalance,
+      totalBorrowed: acc.totalBorrowed + row.totalBorrowed,
+      totalRepaid: acc.totalRepaid + row.totalRepaid,
+      outstandingBalance: acc.outstandingBalance + row.outstandingBalance,
+    }), { openingBalance: 0, totalBorrowed: 0, totalRepaid: 0, outstandingBalance: 0 });
+  }, [kind, rows]);
+  const payableList = kind === "payable" ? (rows as PayableRow[]) : [];
 
   if (loading || !user) return null;
 
@@ -149,9 +206,18 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
           { label: cfg.title },
         ]} />
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">{cfg.title}</h1>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold text-foreground">{cfg.title}</h1>
+              <span
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                title={cfg.description}
+                aria-label={cfg.description}
+              >
+                <Info className="h-4 w-4" />
+              </span>
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">{cfg.description}</p>
           </div>
           <div className="w-56">
@@ -165,63 +231,106 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
           </div>
         </div>
 
+        {kind === "payable" ? (
+          <div className="grid gap-3 md:grid-cols-4">
+            <Metric icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} />
+            <Metric icon={ReceiptText} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} />
+            <Metric icon={ArrowLeftRight} label="Total Repaid" value={formatRs(totals?.totalRepaid ?? 0)} />
+            <Metric icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} />
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-3">
+            <Metric icon={ReceiptText} label="YTD Total" value={formatRs(overview?.totals.periodTotal ?? 0)} />
+            <Metric icon={WalletCards} label="Accounts / Funds" value={String(overview?.totals.accountCount ?? 0)} />
+            <Metric icon={CalendarDays} label="Period" value={`${dateLabel(rangeFor(period).fromDate)} - ${dateLabel(rangeFor(period).toDate)}`} />
+          </div>
+        )}
+
         <Card>
-          <CardContent className="p-4">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${cfg.title.toLowerCase()}`} />
+          <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end">
+            <div className="flex-1">
+              <Label className="text-xs">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={kind === "payable" ? "Search payable account..." : `Search ${cfg.title.toLowerCase()}`} />
+              </div>
             </div>
+            {kind === "payable" ? null : (
+              <Button variant="outline" onClick={() => { setSearch(""); void loadData(); }}>Clear</Button>
+            )}
           </CardContent>
         </Card>
 
         {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
 
-        <div className="space-y-4">
-          {loadingData ? <div className="h-24 rounded-md bg-muted animate-pulse" /> : null}
-          {!loadingData && grouped.length === 0 ? (
-            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No accounts found.</p>
-          ) : null}
-          {grouped.map(([group, groupRows]) => (
-            <Card key={group}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
-                  {groupLabels[group] ?? "Other Accounts"}
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">{groupRows.length}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {groupRows.map((row) => (
-                  <div key={row.id}>
-                    <div className="rounded-md border bg-card p-4 md:hidden">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-foreground">{row.name}</div>
-                          <div className="text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype}</div>
-                        </div>
-                        <Button asChild size="icon" variant="ghost" aria-label="Open account">
-                          <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                        </Button>
-                      </div>
-                      <div className="mt-4 grid gap-3 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="flex items-center gap-1.5 text-muted-foreground"><ReceiptText className="h-3.5 w-3.5" />YTD Total</span>
-                          <span className="font-semibold">{formatRs(row.periodTotal)}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="flex items-center gap-1.5 text-muted-foreground"><WalletCards className="h-3.5 w-3.5" />This Month</span>
-                          <span className="font-semibold">{formatRs(row.thisMonthTotal)}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="flex items-center gap-1.5 text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />Last Recorded</span>
-                          <span className="font-medium">{dateLabel(row.lastRecordedAt)}</span>
-                        </div>
-                      </div>
-                      <Button asChild className="mt-4 w-full" size="sm">
-                        <Link href={`${cfg.detailBase}/${row.id}`}>{cfg.actionLabel}</Link>
-                      </Button>
+        {kind !== "payable" ? null : (
+          <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-xs font-medium text-muted-foreground">
+            <div className="grid flex-1 grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_.7fr_40px] gap-3">
+              <div>Account Name</div>
+              <div>Account Type</div>
+              <div>Opening Balance</div>
+              <div>Total Borrowed</div>
+              <div>Total Repaid</div>
+              <div>Outstanding Balance</div>
+              <div>Status</div>
+              <div />
+            </div>
+          </div>
+        )}
+
+        {kind !== "payable" ? null : (
+          <div className="space-y-3">
+            {loadingData ? <div className="h-24 rounded-md bg-muted animate-pulse" /> : null}
+            {!loadingData && payableList.length === 0 ? <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No payable accounts found.</p> : null}
+            <div className="space-y-2">
+              {payableList.map((row) => (
+                <div
+                  key={row.id}
+                  className="grid gap-3 rounded-md border bg-card p-4 text-sm transition hover:bg-muted/30 md:grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] md:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                      {initials(row.name)}
                     </div>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-foreground">{row.name}</div>
+                      <div className="truncate text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "-"}</div>
+                    </div>
+                  </div>
+                  <div><span className={`rounded px-2 py-1 text-xs font-medium ${typePill()}`}>{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "Payable"}</span></div>
+                  <div className="font-semibold">{formatRs(row.openingBalance)}</div>
+                  <div className="font-semibold text-emerald-700">{formatRs(row.totalBorrowed)}</div>
+                  <div className="font-semibold text-indigo-700">{formatRs(row.totalRepaid)}</div>
+                  <div className="font-semibold text-orange-700">{formatRs(row.outstandingBalance)}</div>
+                  <div><span className={`rounded px-2 py-1 text-xs capitalize ${pill(row.status)}`}>{row.status}</span></div>
+                  <div className="flex items-center justify-end">
+                    <Button asChild size="icon" variant="ghost" aria-label="Open account">
+                      <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {kind !== "payable" ? (
+          <>
+            {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+            <div className="space-y-4">
+              {loadingData ? <div className="h-24 rounded-md bg-muted animate-pulse" /> : null}
+              {!loadingData && rows.length === 0 ? (
+                <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No accounts found.</p>
+              ) : null}
+              {rows.map((row) => (
+                <Card key={row.id}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ArrowLeftRight className="h-5 w-5 text-muted-foreground" />
+                      {groupLabels[row.assetSubtype ?? ""] ?? "Other Accounts"}
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">1</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
                     <div className="hidden gap-3 rounded-md border bg-card p-3 md:grid md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center">
                       <div>
                         <div className="font-medium text-foreground">{row.name}</div>
@@ -248,13 +357,29 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
                         </Button>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </>
+        ) : null}
       </main>
     </div>
+  );
+}
+
+function Metric({ icon: Icon, label, value }: { icon: typeof ReceiptText; label: string; value: string }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="truncate text-lg font-semibold text-foreground">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

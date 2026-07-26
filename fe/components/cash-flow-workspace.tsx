@@ -8,7 +8,9 @@ import {
   ArrowDownCircle,
   ArrowLeft,
   ArrowUpCircle,
+  Banknote,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   Landmark,
   ReceiptText,
@@ -682,6 +684,7 @@ function AccountDetailView({
   const isReceivable = isReceivableSubtype(detail.account.assetSubtype);
   const isPayable = isPayableSubtype(detail.account.assetSubtype);
   const historyTitle = flow === "cash-in" ? "Transaction History" : "Payment History";
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
@@ -727,6 +730,101 @@ function AccountDetailView({
             onReverse={onReverse}
           />
         </div>
+      ) : isPayable ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
+            <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Repayment (Cash Out)</Button>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="font-semibold">Payment History</h2>
+                  <p className="text-sm text-muted-foreground">A complete history of borrowings, repayments, and reversals.</p>
+                </div>
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead className="border-b text-left text-xs text-muted-foreground">
+                    <tr>
+                      <th className="p-3">Date</th>
+                      <th className="p-3">Transaction</th>
+                      <th className="p-3">Payment Method</th>
+                      <th className="p-3 text-right">Amount</th>
+                      <th className="p-3 text-right">Balance</th>
+                      <th className="p-3">Actioned By</th>
+                      <th className="p-3">Receipt No.</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.history.map((tx) => (
+                      <PayableHistoryRow
+                        key={tx.id}
+                        tx={tx}
+                        canManage={canManage}
+                        expanded={!!expandedRows[tx.id]}
+                        onToggle={() => setExpandedRows({ ...expandedRows, [tx.id]: !expandedRows[tx.id] })}
+                        onReverse={onReverse}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="space-y-2 p-3 md:hidden">
+                {detail.history.map((tx) => {
+                  const open = expandedRows[tx.id];
+                  return (
+                    <Card key={tx.id}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRows({ ...expandedRows, [tx.id]: !open })}
+                        className="w-full p-3 text-left"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-semibold">{tx.transactionLabel}</div>
+                            <div className="text-xs text-muted-foreground">{tx.description || tx.counterpartyName || "-"}</div>
+                          </div>
+                          <div className="text-right font-semibold">{formatRs(tx.amount)}</div>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <span>{dateLabel(tx.transactionDate)}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Banknote className="h-3.5 w-3.5" />
+                            {tx.paymentMethod ?? "-"}
+                          </span>
+                          <span>{`Balance: ${formatRs(tx.balance ?? 0)}`}</span>
+                          <span className="text-right">{tx.documentNumber ?? "-"}</span>
+                        </div>
+                      </button>
+                      <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+                        <span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span>
+                        <div className="flex items-center gap-2">
+                          {tx.reversedAt ? (
+                            <Button size="sm" variant="outline" onClick={() => setExpandedRows({ ...expandedRows, [tx.id]: !open })}>
+                              {open ? "Hide details" : "View details"}
+                              <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+                            </Button>
+                          ) : null}
+                          {!tx.reversedAt && canManage ? (
+                            <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+                              <Undo2 className="mr-2 h-4 w-4" />
+                              Reverse
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                      {open && tx.reversedAt ? <PayableHistoryDetail tx={tx} /> : null}
+                    </Card>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       ) : (
         <CashHistoryCard
           title={historyTitle}
@@ -747,6 +845,84 @@ function AccountDetailView({
           onReverse={onReverse}
         />
       )}
+    </div>
+  );
+}
+
+function PayableHistoryRow({
+  tx,
+  canManage,
+  expanded,
+  onToggle,
+  onReverse,
+}: {
+  tx: CashTransaction;
+  canManage: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onReverse: (transaction: CashTransaction) => void;
+}) {
+  return (
+    <>
+      <tr className="border-b">
+        <td className="p-3 whitespace-nowrap">{dateLabel(tx.transactionDate)}</td>
+        <td className="p-3">
+          <div className="font-semibold">{tx.transactionLabel}</div>
+          <div className="text-xs text-muted-foreground">{tx.description || tx.counterpartyName || "-"}</div>
+        </td>
+        <td className="p-3">{tx.paymentMethod ?? tx.cashBankAccount?.name ?? "-"}</td>
+        <td className="p-3 text-right font-semibold">{formatRs(tx.amount)}</td>
+        <td className="p-3 text-right font-semibold">{formatRs(tx.balance ?? 0)}</td>
+        <td className="p-3">{tx.createdBy?.email ?? "-"}</td>
+        <td className="p-3">
+          {tx.documentNumber ? (
+            <div className="font-mono text-xs font-semibold text-primary">{tx.documentNumber}</div>
+          ) : (
+            "-"
+          )}
+        </td>
+        <td className="p-3">
+          <span className={`rounded px-2 py-1 text-xs capitalize ${tx.reversedAt ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+            {tx.reversedAt ? "Reversed" : "Posted"}
+          </span>
+        </td>
+        <td className="p-3 text-right">
+          <div className="flex items-center justify-end gap-2">
+            {canManage && !tx.reversedAt ? (
+              <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+                <Undo2 className="mr-2 h-4 w-4" />
+                Reverse
+              </Button>
+            ) : null}
+            {tx.reversedAt ? (
+              <Button size="sm" variant="outline" onClick={onToggle}>
+                {expanded ? "Hide details" : "View details"}
+                <ChevronDown className={`ml-2 h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
+              </Button>
+            ) : null}
+          </div>
+        </td>
+      </tr>
+      {expanded && tx.reversedAt ? (
+        <tr className="border-b bg-destructive/5">
+          <td colSpan={9} className="p-3">
+            <PayableHistoryDetail tx={tx} />
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function PayableHistoryDetail({ tx }: { tx: CashTransaction }) {
+  return (
+    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
+      <DetailMini label="Actioned by" value={tx.createdBy?.email ?? "-"} />
+      <DetailMini label="Receipt no" value={tx.documentNumber ?? "-"} />
+      <DetailMini label="Reversal reason" value={tx.reversalReason ?? "-"} />
+      <DetailMini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
+      <DetailMini label="Reversed on" value={dateLabel(tx.reversedAt)} />
+      <DetailMini label="Linked reversal receipt" value={tx.reversalDocumentNumber ?? "-"} />
     </div>
   );
 }
@@ -826,4 +1002,8 @@ function CashHistoryCard({
       </CardContent>
     </Card>
   );
+}
+
+function DetailMini({ label, value }: { label: string; value: string }) {
+  return <div><div className="text-muted-foreground">{label}</div><div className="font-medium text-foreground">{value}</div></div>;
 }
