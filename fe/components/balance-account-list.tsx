@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth-context";
 
 type BalanceKind = "receivable" | "payable";
 type Period = "this_month" | "this_year" | "all_time";
+type PayableSort = "name_asc" | "outstanding_desc" | "borrowed_desc" | "repaid_desc";
 
 const periodLabels: Record<Period, string> = {
   this_month: "Current Month",
@@ -123,6 +124,7 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
   const cfg = config(kind);
   const [period, setPeriod] = useState<Period>("this_year");
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<PayableSort>("name_asc");
   const [overview, setOverview] = useState<CashFlowOverview | null>(null);
   const [payableRows, setPayableRows] = useState<PayableRow[]>([]);
   const [loadingData, setLoadingData] = useState(false);
@@ -192,7 +194,17 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
       outstandingBalance: acc.outstandingBalance + row.outstandingBalance,
     }), { openingBalance: 0, totalBorrowed: 0, totalRepaid: 0, outstandingBalance: 0 });
   }, [kind, rows]);
-  const payableList = kind === "payable" ? (rows as PayableRow[]) : [];
+  const payableList = useMemo(() => {
+    const list = kind === "payable" ? (rows as PayableRow[]) : [];
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      if (sort === "outstanding_desc") return b.outstandingBalance - a.outstandingBalance;
+      if (sort === "borrowed_desc") return b.totalBorrowed - a.totalBorrowed;
+      if (sort === "repaid_desc") return b.totalRepaid - a.totalRepaid;
+      return a.name.localeCompare(b.name);
+    });
+    return sorted;
+  }, [kind, rows, sort]);
 
   if (loading || !user) return null;
 
@@ -220,23 +232,30 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{cfg.description}</p>
           </div>
-          <div className="w-56">
-            <Label className="text-xs">Period</Label>
-            <Select value={period} onValueChange={(value) => setPeriod(value as Period)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(periodLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-start gap-2">
+            <div className="w-56">
+              <Label className="text-xs">Period</Label>
+              <Select value={period} onValueChange={(value) => setPeriod(value as Period)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(periodLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {kind === "payable" ? (
+              <Button asChild className="mt-5">
+                <Link href="/cash-out">Add New Borrowing</Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 
         {kind === "payable" ? (
           <div className="grid gap-3 md:grid-cols-4">
-            <Metric icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} />
-            <Metric icon={ReceiptText} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} />
-            <Metric icon={ArrowLeftRight} label="Total Repaid" value={formatRs(totals?.totalRepaid ?? 0)} />
-            <Metric icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} />
+            <Metric kind="blue" icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} helper="Opening balance of all payable accounts" />
+            <Metric kind="green" icon={ReceiptText} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} helper="Total amount added across all accounts" />
+            <Metric kind="purple" icon={ArrowLeftRight} label="Total Repaid" value={formatRs(totals?.totalRepaid ?? 0)} helper="Total amount paid across all accounts" />
+            <Metric kind="orange" icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} helper="Total outstanding amount still due" />
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-3">
@@ -247,15 +266,33 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
         )}
 
         <Card>
-          <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end">
-            <div className="flex-1">
+          <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="w-full max-w-sm">
               <Label className="text-xs">Search</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={kind === "payable" ? "Search payable account..." : `Search ${cfg.title.toLowerCase()}`} />
+                <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={kind === "payable" ? "Search accounts..." : `Search ${cfg.title.toLowerCase()}`} />
               </div>
             </div>
-            {kind === "payable" ? null : (
+            {kind === "payable" ? (
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-52">
+                  <Label className="text-xs">Sort by</Label>
+                  <Select value={sort} onValueChange={(value) => setSort(value as PayableSort)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name_asc">Account Name (A-Z)</SelectItem>
+                      <SelectItem value="outstanding_desc">Outstanding Balance</SelectItem>
+                      <SelectItem value="borrowed_desc">Total Borrowed</SelectItem>
+                      <SelectItem value="repaid_desc">Total Repaid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button variant="outline" className="mt-5">
+                  Filters
+                </Button>
+              </div>
+            ) : (
               <Button variant="outline" onClick={() => { setSearch(""); void loadData(); }}>Clear</Button>
             )}
           </CardContent>
@@ -264,54 +301,79 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
         {error ? <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
 
         {kind !== "payable" ? null : (
-          <div className="flex items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-xs font-medium text-muted-foreground">
-            <div className="grid flex-1 grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_.7fr_40px] gap-3">
-              <div>Account Name</div>
-              <div>Account Type</div>
-              <div>Opening Balance</div>
-              <div>Total Borrowed</div>
-              <div>Total Repaid</div>
-              <div>Outstanding Balance</div>
-              <div>Status</div>
-              <div />
-            </div>
-          </div>
-        )}
-
-        {kind !== "payable" ? null : (
-          <div className="space-y-3">
-            {loadingData ? <div className="h-24 rounded-md bg-muted animate-pulse" /> : null}
-            {!loadingData && payableList.length === 0 ? <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No payable accounts found.</p> : null}
-            <div className="space-y-2">
-              {payableList.map((row) => (
-                <div
-                  key={row.id}
-                  className="grid gap-3 rounded-md border bg-card p-4 text-sm transition hover:bg-muted/30 md:grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] md:items-center"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {initials(row.name)}
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="hidden grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-3 text-xs font-medium text-muted-foreground md:grid">
+                <div>Account Name</div>
+                <div>Account Type</div>
+                <div>Opening Balance</div>
+                <div>Total Borrowed</div>
+                <div>Total Repaid</div>
+                <div>Outstanding Balance</div>
+                <div>Status</div>
+                <div />
+              </div>
+              {loadingData ? <div className="m-5 h-24 rounded-md bg-muted animate-pulse" /> : null}
+              {!loadingData && payableList.length === 0 ? <p className="p-5 text-sm text-muted-foreground">No payable accounts found.</p> : null}
+              <div className="hidden md:block">
+                {payableList.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => router.push(`${cfg.detailBase}/${row.id}`)}
+                    className="grid w-full grid-cols-[1.4fr_.8fr_1fr_1fr_1fr_1fr_.7fr_40px] gap-3 border-b px-5 py-4 text-left text-sm transition hover:bg-muted/30 last:border-0"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                        {initials(row.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-foreground">{row.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "-"}</div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-foreground">{row.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "-"}</div>
+                    <div>
+                      <span className={`rounded px-2 py-1 text-xs font-medium ${typePill()}`}>{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "Borrowing"}</span>
                     </div>
-                  </div>
-                  <div><span className={`rounded px-2 py-1 text-xs font-medium ${typePill()}`}>{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "Payable"}</span></div>
-                  <div className="font-semibold">{formatRs(row.openingBalance)}</div>
-                  <div className="font-semibold text-emerald-700">{formatRs(row.totalBorrowed)}</div>
-                  <div className="font-semibold text-indigo-700">{formatRs(row.totalRepaid)}</div>
-                  <div className="font-semibold text-orange-700">{formatRs(row.outstandingBalance)}</div>
-                  <div><span className={`rounded px-2 py-1 text-xs capitalize ${pill(row.status)}`}>{row.status}</span></div>
-                  <div className="flex items-center justify-end">
-                    <Button asChild size="icon" variant="ghost" aria-label="Open account">
-                      <Link href={`${cfg.detailBase}/${row.id}`}><ChevronRight className="h-4 w-4" /></Link>
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                    <div className="font-semibold">{formatRs(row.openingBalance)}</div>
+                    <div className="font-semibold text-emerald-700">{formatRs(row.totalBorrowed)}</div>
+                    <div className="font-semibold text-indigo-700">{formatRs(row.totalRepaid)}</div>
+                    <div className="font-semibold text-orange-700">{formatRs(row.outstandingBalance)}</div>
+                    <div><span className={`rounded px-2 py-1 text-xs capitalize ${pill(row.status)}`}>{row.status}</span></div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-2 p-3 md:hidden">
+                {payableList.map((row) => (
+                  <Card key={row.id}>
+                    <button type="button" onClick={() => router.push(`${cfg.detailBase}/${row.id}`)} className="w-full p-4 text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {initials(row.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-foreground">{row.name}</div>
+                            <div className="text-xs text-muted-foreground">{groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "-"}</div>
+                          </div>
+                        </div>
+                        <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <Mini label="Type" value={groupLabels[row.assetSubtype ?? ""] ?? row.assetSubtype ?? "Borrowing"} />
+                        <Mini label="Opening" value={formatRs(row.openingBalance)} />
+                        <Mini label="Borrowed" value={formatRs(row.totalBorrowed)} />
+                        <Mini label="Repaid" value={formatRs(row.totalRepaid)} />
+                        <Mini label="Outstanding" value={formatRs(row.outstandingBalance)} />
+                        <Mini label="Status" value={row.status} />
+                      </div>
+                    </button>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
         {kind !== "payable" ? (
           <>
@@ -368,18 +430,42 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
   );
 }
 
-function Metric({ icon: Icon, label, value }: { icon: typeof ReceiptText; label: string; value: string }) {
+function Metric({ icon: Icon, label, value, helper, kind }: { icon: typeof ReceiptText; label: string; value: string; helper?: string; kind?: "blue" | "green" | "purple" | "orange" }) {
+  const shell = kind === "green"
+    ? "border-emerald-200 bg-emerald-50/70"
+    : kind === "purple"
+      ? "border-violet-200 bg-violet-50/70"
+      : kind === "orange"
+        ? "border-orange-200 bg-orange-50/70"
+        : "border-blue-200 bg-blue-50/70";
+  const iconShell = kind === "green"
+    ? "bg-white text-emerald-600"
+    : kind === "purple"
+      ? "bg-white text-violet-600"
+      : kind === "orange"
+        ? "bg-white text-orange-600"
+        : "bg-white text-blue-600";
   return (
-    <Card>
+    <Card className={shell}>
       <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
+        <div className={`flex h-12 w-12 items-center justify-center rounded-lg shadow-sm ${iconShell}`}>
+          <Icon className="h-6 w-6" />
         </div>
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{label}</p>
           <p className="truncate text-lg font-semibold text-foreground">{value}</p>
+          {helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-medium text-foreground">{value}</div>
+    </div>
   );
 }
