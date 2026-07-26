@@ -6,6 +6,7 @@ import {
   ArrowDownCircle,
   ArrowLeft,
   ArrowUpCircle,
+  Banknote,
   CalendarDays,
   ChevronDown,
   ChevronRight,
@@ -115,7 +116,7 @@ function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData 
     organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
     membershipNo: receipt.accountName,
     membershipId: "",
-    memberName: receipt.counterpartyName,
+    memberName: receipt.counterpartyName || receipt.accountName,
     paymentId: receipt.transactionId,
     receiptNumber: receipt.receiptNumber,
     paymentDate: receipt.transactionDate,
@@ -138,6 +139,7 @@ function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData 
       receipt.originalReceiptNumber ? { label: "Original Receipt", value: receipt.originalReceiptNumber } : null,
       receipt.reference ? { label: "Reference", value: receipt.reference } : null,
       receipt.counterpartyPhone ? { label: "Phone", value: receipt.counterpartyPhone } : null,
+      receipt.reversalReason ? { label: "Reversal Reason", value: receipt.reversalReason } : null,
     ].filter(Boolean) as Array<{ label: string; value: string }>,
   };
 }
@@ -736,7 +738,7 @@ function ReceivableDetailView(props: {
                 <Card key={tx.id}>
                   <button
                     type="button"
-                    onClick={() => tx.reversedAt ? props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open }) : undefined}
+                    onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })}
                     className="w-full p-3 text-left"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -748,25 +750,29 @@ function ReceivableDetailView(props: {
                     </div>
                     <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                       <span>{dateLabel(tx.transactionDate)}</span>
-                      <span>{tx.paymentMethod ?? "-"}</span>
-                      <span className="text-right">{formatRs(tx.balance ?? 0)}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Banknote className="h-3.5 w-3.5" />
+                        {tx.paymentMethod ?? "-"}
+                      </span>
+                      <span className="text-right">{`Balance: ${formatRs(tx.balance ?? 0)}`}</span>
                     </div>
                   </button>
                   <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
                     <span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span>
-                    {tx.reversedAt ? (
+                    <div className="flex items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => props.setExpandedRows({ ...props.expandedRows, [tx.id]: !open })}>
-                        View details
+                        {open ? "Hide details" : "View details"}
                         <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
                       </Button>
-                    ) : props.canManage ? (
-                      <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
-                        <Undo2 className="mr-2 h-4 w-4" />
-                        Reverse
-                      </Button>
-                    ) : null}
+                      {!tx.reversedAt && props.canManage ? (
+                        <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
+                          <Undo2 className="mr-2 h-4 w-4" />
+                          Reverse
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                  {open && tx.reversedAt ? <HistoryDetail tx={tx} onReceipt={props.onReceipt} onReversalReceipt={props.onReversalReceipt} /> : null}
+                  {open ? <HistoryDetail tx={tx} onReceipt={props.onReceipt} onReversalReceipt={props.onReversalReceipt} /> : null}
                 </Card>
               );
             })}
@@ -807,18 +813,22 @@ function HistoryRows({
         <td className="p-3 text-right font-semibold">{formatRs(tx.balance ?? 0)}</td>
         <td className="p-3"><span className={tx.reversedAt ? "text-destructive" : "text-emerald-700"}>{tx.reversedAt ? "Reversed" : "Posted"}</span></td>
         <td className="p-3 text-right">
-          {tx.reversedAt ? (
+          <div className="flex items-center justify-end gap-2">
+            {canManage && !tx.reversedAt ? (
+              <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+                <Undo2 className="mr-2 h-4 w-4" />
+                Reverse
+              </Button>
+            ) : null}
             <Button size="sm" variant="outline" onClick={onToggle}>
-              View details
+              {expanded ? "Hide details" : "View details"}
               <ChevronDown className={`ml-2 h-4 w-4 transition ${expanded ? "rotate-180" : ""}`} />
             </Button>
-          ) : canManage ? (
-            <Button size="sm" variant="outline" onClick={() => onReverse(tx)}><Undo2 className="mr-2 h-4 w-4" />Reverse</Button>
-          ) : null}
+          </div>
         </td>
       </tr>
-      {tx.reversedAt && expanded ? (
-        <tr className="border-b bg-destructive/5">
+      {expanded ? (
+        <tr className={`border-b ${tx.reversedAt ? "bg-destructive/5" : "bg-muted/30"}`}>
           <td colSpan={7} className="p-3">
             <HistoryMeta tx={tx} onReceipt={onReceipt} onReversalReceipt={onReversalReceipt} />
           </td>
@@ -830,7 +840,7 @@ function HistoryRows({
 
 function HistoryDetail({ tx, onReceipt, onReversalReceipt }: { tx: CashTransaction; onReceipt: (tx: CashTransaction) => void; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
-    <div className="border-t bg-destructive/5 p-3">
+    <div className={`border-t p-3 ${tx.reversedAt ? "bg-destructive/5" : "bg-muted/30"}`}>
       <HistoryMeta tx={tx} onReceipt={onReceipt} onReversalReceipt={onReversalReceipt} />
     </div>
   );
@@ -838,7 +848,7 @@ function HistoryDetail({ tx, onReceipt, onReversalReceipt }: { tx: CashTransacti
 
 function HistoryMeta({ tx, onReceipt, onReversalReceipt }: { tx: CashTransaction; onReceipt: (tx: CashTransaction) => void; onReversalReceipt: (tx: CashTransaction) => void }) {
   return (
-    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-6">
+    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-4">
       <Mini label="Actioned by" value={tx.createdBy?.email ?? "-"} />
       <div>
         <div className="text-muted-foreground">Receipt no</div>
@@ -850,19 +860,23 @@ function HistoryMeta({ tx, onReceipt, onReversalReceipt }: { tx: CashTransaction
           <div className="font-medium text-foreground">-</div>
         )}
       </div>
-      <Mini label="Reversal reason" value={tx.reversalReason ?? "-"} />
-      <Mini label="Reversed on" value={dateLabel(tx.reversedAt)} />
-      <Mini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
-      <div>
-        <div className="text-muted-foreground">Linked reversal receipt</div>
-        {tx.reversalDocumentNumber ? (
-          <button type="button" onClick={() => onReversalReceipt(tx)} className="font-mono font-semibold text-primary underline-offset-2 hover:underline">
-            {tx.reversalDocumentNumber}
-          </button>
-        ) : (
-          <div className="font-medium text-foreground">-</div>
-        )}
-      </div>
+      {tx.reversedAt ? (
+        <>
+          <Mini label="Reversal reason" value={tx.reversalReason ?? "-"} />
+          <Mini label="Reversed on" value={dateLabel(tx.reversedAt)} />
+          <Mini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
+          <div>
+            <div className="text-muted-foreground">Linked reversal receipt</div>
+            {tx.reversalDocumentNumber ? (
+              <button type="button" onClick={() => onReversalReceipt(tx)} className="font-mono font-semibold text-primary underline-offset-2 hover:underline">
+                {tx.reversalDocumentNumber}
+              </button>
+            ) : (
+              <div className="font-medium text-foreground">-</div>
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

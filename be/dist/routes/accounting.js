@@ -420,6 +420,8 @@ function cashTransactionTitle(category, reversal = false) {
         return "RECEIVABLE REPAYMENT RECEIPT";
     if (category === "receivable_payment")
         return "RECEIVABLE PAYMENT VOUCHER";
+    if (category === "receivable_write_off")
+        return "RECEIVABLE WRITE OFF RECEIPT";
     if (category === "operating_income")
         return "INCOME RECEIPT";
     if (category === "operating_expense")
@@ -429,6 +431,8 @@ function cashTransactionTitle(category, reversal = false) {
     return "PAYABLE PAYMENT VOUCHER";
 }
 function cashTransactionCounterpartyLabel(category) {
+    if (category === "receivable_write_off")
+        return "Written Off Against";
     if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense")
         return "Paid To";
     return "Received From";
@@ -436,6 +440,8 @@ function cashTransactionCounterpartyLabel(category) {
 function cashTransactionAmountLabel(category, reversal = false) {
     if (reversal)
         return "Reversed Amount";
+    if (category === "receivable_write_off")
+        return "Written Off";
     if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense")
         return "Paid";
     return "Received";
@@ -449,10 +455,14 @@ function buildCashTransactionReceipt(transaction, createdByEmail, reversal = fal
         organizationName: transaction.organization.name,
         organizationReceiptLogoUrl: transaction.organization.receiptLogoUrl,
         accountName: transaction.account.name,
-        counterpartyName: transaction.counterpartyName,
+        counterpartyName: transaction.category === "receivable_write_off" ? transaction.account.name : transaction.counterpartyName,
         counterpartyPhone: transaction.counterpartyPhone,
         amount: Number(transaction.amount),
-        paymentMethod: reversal ? "System Reversal" : transaction.cashBankAccount?.name ?? null,
+        paymentMethod: reversal
+            ? "System Reversal"
+            : transaction.category === "receivable_write_off"
+                ? "Bad Debt Write-Off Expense"
+                : transaction.cashBankAccount?.name ?? null,
         reference: transaction.reference,
         description: transaction.description,
         reversalReason: reversal ? transaction.reversalReason : null,
@@ -504,6 +514,20 @@ async function generateCashReversalDocumentNumber(tx, organizationId, reversalDa
         : 0;
     return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
 }
+async function generateReceivableWriteOffDocumentNumber(tx, organizationId, transactionDate) {
+    const year = transactionDate.getFullYear();
+    const month = String(transactionDate.getMonth() + 1).padStart(2, "0");
+    const prefix = `WO${year}${month}`;
+    const latest = await tx.cashTransaction.findFirst({
+        where: { organizationId, documentNumber: { startsWith: prefix } },
+        orderBy: { documentNumber: "desc" },
+        select: { documentNumber: true },
+    });
+    const previousSequence = latest?.documentNumber
+        ? parseInt(latest.documentNumber.slice(prefix.length), 10) || 0
+        : 0;
+    return `${prefix}${String(previousSequence + 1).padStart(4, "0")}`;
+}
 function cashTransactionLabel(category) {
     if (category === "operating_income")
         return "Operating income";
@@ -511,6 +535,8 @@ function cashTransactionLabel(category) {
         return "Receivable payment";
     if (category === "receivable_collection")
         return "Receivable collection";
+    if (category === "receivable_write_off")
+        return "Write off";
     if (category === "operating_expense")
         return "Operating expense";
     if (category === "payable_recovery")
@@ -525,7 +551,7 @@ function cashAccountWhere(flowType, category) {
             OR: [{ systemKey: null }, { NOT: { systemKey: { startsWith: "income_due_type_" } } }],
         };
     }
-    if (category === "receivable_collection" || category === "receivable_payment") {
+    if (category === "receivable_collection" || category === "receivable_payment" || category === "receivable_write_off") {
         return { accountType: "asset", assetSubtype: { in: receivableSubtypes } };
     }
     if (flowType === "cash_out" && category === "operating_expense") {
@@ -696,7 +722,7 @@ function receivableAccountWhere(status, search, type) {
 }
 async function receivableSums(tx, organizationId, accountIds, range) {
     if (!accountIds.length)
-        return { given: new Map(), repaid: new Map() };
+        return { given: new Map(), repaid: new Map(), writeOff: new Map() };
     const rows = await tx.cashTransaction.groupBy({
         by: ["accountId", "category"],
         where: {
@@ -706,6 +732,7 @@ async function receivableSums(tx, organizationId, accountIds, range) {
             OR: [
                 { flowType: "cash_out", category: "receivable_payment" },
                 { flowType: "cash_in", category: "receivable_collection" },
+                { flowType: "cash_out", category: "receivable_write_off" },
             ],
             ...(range?.from || range?.toEnd
                 ? {
@@ -720,36 +747,12 @@ async function receivableSums(tx, organizationId, accountIds, range) {
     });
     const given = new Map();
     const repaid = new Map();
+    const writeOff = new Map();
     for (const row of rows) {
-        const target = row.category === "receivable_payment" ? given : repaid;
-        target.set(row.accountId, row._sum.amount ?? new library_1.Decimal(0));
+        const target = row.category === "receivable_payment" ? given : row.category === "receivable_collection" ? repaid : writeOff;
+        target.set(row.accountId, row._sum?.amount ?? new library_1.Decimal(0));
     }
-    return { given, repaid };
-}
-async function receivableWriteOffSums(tx, organizationId, accountIds, range) {
-    if (!accountIds.length)
-        return new Map();
-    const rows = await tx.accountingJournalLine.groupBy({
-        by: ["accountId"],
-        where: {
-            organizationId,
-            accountId: { in: accountIds },
-            side: "credit",
-            journalEntry: {
-                referenceType: "receivable_write_off",
-                ...(range?.from || range?.toEnd
-                    ? {
-                        entryDate: {
-                            ...(range.from ? { gte: range.from } : {}),
-                            ...(range.toEnd ? { lte: range.toEnd } : {}),
-                        },
-                    }
-                    : {}),
-            },
-        },
-        _sum: { amount: true },
-    });
-    return new Map(rows.map((row) => [row.accountId, row._sum.amount ?? new library_1.Decimal(0)]));
+    return { given, repaid, writeOff };
 }
 function receivableBalance(given, repaid, writeOff) {
     return (given ?? new library_1.Decimal(0)).sub(repaid ?? new library_1.Decimal(0)).sub(writeOff ?? new library_1.Decimal(0));
@@ -764,11 +767,9 @@ async function buildReceivableRows(tx, organizationId, input) {
     });
     const ids = accounts.map((account) => account.id);
     const openingEnd = new Date(input.from.getTime() - 1);
-    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, openingWriteOffs, periodWriteOffs] = await Promise.all([
+    const [{ given: openingGiven, repaid: openingRepaid, writeOff: openingWriteOffs }, { given: periodGiven, repaid: periodRepaid, writeOff: periodWriteOffs },] = await Promise.all([
         receivableSums(tx, organizationId, ids, { toEnd: openingEnd }),
         receivableSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
-        receivableWriteOffSums(tx, organizationId, ids, { toEnd: openingEnd }),
-        receivableWriteOffSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
     ]);
     const rows = accounts.map((account) => {
         const openingBalance = receivableBalance(openingGiven.get(account.id), openingRepaid.get(account.id), openingWriteOffs.get(account.id));
@@ -808,11 +809,9 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
     });
     if (!account)
         return null;
-    const [{ given: openingGiven, repaid: openingRepaid }, { given: periodGiven, repaid: periodRepaid }, openingWriteOffs, periodWriteOffs, history] = await Promise.all([
+    const [{ given: openingGiven, repaid: openingRepaid, writeOff: openingWriteOffs }, { given: periodGiven, repaid: periodRepaid, writeOff: periodWriteOffs }, history,] = await Promise.all([
         receivableSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
         receivableSums(tx, organizationId, [account.id], { from, toEnd }),
-        receivableWriteOffSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
-        receivableWriteOffSums(tx, organizationId, [account.id], { from, toEnd }),
         tx.cashTransaction.findMany({
             where: {
                 organizationId,
@@ -820,6 +819,7 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
                 OR: [
                     { flowType: "cash_out", category: "receivable_payment" },
                     { flowType: "cash_in", category: "receivable_collection" },
+                    { flowType: "cash_out", category: "receivable_write_off" },
                 ],
                 transactionDate: { gte: from, lte: toEnd },
             },
@@ -841,10 +841,15 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
                 ? runningBalance.add(transaction.amount)
                 : runningBalance.sub(transaction.amount);
         }
+        const transactionLabel = transaction.category === "receivable_payment"
+            ? "Given"
+            : transaction.category === "receivable_collection"
+                ? "Repaid"
+                : "Write Off";
         return {
             ...serializeCashTransaction(transaction),
-            transactionLabel: transaction.category === "receivable_payment" ? "Given" : "Repaid",
-            paymentMethod: transaction.cashBankAccount?.name ?? null,
+            transactionLabel,
+            paymentMethod: transaction.category === "receivable_write_off" ? "Bad Debt Write-Off Expense" : transaction.cashBankAccount?.name ?? null,
             balance: asNumber(runningBalance),
             status: transaction.reversedAt ? "reversed" : "posted",
         };
@@ -1359,11 +1364,8 @@ exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, 
             throw new Error("Receivable account not found");
         if (!account.isActive || account.closedAt)
             throw new Error("Receivable account is already closed");
-        const [{ given, repaid }, writeOffs] = await Promise.all([
-            receivableSums(tx, orgId, [account.id]),
-            receivableWriteOffSums(tx, orgId, [account.id]),
-        ]);
-        const outstanding = receivableBalance(given.get(account.id), repaid.get(account.id), writeOffs.get(account.id));
+        const { given, repaid, writeOff } = await receivableSums(tx, orgId, [account.id]);
+        const outstanding = receivableBalance(given.get(account.id), repaid.get(account.id), writeOff.get(account.id));
         if (outstanding.lt(0)) {
             const amount = asNumber(outstanding.abs());
             const error = new Error(`This account has an overpayment of Rs. ${amount.toFixed(2)}. Please refund the overpayment before closing the account`);
@@ -1373,9 +1375,12 @@ exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, 
         let journalEntryId = null;
         if (outstanding.gt(0)) {
             const badDebt = await (0, accounting_js_1.getSystemAccount)(tx, orgId, accounting_js_1.BAD_DEBT_EXPENSE_KEY);
+            const cashOnHand = await (0, accounting_js_1.getSystemAccount)(tx, orgId, "asset_cash_on_hand");
+            const transactionDate = new Date();
+            const documentNumber = await generateReceivableWriteOffDocumentNumber(tx, orgId, transactionDate);
             const entry = await (0, accounting_js_1.createJournalEntry)(tx, {
                 organizationId: orgId,
-                entryDate: new Date(),
+                entryDate: transactionDate,
                 entryType: "expense",
                 description: `Bad debt write-off: ${account.name}`,
                 referenceType: "receivable_write_off",
@@ -1387,13 +1392,36 @@ exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, 
                     { accountId: account.id, side: "credit", amount: outstanding, memo: "Receivable account closure" },
                 ],
             });
+            const writeOffTransaction = await tx.cashTransaction.create({
+                data: {
+                    organizationId: orgId,
+                    flowType: "cash_out",
+                    category: "receivable_write_off",
+                    accountId: account.id,
+                    cashBankAccountId: cashOnHand.id,
+                    amount: outstanding,
+                    transactionDate,
+                    counterpartyName: account.name,
+                    counterpartyPhone: account.counterpartyPhone ?? null,
+                    counterpartyMembershipId: account.counterpartyMembershipId ?? null,
+                    reference: `Bad debt write-off for ${account.name}`,
+                    description: `Write off ${account.name}`,
+                    documentNumber,
+                    journalEntryId: entry.id,
+                    createdByUserId: req.auth.userId,
+                },
+            });
+            await tx.accountingJournalEntry.update({
+                where: { id: entry.id },
+                data: { referenceId: writeOffTransaction.id },
+            });
             journalEntryId = entry.id;
         }
         const updated = await tx.accountingAccount.update({
             where: { id: account.id },
             data: { isActive: false, closedAt: new Date() },
         });
-        return { account: serializeAccount(updated), outstandingBalance: asNumber(outstanding), journalEntryId };
+        return { account: serializeAccount(updated), outstandingBalance: asNumber(outstanding.gt(0) ? new library_1.Decimal(0) : outstanding), journalEntryId };
     });
     return res.json(result);
 }));

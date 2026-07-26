@@ -333,6 +333,7 @@ export type CashTransactionCategory =
   | "operating_income"
   | "receivable_payment"
   | "receivable_collection"
+  | "receivable_write_off"
   | "operating_expense"
   | "payable_recovery"
   | "payable_payment";
