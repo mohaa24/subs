@@ -7,6 +7,8 @@ import type { RefObject } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useTranslation } from "@/lib/i18n";
 import { api } from "@/lib/api";
+import type { UserBookmark } from "@/lib/api";
+import { quickActionByKey } from "@/lib/quick-actions";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -24,6 +26,7 @@ import {
   ReceiptText,
   Search,
   Settings,
+  Star,
   Shield,
   Users,
   WalletCards,
@@ -46,6 +49,7 @@ const LOCALE_OPTIONS: { value: "en" | "ta" | "si"; label: string; code: string }
 type NavChild = {
   label: string;
   href?: string;
+  actionKey?: string;
   badge?: string;
   disabled?: boolean;
 };
@@ -55,6 +59,7 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   href?: string;
+  actionKey?: string;
   badge?: string;
   disabled?: boolean;
   children?: NavChild[];
@@ -68,15 +73,15 @@ type SearchItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/" },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/", actionKey: "nav-dashboard" },
   {
     key: "members",
     label: "Members",
     icon: Users,
     children: [
-      { label: "Manage Members", href: "/members" },
-      { label: "People Profile", href: "/persons" },
-      { label: "Member Transactions", href: "/payments" },
+      { label: "Manage Members", href: "/members", actionKey: "nav-manage-members" },
+      { label: "People Profile", href: "/persons", actionKey: "nav-people-profile" },
+      { label: "Member Transactions", href: "/payments", actionKey: "nav-member-transactions" },
     ],
   },
   {
@@ -84,8 +89,8 @@ const NAV_ITEMS: NavItem[] = [
     label: "Cash In",
     icon: ArrowDownToLine,
     children: [
-      { label: "Member Payments", href: "/payments" },
-      { label: "Income Accounts", href: "/cash-in" },
+      { label: "Member Payments", href: "/payments", actionKey: "nav-member-payments" },
+      { label: "Income Accounts", href: "/cash-in", actionKey: "nav-income-accounts" },
     ],
   },
   {
@@ -93,7 +98,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Cash Out",
     icon: ArrowUpFromLine,
     children: [
-      { label: "Expense Accounts", href: "/cash-out" },
+      { label: "Expense Accounts", href: "/cash-out", actionKey: "nav-expense-accounts" },
     ],
   },
   {
@@ -106,16 +111,16 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Bank Transfers", badge: "Soon", disabled: true },
     ],
   },
-  { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds" },
-  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables" },
-  { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables" },
+  { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds", actionKey: "nav-special-funds" },
+  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables", actionKey: "nav-receivable" },
+  { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables", actionKey: "nav-payable" },
   {
     key: "accounts",
     label: "Chart of Accounts",
     icon: WalletCards,
     children: [
-      { label: "Chart of Accounts", href: "/accounting" },
-      { label: "Transactions", href: "/accounting" },
+      { label: "Chart of Accounts", href: "/accounting", actionKey: "nav-chart-of-accounts" },
+      { label: "Transactions", href: "/accounting", actionKey: "nav-account-transactions" },
     ],
   },
   {
@@ -123,9 +128,9 @@ const NAV_ITEMS: NavItem[] = [
     label: "Reports",
     icon: BarChart3,
     children: [
-      { label: "Member Reports", href: "/reports" },
-      { label: "Periodic Payments", href: "/reports/payments" },
-      { label: "Finance Reports", href: "/accounting" },
+      { label: "Member Reports", href: "/reports", actionKey: "nav-member-reports" },
+      { label: "Periodic Payments", href: "/reports/payments", actionKey: "nav-periodic-payments" },
+      { label: "Finance Reports", href: "/accounting", actionKey: "nav-finance-reports" },
     ],
   },
   { key: "payroll", label: "Payroll", icon: Users, badge: "Coming Soon", disabled: true },
@@ -136,11 +141,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Settings",
     icon: Settings,
     children: [
-      { label: "Administration", href: "/organizations" },
-      { label: "User & Roles", href: "/users" },
-      { label: "Form Settings", href: "/settings/form-config" },
-      { label: "Zones", href: "/settings/zones" },
-      { label: "Due Types", href: "/settings/due-types" },
+      { label: "Administration", href: "/organizations", actionKey: "nav-administration" },
+      { label: "User & Roles", href: "/users", actionKey: "nav-user-roles" },
+      { label: "Form Settings", href: "/settings/form-config", actionKey: "nav-form-settings" },
+      { label: "Zones", href: "/settings/zones", actionKey: "nav-zones" },
+      { label: "Due Types", href: "/settings/due-types", actionKey: "nav-due-types" },
       { label: "Audit Log", badge: "Soon", disabled: true },
     ],
   },
@@ -180,8 +185,12 @@ function itemIsActive(pathname: string, item: NavItem) {
 
 function MenuPanel({
   onNavigate,
+  bookmarks,
+  onToggleBookmark,
 }: {
   onNavigate?: () => void;
+  bookmarks: UserBookmark[];
+  onToggleBookmark: (actionKey: string) => void;
 }) {
   const pathname = usePathname();
   const initialOpen = useMemo(() => {
@@ -189,6 +198,31 @@ function MenuPanel({
     return Object.fromEntries(entries) as Record<string, boolean>;
   }, [pathname]);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(initialOpen);
+  const bookmarkLimitReached = bookmarks.length >= 6;
+
+  const bookmarkButton = (actionKey?: string) => {
+    if (!actionKey || !quickActionByKey(actionKey)) return null;
+    const saved = bookmarks.some((bookmark) => bookmark.actionKey === actionKey);
+    const disabled = !saved && bookmarkLimitReached;
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!disabled) onToggleBookmark(actionKey);
+        }}
+        disabled={disabled}
+        title={disabled ? "You can bookmark up to six quick actions" : saved ? "Remove from quick actions" : "Add to quick actions"}
+        aria-label={saved ? "Remove from quick actions" : "Add to quick actions"}
+        className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded transition-opacity ${
+          disabled ? "cursor-not-allowed text-blue-100/30" : "opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-white/15"
+        }`}
+      >
+        <Star className={`h-3.5 w-3.5 ${saved ? "fill-amber-300 text-amber-300 opacity-100" : "text-blue-100"}`} />
+      </button>
+    );
+  };
 
   useEffect(() => {
     setOpenGroups((current) => ({ ...initialOpen, ...current }));
@@ -230,7 +264,7 @@ function MenuPanel({
                     <div className="ml-7 mt-1 space-y-0.5 pb-1">
                       {item.children.map((child) => {
                         const childActive = isActivePath(pathname, child.href);
-                        const childClass = `flex items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
+                        const childClass = `group flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
                           child.disabled
                             ? "cursor-not-allowed text-blue-100/40"
                             : childActive
@@ -251,9 +285,10 @@ function MenuPanel({
                           );
                         }
                         return (
-                          <Link key={`${item.key}-${child.label}`} href={child.href} onClick={onNavigate} className={childClass}>
-                            {childContent}
-                          </Link>
+                          <div key={`${item.key}-${child.label}`} className="group flex items-center gap-1">
+                            <Link href={child.href} onClick={onNavigate} className={childClass}>{childContent}</Link>
+                            {bookmarkButton(child.actionKey)}
+                          </div>
                         );
                       })}
                     </div>
@@ -267,11 +302,14 @@ function MenuPanel({
                     {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
                   </div>
                 ) : (
-                  <Link href={item.href} onClick={onNavigate} className={baseClass}>
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                    {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
-                  </Link>
+                  <div className="group flex items-center gap-1">
+                    <Link href={item.href} onClick={onNavigate} className={baseClass}>
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      {item.badge ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-blue-50">{item.badge}</span> : null}
+                    </Link>
+                    {bookmarkButton(item.actionKey)}
+                  </div>
                 )
               )}
             </div>
@@ -289,6 +327,7 @@ export function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]);
   const desktopUserMenuRef = useRef<HTMLDivElement>(null);
   const mobileUserMenuRef = useRef<HTMLDivElement>(null);
   const desktopLangRef = useRef<HTMLDivElement>(null);
@@ -309,6 +348,33 @@ export function Header() {
       await refetch();
     } catch {}
   };
+
+  const fetchBookmarks = async () => {
+    try {
+      setBookmarks(await api<UserBookmark[]>("/bookmarks"));
+    } catch {
+      /* quick actions are non-critical */
+    }
+  };
+
+  const toggleBookmark = async (actionKey: string) => {
+    const saved = bookmarks.some((bookmark) => bookmark.actionKey === actionKey);
+    try {
+      if (saved) {
+        await api(`/bookmarks/${encodeURIComponent(actionKey)}`, { method: "DELETE" });
+      } else {
+        await api("/bookmarks", { method: "POST", body: JSON.stringify({ actionKey }) });
+      }
+      await fetchBookmarks();
+      window.dispatchEvent(new Event("civica-bookmarks-updated"));
+    } catch {
+      await fetchBookmarks();
+    }
+  };
+
+  useEffect(() => {
+    if (user) void fetchBookmarks();
+  }, [user]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -332,7 +398,7 @@ export function Header() {
   return (
     <>
       <aside className="civica-sidebar fixed inset-y-0 left-0 z-50 hidden w-[17rem] lg:block">
-        <MenuPanel />
+        <MenuPanel bookmarks={bookmarks} onToggleBookmark={toggleBookmark} />
       </aside>
 
       <header className="civica-toolbar sticky top-0 z-40 hidden h-[4.5rem] items-center justify-between border-b border-border/60 bg-background/95 px-6 backdrop-blur-sm lg:flex">
@@ -416,7 +482,7 @@ export function Header() {
             >
               <X className="h-4 w-4" />
             </button>
-            <MenuPanel onNavigate={() => setMenuOpen(false)} />
+            <MenuPanel onNavigate={() => setMenuOpen(false)} bookmarks={bookmarks} onToggleBookmark={toggleBookmark} />
           </div>
         </div>
       ) : null}

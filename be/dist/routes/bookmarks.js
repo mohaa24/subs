@@ -32,6 +32,10 @@ exports.bookmarksRouter.post("/", async (req, res) => {
     if (existing) {
         return res.status(409).json({ error: "Bookmark already exists" });
     }
+    const bookmarkCount = await prisma_js_1.prisma.userBookmark.count({ where: { userId } });
+    if (bookmarkCount >= 6) {
+        return res.status(400).json({ error: "You can bookmark up to six quick actions" });
+    }
     const bookmark = await prisma_js_1.prisma.userBookmark.create({
         data: {
             userId,

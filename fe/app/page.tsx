@@ -18,7 +18,6 @@ import {
   Banknote,
   ScanLine,
   Repeat,
-  Star,
   MessageSquare,
   Package,
   FileText,
@@ -28,6 +27,9 @@ import {
   Clock3,
   ArrowUpRight,
   ArrowDownRight,
+  Check,
+  Minus,
+  Pencil,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, DashboardStats, UserBookmark } from "@/lib/api";
+import { quickActionByKey } from "@/lib/quick-actions";
 import { useTranslation } from "@/lib/i18n";
 import {
   ResponsiveContainer,
@@ -254,6 +257,7 @@ function HomePageContent() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsWindowDays, setStatsWindowDays] = useState("30");
   const [bookmarks, setBookmarks] = useState<UserBookmark[]>([]);
+  const [editingQuickActions, setEditingQuickActions] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanTargetTab, setScanTargetTab] = useState<"details" | "payments">("details");
@@ -369,6 +373,12 @@ function HomePageContent() {
   }, [user, fetchBookmarks]);
 
   useEffect(() => {
+    const refresh = () => { void fetchBookmarks(); };
+    window.addEventListener("civica-bookmarks-updated", refresh);
+    return () => window.removeEventListener("civica-bookmarks-updated", refresh);
+  }, [fetchBookmarks]);
+
+  useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(timer);
   }, []);
@@ -422,6 +432,11 @@ function HomePageContent() {
     netIncome: 0,
     outstanding: 0,
   }));
+  const bookmarkedQuickActions = bookmarks
+    .slice()
+    .sort((a, b) => a.displayOrder - b.displayOrder)
+    .map((bookmark) => ({ bookmark, action: quickActionByKey(bookmark.actionKey) }))
+    .filter((item): item is { bookmark: UserBookmark; action: NonNullable<ReturnType<typeof quickActionByKey>> } => Boolean(item.action));
 
   const ROW1_CARDS = [
     {
@@ -510,15 +525,6 @@ function HomePageContent() {
       delta: comparison ? activityChange(comparison.newChildren) : "",
     },
   ];
-
-  const quickActionItems = [
-    { label: "Record Cash In", href: "/cash-in", icon: Banknote, tone: "text-emerald-600 bg-emerald-500/10" },
-    { label: "Record Cash Out", href: "/cash-out", icon: Receipt, tone: "text-red-600 bg-red-500/10" },
-    { label: "Add Member", href: "/members/new", icon: UserPlus, tone: "text-blue-600 bg-blue-500/10" },
-    { label: "Create Fund", href: "/funds", icon: Landmark, tone: "text-violet-600 bg-violet-500/10" },
-    { label: "View Reports", href: "/reports", icon: FileText, tone: "text-amber-600 bg-amber-500/10" },
-    { label: "Scan QR Code", href: "/?scan=membership", icon: ScanLine, tone: "text-cyan-600 bg-cyan-500/10" },
-  ] as const;
 
   const FLOW_TABS: FlowTab[] = [
     {
@@ -841,24 +847,6 @@ function HomePageContent() {
           ))}
         </div>
 
-        <div>
-          <h3 className="mb-3 text-base font-semibold text-foreground">Quick Actions</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            {quickActionItems.map(({ label, href, icon: Icon, tone }) => (
-              <Link key={label} href={href} className="group">
-                <Card className="h-full transition hover:border-primary/30 hover:bg-accent/20">
-                  <CardContent className="flex h-28 flex-col items-center justify-center gap-2 p-3 text-center">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${tone.split(" ")[1]}`}>
-                      <Icon className={`h-5 w-5 ${tone.split(" ")[0]}`} />
-                    </div>
-                    <div className="text-sm font-medium text-foreground">{label}</div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </div>
-
         <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.35fr)_minmax(0,0.65fr)]">
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
@@ -999,77 +987,35 @@ function HomePageContent() {
           </Card>
         </div>
 
-        {bookmarks.length > 0 && (
+        {bookmarkedQuickActions.length > 0 && (
           <div>
-            <h3 className="mb-3 text-sm font-medium text-muted-foreground">{t("dashboard.quickActions")}</h3>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {bookmarks
-                .sort((a, b) => a.displayOrder - b.displayOrder)
-                .map((bm) => {
-                  let found: { tab: FlowTab; action: FlowAction } | null = null;
-                  for (const tab of FLOW_TABS) {
-                    const action = tab.actions.find(
-                      (a) => a.actionKey === bm.actionKey && (!a.roles || a.roles.includes(user.role))
-                    );
-                    if (action) {
-                      found = { tab, action };
-                      break;
-                    }
-                  }
-                  if (!found) return null;
-                  const { action } = found;
-                  const { title, description, icon: Icon, href, action: act, actionKey, disabled, badge } = action;
-                  const card = (
-                    <Card className={`group h-full relative transition-all ${disabled ? "cursor-not-allowed border-dashed opacity-70" : "cursor-pointer hover:border-primary/30 hover:bg-accent/30"}`}>
-                      {badge ? (
-                        <span className="absolute left-3 top-3 z-10 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                          {badge}
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          toggleBookmark(actionKey);
-                        }}
-                        className="absolute top-2 right-2 z-10 rounded-lg p-2 transition-colors hover:bg-accent/60"
-                        aria-label="Remove bookmark"
-                      >
-                        <Star className="h-5 w-5 text-primary fill-primary" />
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-foreground">Quick Actions</h3>
+              <Button variant="outline" size="sm" onClick={() => setEditingQuickActions((editing) => !editing)} className="h-8 gap-1.5 text-xs">
+                {editingQuickActions ? <Check className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                {editingQuickActions ? "Done" : "Edit"}
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {bookmarkedQuickActions.map(({ bookmark, action }) => {
+                const Icon = action.icon;
+                const card = (
+                  <Card className="group relative h-full transition hover:border-primary/30 hover:bg-accent/20">
+                    {editingQuickActions ? (
+                      <button type="button" onClick={() => void toggleBookmark(bookmark.actionKey)} className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm" aria-label={`Remove ${action.title} from quick actions`} title="Remove quick action">
+                        <Minus className="h-3.5 w-3.5" />
                       </button>
-                      <CardHeader className={`flex flex-row items-center gap-3 space-y-0 pb-2 pr-12 ${badge ? "pt-8" : ""}`}>
-                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${disabled ? "bg-muted text-muted-foreground" : "bg-primary/10 group-hover:bg-primary/20"}`}>
-                          <Icon className="h-4 w-4 text-primary" />
-                        </div>
-                        <CardTitle className="text-sm font-medium text-foreground">
-                          {title}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-muted-foreground">{description}</p>
-                      </CardContent>
-                    </Card>
-                  );
-                  if (href && !disabled) {
-                    return (
-                      <Link key={bm.actionKey} href={href} onClick={(e) => e.stopPropagation()}>
-                        {card}
-                      </Link>
-                    );
-                  }
-                  return (
-                    <button
-                      key={bm.actionKey}
-                      type="button"
-                      className="text-left"
-                      onClick={disabled ? undefined : act}
-                      disabled={disabled}
-                    >
-                      {card}
-                    </button>
-                  );
-                })}
+                    ) : null}
+                    <CardContent className="flex h-28 flex-col items-center justify-center gap-2 p-3 text-center">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${action.tone.split(" ")[1]}`}>
+                        <Icon className={`h-5 w-5 ${action.tone.split(" ")[0]}`} />
+                      </div>
+                      <div className="text-sm font-medium text-foreground">{action.title}</div>
+                    </CardContent>
+                  </Card>
+                );
+                return editingQuickActions ? <div key={bookmark.id}>{card}</div> : <Link key={bookmark.id} href={action.href}>{card}</Link>;
+              })}
             </div>
           </div>
         )}
