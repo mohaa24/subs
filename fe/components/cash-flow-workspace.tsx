@@ -168,7 +168,7 @@ function subtypeLabel(subtype?: string | null) {
 
 function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
   if (sectionKey === "receivable_collection") return "Record Repayment";
-  if (sectionKey === "payable_repayment") return "Record Repayment";
+  if (sectionKey === "payable_repayment") return "Record Settlement";
   return flow === "cash-in" ? "Record Income" : "Record Expense";
 }
 
@@ -176,7 +176,7 @@ function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | nu
   if (category === "receivable_payment") return "Add Amount Due";
   if (category === "receivable_collection") return "Record Repayment";
   if (category === "payable_borrowing" || category === "payable_recovery") return "Add Borrowing";
-  if (category === "payable_repayment" || category === "payable_payment") return "Record Repayment";
+  if (category === "payable_repayment" || category === "payable_payment") return "Record Settlement";
   return buttonLabel(flow, sectionKey);
 }
 
@@ -511,21 +511,24 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                       const category = sectionCategories[section.key];
                       const isFund = !category;
                       const isReceivableCard = section.key === "receivable_collection" && isReceivableSubtype(row.assetSubtype);
+                      const isPayableCard = section.key === "payable_repayment" && isPayableSubtype(row.assetSubtype);
                       const detailHref = isFund
                         ? `/funds/${row.id}?mode=${flow}`
                         : isReceivableCard
                           ? `/receivables/${row.id}?source=cash-in`
-                          : `/${flow}/accounts/${row.id}`;
+                          : isPayableCard
+                            ? `/payables/${row.id}?source=cash-out`
+                            : `/${flow}/accounts/${row.id}`;
                       return (
                         <div
                           key={row.id}
-                          role={isReceivableCard ? "button" : undefined}
-                          tabIndex={isReceivableCard ? 0 : undefined}
-                          onClick={isReceivableCard ? () => router.push(detailHref) : undefined}
-                          onKeyDown={isReceivableCard ? (event) => {
+                          role={isReceivableCard || isPayableCard ? "button" : undefined}
+                          tabIndex={isReceivableCard || isPayableCard ? 0 : undefined}
+                          onClick={isReceivableCard || isPayableCard ? () => router.push(detailHref) : undefined}
+                          onKeyDown={isReceivableCard || isPayableCard ? (event) => {
                             if (event.key === "Enter" || event.key === " ") router.push(detailHref);
                           } : undefined}
-                          className={`grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center ${isReceivableCard ? "cursor-pointer transition hover:bg-muted/40" : ""}`}
+                          className={`grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center ${isReceivableCard || isPayableCard ? "cursor-pointer transition hover:bg-muted/40" : ""}`}
                         >
                           <div>
                             <div className="font-medium text-foreground">{row.name}</div>
@@ -697,7 +700,7 @@ function AccountDetailView({
         ) : isPayable ? (
           <>
             <MetricCard icon={ReceiptText} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} />
-            <MetricCard icon={WalletCards} label="Total Repaid" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} />
+            <MetricCard icon={WalletCards} label="Total Settled" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} />
             <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} />
           </>
         ) : (
@@ -734,7 +737,7 @@ function AccountDetailView({
         <div className="space-y-4">
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
-            <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Repayment (Cash Out)</Button>
+            <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Settlement (Cash Out)</Button>
           </div>
           <Card>
             <CardContent className="p-0">
@@ -832,7 +835,7 @@ function AccountDetailView({
             isPayable ? (
               <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
-                <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Repayment (Cash Out)</Button>
+                <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Settlement (Cash Out)</Button>
               </div>
             ) : (
               <Button onClick={() => onRecord()} disabled={!canManage}>{config.actionLabel}</Button>

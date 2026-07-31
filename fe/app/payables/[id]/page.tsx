@@ -1,10 +1,10 @@
 import { Suspense } from "react";
 import { PayablesWorkspace } from "@/components/payables-workspace";
 
-export default function PayablesPage() {
+export default function PayableDetailPage({ params }: { params: { id: string } }) {
   return (
     <Suspense fallback={null}>
-      <PayablesWorkspace />
+      <PayablesWorkspace accountId={params.id} />
     </Suspense>
   );
 }

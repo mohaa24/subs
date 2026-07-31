@@ -452,6 +452,44 @@ export interface ReceivableDetail {
   history: CashTransaction[];
 }
 
+export interface PayableOverviewRow {
+  id: string;
+  name: string;
+  accountType: string;
+  assetSubtype: AccountingAssetSubtype;
+  counterpartyName?: string | null;
+  counterpartyPhone?: string | null;
+  openingBalance: number;
+  totalBorrowed: number;
+  totalSettled: number;
+  outstandingBalance: number;
+  status: "active" | "closed";
+}
+
+export interface PayableOverview {
+  fromDate: string;
+  toDate: string;
+  totals: {
+    openingBalance: number;
+    totalBorrowed: number;
+    totalSettled: number;
+    outstandingBalance: number;
+  };
+  rows: PayableOverviewRow[];
+}
+
+export interface PayableDetail {
+  account: AccountingAccount & { accountTypeLabel?: string; status?: "active" | "closed" };
+  fromDate: string;
+  toDate: string;
+  summary: {
+    totalBorrowed: number;
+    totalSettled: number;
+    outstandingBalance: number;
+  };
+  history: CashTransaction[];
+}
+
 export type FundPotStatus = "active" | "closed";
 export type FundTransactionType =
   | "opening"

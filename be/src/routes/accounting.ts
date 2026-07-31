@@ -215,6 +215,15 @@ const createReceivableSchema = z.object({
   description: z.string().trim().max(500).optional().nullable(),
 });
 
+const createPayableSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  assetSubtype: z.literal("loan_payable"),
+  counterpartyName: z.string().trim().max(160).optional().nullable(),
+  counterpartyPhone: z.string().trim().max(40).optional().nullable(),
+  counterpartyMembershipId: z.string().optional().nullable(),
+  description: z.string().trim().max(500).optional().nullable(),
+});
+
 const createFundSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().nullable(),
@@ -507,12 +516,12 @@ function cashTransactionTitle(category: CashTransactionCategory, reversal = fals
   if (category === "operating_income") return "INCOME RECEIPT";
   if (category === "operating_expense") return "EXPENSE PAYMENT VOUCHER";
   if (category === "payable_borrowing" || category === "payable_recovery") return "PAYABLE BORROWING RECEIPT";
-  return "PAYABLE REPAYMENT VOUCHER";
+  return "PAYABLE SETTLEMENT VOUCHER";
 }
 
 function cashTransactionCounterpartyLabel(category: CashTransactionCategory) {
   if (category === "receivable_write_off") return "Written Off Against";
-  if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense") return "Paid To";
+  if (category === "receivable_payment" || category === "payable_repayment" || category === "payable_payment" || category === "operating_expense") return "Paid To";
   return "Received From";
 }
 
@@ -521,7 +530,7 @@ function cashTransactionAmountLabel(category: CashTransactionCategory, reversal 
   if (category === "receivable_write_off") return "Written Off";
   if (category === "payable_borrowing" || category === "payable_recovery") return "Borrowed";
   if (category === "receivable_payment" || category === "payable_payment" || category === "operating_expense") return "Paid";
-  if (category === "payable_repayment") return "Paid";
+  if (category === "payable_repayment") return "Settled";
   return "Received";
 }
 
@@ -635,7 +644,7 @@ function cashTransactionLabel(category: CashTransactionCategory) {
   if (category === "receivable_write_off") return "Write off";
   if (category === "operating_expense") return "Operating expense";
   if (category === "payable_borrowing" || category === "payable_recovery") return "Borrowed";
-  return "Repaid";
+  return "Settled";
 }
 
 function cashAccountWhere(flowType: CashFlowType, category: CashTransactionCategoryFilter): Prisma.AccountingAccountWhereInput {
@@ -903,6 +912,163 @@ async function receivableSums(
 
 function receivableBalance(given?: Decimal, repaid?: Decimal, writeOff?: Decimal) {
   return (given ?? new Decimal(0)).sub(repaid ?? new Decimal(0)).sub(writeOff ?? new Decimal(0));
+}
+
+function payableAccountTypeLabel(subtype?: AccountingAssetSubtype | null) {
+  if (subtype === "loan_payable") return "Borrowing";
+  if (subtype === "service_payable") return "Service";
+  return "Payable";
+}
+
+function payableAccountWhere(status: string | null, search: string, type: string | null): Prisma.AccountingAccountWhereInput {
+  return {
+    accountType: "liability",
+    assetSubtype: type === "loan_payable" || type === "service_payable" ? type : { in: payableSubtypes },
+    ...(status === "closed"
+      ? { OR: [{ isActive: false }, { closedAt: { not: null } }] }
+      : status === "all"
+        ? {}
+        : { isActive: true, closedAt: null }),
+    ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+  };
+}
+
+async function payableSums(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  accountIds: string[],
+  range?: { from?: Date | null; toEnd?: Date | null }
+) {
+  if (!accountIds.length) return { borrowed: new Map<string, Decimal>(), settled: new Map<string, Decimal>() };
+  const rows = await tx.cashTransaction.groupBy({
+    by: ["accountId", "category"],
+    where: {
+      organizationId,
+      accountId: { in: accountIds },
+      reversedAt: null,
+      OR: [
+        { flowType: "cash_in", category: { in: payableBorrowingCategories } },
+        { flowType: "cash_out", category: { in: payableRepaymentCategories } },
+      ],
+      ...(range?.from || range?.toEnd
+        ? { transactionDate: { ...(range.from ? { gte: range.from } : {}), ...(range.toEnd ? { lte: range.toEnd } : {}) } }
+        : {}),
+    },
+    _sum: { amount: true },
+  });
+  const borrowed = new Map<string, Decimal>();
+  const settled = new Map<string, Decimal>();
+  for (const row of rows) {
+    const target = payableBorrowingCategories.includes(row.category) ? borrowed : settled;
+    target.set(row.accountId, row._sum?.amount ?? new Decimal(0));
+  }
+  return { borrowed, settled };
+}
+
+function payableBalance(borrowed?: Decimal, settled?: Decimal) {
+  return (borrowed ?? new Decimal(0)).sub(settled ?? new Decimal(0));
+}
+
+async function buildPayableRows(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  input: { from: Date; toEnd: Date; search: string; type: string | null; status: string | null; sort: string }
+) {
+  const accounts = await tx.accountingAccount.findMany({
+    where: { organizationId, ...payableAccountWhere(input.status, input.search, input.type) },
+    orderBy: { name: "asc" },
+  });
+  const ids = accounts.map((account) => account.id);
+  const openingEnd = new Date(input.from.getTime() - 1);
+  const [opening, period] = await Promise.all([
+    payableSums(tx, organizationId, ids, { toEnd: openingEnd }),
+    payableSums(tx, organizationId, ids, { from: input.from, toEnd: input.toEnd }),
+  ]);
+  const rows = accounts.map((account) => {
+    const openingBalance = payableBalance(opening.borrowed.get(account.id), opening.settled.get(account.id));
+    const totalBorrowed = period.borrowed.get(account.id) ?? new Decimal(0);
+    const totalSettled = period.settled.get(account.id) ?? new Decimal(0);
+    return {
+      id: account.id,
+      name: account.name,
+      accountType: payableAccountTypeLabel(account.assetSubtype),
+      assetSubtype: account.assetSubtype,
+      counterpartyName: account.counterpartyName,
+      counterpartyPhone: account.counterpartyPhone,
+      openingBalance: asNumber(openingBalance),
+      totalBorrowed: asNumber(totalBorrowed),
+      totalSettled: asNumber(totalSettled),
+      outstandingBalance: asNumber(openingBalance.add(totalBorrowed).sub(totalSettled)),
+      status: account.isActive && !account.closedAt ? "active" : "closed",
+    };
+  });
+  rows.sort((a, b) => {
+    if (input.sort === "outstanding_desc") return b.outstandingBalance - a.outstandingBalance;
+    if (input.sort === "borrowed_desc") return b.totalBorrowed - a.totalBorrowed;
+    if (input.sort === "settled_desc") return b.totalSettled - a.totalSettled;
+    return a.name.localeCompare(b.name);
+  });
+  return rows;
+}
+
+async function payableDetail(tx: Prisma.TransactionClient, organizationId: string, accountId: string, from: Date, toEnd: Date) {
+  const account = await tx.accountingAccount.findFirst({
+    where: { id: accountId, organizationId, accountType: "liability", assetSubtype: { in: payableSubtypes } },
+    include: { counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } } },
+  });
+  if (!account) return null;
+  const [opening, period, history] = await Promise.all([
+    payableSums(tx, organizationId, [account.id], { toEnd: new Date(from.getTime() - 1) }),
+    payableSums(tx, organizationId, [account.id], { from, toEnd }),
+    tx.cashTransaction.findMany({
+      where: {
+        organizationId,
+        accountId: account.id,
+        OR: [
+          { flowType: "cash_in", category: { in: payableBorrowingCategories } },
+          { flowType: "cash_out", category: { in: payableRepaymentCategories } },
+        ],
+        transactionDate: { gte: from, lte: toEnd },
+      },
+      include: {
+        cashBankAccount: { select: { id: true, name: true } },
+        counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
+        createdBy: { select: { email: true } },
+        reversedBy: { select: { email: true } },
+      },
+      orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+      take: 300,
+    }),
+  ]);
+  const openingBalance = payableBalance(opening.borrowed.get(account.id), opening.settled.get(account.id));
+  let runningBalance = openingBalance;
+  const serializedHistory = history.map((transaction) => {
+    if (!transaction.reversedAt) {
+      runningBalance = payableBorrowingCategories.includes(transaction.category)
+        ? runningBalance.add(transaction.amount)
+        : runningBalance.sub(transaction.amount);
+    }
+    return {
+      ...serializeCashTransaction(transaction),
+      transactionLabel: payableBorrowingCategories.includes(transaction.category) ? "Borrowed" : "Settled",
+      paymentMethod: transaction.cashBankAccount?.name ?? null,
+      balance: asNumber(runningBalance),
+      status: transaction.reversedAt ? "reversed" : "posted",
+    };
+  }).reverse();
+  const totalBorrowed = period.borrowed.get(account.id) ?? new Decimal(0);
+  const totalSettled = period.settled.get(account.id) ?? new Decimal(0);
+  return {
+    account: { ...serializeAccount(account), accountTypeLabel: payableAccountTypeLabel(account.assetSubtype), status: account.isActive && !account.closedAt ? "active" : "closed", closedAt: account.closedAt?.toISOString?.() ?? null },
+    fromDate: from.toISOString(),
+    toDate: toEnd.toISOString(),
+    summary: {
+      totalBorrowed: asNumber(totalBorrowed),
+      totalSettled: asNumber(totalSettled),
+      outstandingBalance: asNumber(openingBalance.add(totalBorrowed).sub(totalSettled)),
+    },
+    history: serializedHistory,
+  };
 }
 
 async function buildReceivableRows(
@@ -1653,6 +1819,108 @@ accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, asyncRou
   });
 
   return res.json(result);
+}));
+
+accountingRouter.get("/payables/overview", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+  const { from, toEnd } = cashFlowRange(req.query);
+  const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const type = typeof req.query.type === "string" && req.query.type !== "all" ? req.query.type : null;
+  const status = typeof req.query.status === "string" ? req.query.status : "active";
+  const sort = typeof req.query.sort === "string" ? req.query.sort : "name_asc";
+  const rows = await prisma.$transaction(async (tx) => {
+    await ensureDefaultAccountingAccounts(tx, orgId);
+    return buildPayableRows(tx, orgId, { from, toEnd, search, type, status, sort });
+  });
+  const totals = rows.reduce((sum, row) => ({
+    openingBalance: sum.openingBalance + row.openingBalance,
+    totalBorrowed: sum.totalBorrowed + row.totalBorrowed,
+    totalSettled: sum.totalSettled + row.totalSettled,
+    outstandingBalance: sum.outstandingBalance + row.outstandingBalance,
+  }), { openingBalance: 0, totalBorrowed: 0, totalSettled: 0, outstandingBalance: 0 });
+  return res.json({
+    fromDate: from.toISOString(),
+    toDate: toEnd.toISOString(),
+    totals: Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, Number(value.toFixed(2))])),
+    rows,
+  });
+}));
+
+accountingRouter.post("/payables", requireAccountingAdmin, asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+  const parsed = createPayableSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  const account = await prisma.$transaction(async (tx) => {
+    await ensureDefaultAccountingAccounts(tx, orgId);
+    const duplicate = await tx.accountingAccount.findFirst({
+      where: { organizationId: orgId, name: { equals: parsed.data.name, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      const error = new Error("An account with this name already exists");
+      (error as any).statusCode = 409;
+      throw error;
+    }
+    if (parsed.data.counterpartyMembershipId) {
+      const member = await tx.membership.findFirst({ where: { id: parsed.data.counterpartyMembershipId, organizationId: orgId }, select: { id: true } });
+      if (!member) {
+        const error = new Error("Selected member was not found");
+        (error as any).statusCode = 400;
+        throw error;
+      }
+    }
+    return tx.accountingAccount.create({
+      data: {
+        organizationId: orgId,
+        name: parsed.data.name,
+        accountType: "liability",
+        assetSubtype: parsed.data.assetSubtype,
+        counterpartyName: parsed.data.counterpartyName || null,
+        counterpartyPhone: parsed.data.counterpartyPhone || null,
+        counterpartyMembershipId: parsed.data.counterpartyMembershipId || null,
+        description: parsed.data.description || null,
+        createdByUserId: req.auth!.userId,
+      },
+    });
+  });
+  return res.status(201).json(serializeAccount(account));
+}));
+
+accountingRouter.get("/payables/:id", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+  const { from, toEnd } = cashFlowRange(req.query);
+  const detail = await prisma.$transaction((tx) => payableDetail(tx, orgId, req.params.id, from, toEnd));
+  if (!detail) return res.status(404).json({ error: "Payable account not found" });
+  return res.json(detail);
+}));
+
+accountingRouter.post("/payables/:id/close", requireAccountingAdmin, asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+  const account = await prisma.$transaction(async (tx) => {
+    const payable = await tx.accountingAccount.findFirst({
+      where: { id: req.params.id, organizationId: orgId, accountType: "liability", assetSubtype: { in: payableSubtypes } },
+    });
+    if (!payable) throw new Error("Payable account not found");
+    if (!payable.isActive || payable.closedAt) throw new Error("Payable account is already closed");
+    const { borrowed, settled } = await payableSums(tx, orgId, [payable.id]);
+    const outstanding = payableBalance(borrowed.get(payable.id), settled.get(payable.id));
+    if (outstanding.gt(0)) {
+      const error = new Error(`This account has an outstanding balance of Rs. ${outstanding.toFixed(2)}. Please settle it before closing the account`);
+      (error as any).statusCode = 409;
+      throw error;
+    }
+    if (outstanding.lt(0)) {
+      const error = new Error(`This account has an overpayment of Rs. ${outstanding.abs().toFixed(2)}. Please correct it before closing the account`);
+      (error as any).statusCode = 409;
+      throw error;
+    }
+    return tx.accountingAccount.update({ where: { id: payable.id }, data: { isActive: false, closedAt: new Date() } });
+  });
+  return res.json({ account: serializeAccount(account) });
 }));
 
 accountingRouter.post("/cash-in/operating-income", requireAccountingAdmin, asyncRoute((req, res) =>
