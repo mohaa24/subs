@@ -44,6 +44,88 @@ function activityTone(kind) {
         return "violet";
     return "blue";
 }
+exports.dashboardRouter.get("/activity", async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId && req.auth.role !== "super_user") {
+        return res.status(400).json({ error: "Organization scope required" });
+    }
+    const orgFilter = orgId ? { organizationId: orgId } : {};
+    const requestedPage = Number(req.query?.page);
+    const requestedPageSize = Number(req.query?.pageSize);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+    const pageSize = Number.isFinite(requestedPageSize) ? Math.min(Math.max(Math.floor(requestedPageSize), 1), 100) : 25;
+    const [payments, cashTransactions, fundTransactions, feedItems] = await Promise.all([
+        prisma_js_1.prisma.payment.findMany({
+            where: orgFilter,
+            orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
+            take: 500,
+            select: {
+                id: true, amount: true, paymentDate: true, receiptNumber: true, isReversed: true,
+                membership: { select: { membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
+            },
+        }),
+        prisma_js_1.prisma.cashTransaction.findMany({
+            where: orgFilter,
+            orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
+            take: 500,
+            select: {
+                id: true, amount: true, transactionDate: true, category: true, flowType: true,
+                counterpartyName: true, description: true, documentNumber: true, reversedAt: true,
+            },
+        }),
+        prisma_js_1.prisma.fundTransaction.findMany({
+            where: orgFilter,
+            orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
+            take: 500,
+            select: {
+                id: true, amount: true, transactionDate: true, transactionType: true, receiptNumber: true,
+                paidByName: true, description: true, memo: true, reversedAt: true,
+                fundPot: { select: { id: true, name: true } },
+            },
+        }),
+        prisma_js_1.prisma.activityFeedItem.findMany({
+            where: orgFilter,
+            orderBy: { createdAt: "desc" },
+            take: 500,
+            select: { id: true, entryType: true, body: true, createdAt: true, createdBy: { select: { email: true } } },
+        }),
+    ]);
+    const items = [
+        ...payments.map((payment) => ({
+            id: `payment-${payment.id}`,
+            type: payment.isReversed ? "payment_reversal" : "payment",
+            title: payment.isReversed ? "Payment reversed" : "Member collection",
+            description: `${payment.membership?.hod?.nameWithInitials ?? payment.membership?.hod?.fullName ?? payment.membership?.membershipNo ?? "Member"} • ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}`,
+            amount: Number(payment.amount), occurredAt: payment.paymentDate.toISOString(), tone: payment.isReversed ? "rose" : "emerald",
+        })),
+        ...cashTransactions.map((transaction) => ({
+            id: `cash-${transaction.id}`,
+            type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
+            title: transaction.category.replace(/_/g, " "),
+            description: transaction.description ?? transaction.counterpartyName ?? transaction.documentNumber ?? "Cash transaction",
+            amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
+            tone: transaction.reversedAt ? "rose" : transaction.flowType === "cash_in" ? "blue" : "orange",
+        })),
+        ...fundTransactions.map((transaction) => ({
+            id: `fund-${transaction.id}`,
+            type: transaction.transactionType === "collection" ? "fund_collection" : "fund_expense",
+            title: transaction.transactionType === "collection" ? "Fund collection" : "Fund expense",
+            description: `${transaction.fundPot.name} • ${transaction.description ?? transaction.memo ?? transaction.paidByName ?? transaction.receiptNumber ?? "Fund transaction"}`,
+            amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
+            tone: transaction.reversedAt ? "rose" : transaction.transactionType === "collection" ? "violet" : "rose",
+        })),
+        ...feedItems.map((item) => ({
+            id: `feed-${item.id}`, type: item.entryType, title: item.body ?? "Activity",
+            description: item.createdBy?.email ?? "System", amount: null, occurredAt: item.createdAt.toISOString(),
+            tone: item.entryType === "remark" ? "slate" : "blue",
+        })),
+    ].sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+    const total = items.length;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, pageCount);
+    const offset = (safePage - 1) * pageSize;
+    return res.json({ page: safePage, pageSize, total, pageCount, items: items.slice(offset, offset + pageSize) });
+});
 exports.dashboardRouter.get("/", async (req, res) => {
     const orgId = getOrgId(req);
     if (!orgId && req.auth.role !== "super_user")

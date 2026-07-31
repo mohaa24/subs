@@ -100,6 +100,16 @@ function formatCompactRs(n: number) {
     .toLowerCase()}`;
 }
 
+function formatAxisRs(n: number) {
+  const absolute = Math.abs(n);
+  if (absolute < 1000) return `Rs. ${Math.round(n)}`;
+  const compact = new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 0,
+  }).format(absolute).replace(".0", "");
+  return `${n < 0 ? "-" : ""}Rs. ${compact}`;
+}
+
 function relativeTime(value: string) {
   const date = new Date(value);
   const diffMs = Date.now() - date.getTime();
@@ -153,11 +163,19 @@ function MiniSparkline({
   );
 }
 
-function trendLabel(current: number, previous: number) {
-  if (previous === 0) return current === 0 ? "No change" : "New in this period";
+function trendLabel(current: number, previous: number, higherIsBetter = true) {
+  if (previous === 0) {
+    return current === 0
+      ? { text: "No change", tone: "text-muted-foreground" }
+      : { text: "New in this period", tone: higherIsBetter ? "text-emerald-600" : "text-red-500" };
+  }
   const percentage = ((current - previous) / Math.abs(previous)) * 100;
-  const direction = percentage >= 0 ? "▲" : "▼";
-  return `${direction} ${Math.abs(percentage).toFixed(1)}% vs previous period`;
+  if (percentage === 0) return { text: "No change", tone: "text-muted-foreground" };
+  const improved = higherIsBetter ? percentage > 0 : percentage < 0;
+  return {
+    text: `${percentage > 0 ? "▲" : "▼"} ${Math.abs(percentage).toFixed(1)}% vs previous period`,
+    tone: improved ? "text-emerald-600" : "text-red-500",
+  };
 }
 
 function activityChange(count: number) {
@@ -169,6 +187,7 @@ function ChartCard({
   subtitle,
   children,
   className,
+  contentClassName,
   colorA,
   colorB,
 }: {
@@ -176,6 +195,7 @@ function ChartCard({
   subtitle: string;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   colorA?: string;
   colorB?: string;
 }) {
@@ -185,7 +205,7 @@ function ChartCard({
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <div className="text-xs text-muted-foreground">{subtitle}</div>
       </div>
-      <div className="h-36">{children}</div>
+      <div className={contentClassName ?? "h-36"}>{children}</div>
     </div>
   );
 }
@@ -407,7 +427,7 @@ function HomePageContent() {
     {
       label: "Member Collect",
       value: stats ? formatCompactRs(stats.netCollectedInPeriod) : "—",
-      delta: stats && comparison ? trendLabel(stats.netCollectedInPeriod, comparison.previousMemberCollection) : "",
+      delta: stats && comparison ? trendLabel(stats.netCollectedInPeriod, comparison.previousMemberCollection) : null,
       icon: Users,
       color: "text-emerald-600",
       bg: "bg-emerald-500/10",
@@ -417,7 +437,7 @@ function HomePageContent() {
     {
       label: "Total Income",
       value: stats ? formatCompactRs(financial?.totalIncome ?? 0) : "—",
-      delta: stats && comparison ? trendLabel(financial?.totalIncome ?? 0, comparison.previousIncome) : "",
+      delta: stats && comparison ? trendLabel(financial?.totalIncome ?? 0, comparison.previousIncome) : null,
       icon: Banknote,
       color: "text-blue-600",
       bg: "bg-blue-500/10",
@@ -427,7 +447,7 @@ function HomePageContent() {
     {
       label: "Total Expense",
       value: stats ? formatCompactRs(financial?.totalExpense ?? 0) : "—",
-      delta: stats && comparison ? trendLabel(financial?.totalExpense ?? 0, comparison.previousExpense) : "",
+      delta: stats && comparison ? trendLabel(financial?.totalExpense ?? 0, comparison.previousExpense, false) : null,
       icon: Receipt,
       color: "text-red-500",
       bg: "bg-red-500/10",
@@ -439,7 +459,7 @@ function HomePageContent() {
       value: stats ? formatCompactRs(financial?.netIncome ?? 0) : "—",
       delta: stats && comparison
         ? trendLabel(financial?.netIncome ?? 0, comparison.previousIncome - comparison.previousExpense)
-        : "",
+        : null,
       icon: ArrowUpRight,
       color: "text-violet-600",
       bg: "bg-violet-500/10",
@@ -789,7 +809,7 @@ function HomePageContent() {
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-semibold text-foreground">{label}</p>
                     <p className="text-xl font-semibold text-foreground">{statsLoading ? "—" : value}</p>
-                    {delta ? <p className={`text-xs font-medium ${label === "Total Expense" ? "text-red-500" : "text-emerald-600"}`}>{delta}</p> : null}
+                    {delta ? <p className={`text-xs font-medium ${delta.tone}`}>{delta.text}</p> : null}
                   </div>
                 </div>
                 <div className="h-12">
@@ -843,6 +863,9 @@ function HomePageContent() {
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
               <CardTitle className="text-base">Recent Activity</CardTitle>
+              <Button asChild variant="ghost" size="sm" className="h-8 text-xs text-primary hover:text-primary">
+                <Link href="/activity">View All</Link>
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               {statsLoading ? (
@@ -888,7 +911,7 @@ function HomePageContent() {
                   <BarChart data={latestSeries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <YAxis tickFormatter={formatAxisRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={54} />
                     <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="income" fill="#2563eb" radius={[4, 4, 0, 0]} />
@@ -912,7 +935,7 @@ function HomePageContent() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <YAxis tickFormatter={formatAxisRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={54} />
                     <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                     <Area type="monotone" dataKey="cashIn" stroke="#16a34a" fill="url(#cashInFill)" strokeWidth={2} dot={false} />
@@ -921,9 +944,9 @@ function HomePageContent() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <ChartCard title="Collection Rate" subtitle="Current period" colorA="#10b981" colorB="#e5e7eb">
-                <div className="flex h-full items-center justify-center">
-                  <ResponsiveContainer width="100%" height={100}>
+              <ChartCard title="Collection Rate" subtitle="Current period" colorA="#10b981" colorB="#e5e7eb" contentClassName="flex h-36 flex-col items-center">
+                <div className="h-24 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={[
@@ -931,8 +954,8 @@ function HomePageContent() {
                           { name: "Remaining", value: Math.max(100 - (financial?.collectionRate ?? 0), 0) },
                         ]}
                         dataKey="value"
-                        innerRadius={30}
-                        outerRadius={43}
+                        innerRadius={26}
+                        outerRadius={38}
                         paddingAngle={4}
                       >
                         <Cell fill="#10b981" />
@@ -942,9 +965,9 @@ function HomePageContent() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-[-14px] text-center">
-                  <div className="text-2xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
-                  <div className="text-xs text-muted-foreground">Collected this period</div>
+                <div className="mt-auto pb-1 text-center leading-tight">
+                  <div className="text-xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
+                  <div className="text-[11px] text-muted-foreground">Collected this period</div>
                 </div>
               </ChartCard>
 
@@ -953,7 +976,8 @@ function HomePageContent() {
                 subtitle={`${comparison?.outstandingMemberCount ?? 0} members with outstanding dues`}
                 colorA="#ef4444"
                 colorB="#fde2e2"
-                className="md:col-span-3 [&>div:last-child]:h-32"
+                className="md:col-span-3"
+                contentClassName="h-32"
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={latestSeries}>
@@ -965,7 +989,7 @@ function HomePageContent() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <YAxis tickFormatter={formatAxisRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={54} />
                     <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
                     <Area type="monotone" dataKey="outstanding" stroke="#ef4444" fill="url(#outstandingFill)" strokeWidth={2} dot={false} />
                   </AreaChart>

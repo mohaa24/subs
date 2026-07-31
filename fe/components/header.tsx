@@ -11,7 +11,6 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   BarChart3,
-  Bell,
   Building2,
   ChevronDown,
   ClipboardList,
@@ -355,16 +354,6 @@ export function Header() {
             currentLocaleOption={currentLocaleOption}
             setLocale={setLocale}
           />
-          <button
-            type="button"
-            className="relative flex h-10 w-10 items-center justify-center rounded-md border border-border/70 bg-card shadow-sm transition-colors hover:bg-accent/50"
-            aria-label="Notifications"
-          >
-            <Bell className="h-5 w-5 text-muted-foreground" />
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
-              3
-            </span>
-          </button>
           <UserMenu
             initials={initials}
             user={user}

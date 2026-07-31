@@ -715,6 +715,14 @@ export interface DashboardStats {
   }> | null;
 }
 
+export interface ActivityPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+  items: NonNullable<DashboardStats["recentActivity"]>;
+}
+
 export interface MembershipBalance {
   membershipId: string;
   membershipNo: string;
