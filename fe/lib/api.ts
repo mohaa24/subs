@@ -674,6 +674,17 @@ export interface DashboardStats {
   currentOutstanding: number;
   overpaymentsThisMonth: number;
   activePaymentsInPeriod: number;
+  comparison?: {
+    previousMemberCollection: number;
+    previousIncome: number;
+    previousExpense: number;
+    newHouseholds: number;
+    newPeople: number;
+    newAdults: number;
+    newYouth: number;
+    newChildren: number;
+    outstandingMemberCount: number;
+  };
   period: string;
   financialOverview?: {
     totalIncome: number;

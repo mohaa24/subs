@@ -62,6 +62,7 @@ dashboardRouter.get("/", async (req, res) => {
   const rangeEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   const rangeStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (windowDays - 1));
   const financeWindowStart = startOfDay(rangeStart);
+  const comparisonStart = addDays(financeWindowStart, -windowDays);
   const eighteenYearsAgo = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
   const thirteenYearsAgo = new Date(now.getFullYear() - 13, now.getMonth(), now.getDate());
   const activePersonFilter: Prisma.PersonWhereInput = {
@@ -118,7 +119,7 @@ dashboardRouter.get("/", async (req, res) => {
         ...orgFilter,
         dueDate: { gte: rangeStart, lt: rangeEnd },
       },
-      select: { amountDue: true, amountPaid: true },
+      select: { amountDue: true, amountPaid: true, membershipId: true },
     }),
 
     prisma.payment.aggregate({
@@ -145,7 +146,7 @@ dashboardRouter.get("/", async (req, res) => {
         ...orgFilter,
         status: { not: "paid" },
       },
-      select: { amountDue: true, amountPaid: true },
+      select: { amountDue: true, amountPaid: true, membershipId: true },
     }),
 
     prisma.accountingJournalLine.findMany({
@@ -239,6 +240,26 @@ dashboardRouter.get("/", async (req, res) => {
         createdBy: { select: { email: true } },
       },
     }),
+  ]);
+
+  const [previousPaymentsInPeriod, previousJournalLines, newHouseholds, newPeople, newAdults, newYouth, newChildren] = await Promise.all([
+    prisma.payment.aggregate({
+      where: { ...orgFilter, paymentDate: { gte: comparisonStart, lt: financeWindowStart }, isReversed: false },
+      _sum: { amount: true },
+    }),
+    prisma.accountingJournalLine.findMany({
+      where: {
+        organizationId: orgId,
+        journalEntry: { entryDate: { gte: comparisonStart, lt: financeWindowStart } },
+        account: { accountType: { in: ["income", "expense"] } },
+      },
+      select: { amount: true, side: true, account: { select: { accountType: true } } },
+    }),
+    prisma.membership.count({ where: { ...orgFilter, isArchived: false, createdAt: { gte: financeWindowStart, lt: rangeEnd } } }),
+    prisma.person.count({ where: { ...orgFilter, ...activePersonFilter, createdAt: { gte: financeWindowStart, lt: rangeEnd } } }),
+    prisma.person.count({ where: { ...orgFilter, ...activePersonFilter, createdAt: { gte: financeWindowStart, lt: rangeEnd }, dateOfBirth: { lte: eighteenYearsAgo } } }),
+    prisma.person.count({ where: { ...orgFilter, ...activePersonFilter, createdAt: { gte: financeWindowStart, lt: rangeEnd }, dateOfBirth: { gt: eighteenYearsAgo, lte: thirteenYearsAgo } } }),
+    prisma.person.count({ where: { ...orgFilter, ...activePersonFilter, createdAt: { gte: financeWindowStart, lt: rangeEnd }, dateOfBirth: { gt: thirteenYearsAgo } } }),
   ]);
 
   const totalDue = currentMonthDues.reduce(
@@ -340,6 +361,18 @@ dashboardRouter.get("/", async (req, res) => {
     ? Number(netCollectedInPeriod.div(currentDue).mul(100).toFixed(2))
     : 0;
 
+  const previousFinancial = previousJournalLines.reduce((sum, line) => {
+    const amount = Number(line.amount);
+    if (line.account.accountType === "income" && line.side === "credit") sum.income += amount;
+    if (line.account.accountType === "expense" && line.side === "debit") sum.expense += amount;
+    return sum;
+  }, { income: 0, expense: 0 });
+  const outstandingMemberCount = new Set(
+    currentOutstandingDues
+      .filter((due) => due.amountDue.gt(due.amountPaid))
+      .map((due) => due.membershipId)
+  ).size;
+
   const recentActivity = [
     ...payments.slice(0, 8).map((payment) => ({
       id: `payment-${payment.id}`,
@@ -398,6 +431,17 @@ dashboardRouter.get("/", async (req, res) => {
     currentOutstanding: currentOutstanding.toNumber(),
     overpaymentsThisMonth: new Decimal(overpaymentsThisMonth.toString()).toNumber(),
     activePaymentsInPeriod: activePaymentCountInPeriod,
+    comparison: {
+      previousMemberCollection: Number((previousPaymentsInPeriod._sum.amount ?? new Decimal(0)).toFixed(2)),
+      previousIncome: Number(previousFinancial.income.toFixed(2)),
+      previousExpense: Number(previousFinancial.expense.toFixed(2)),
+      newHouseholds,
+      newPeople,
+      newAdults,
+      newYouth,
+      newChildren,
+      outstandingMemberCount,
+    },
     period: `${rangeStart.toISOString().slice(0, 10)}:${new Date(rangeEnd.getTime() - 1)
       .toISOString()
       .slice(0, 10)}`,

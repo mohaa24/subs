@@ -16,7 +16,6 @@ import {
   Home,
   Receipt,
   Banknote,
-  ChevronRight,
   ScanLine,
   Repeat,
   Star,
@@ -63,6 +62,9 @@ import {
   Pie,
   Cell,
   Tooltip,
+  XAxis,
+  YAxis,
+  Legend,
 } from "recharts";
 
 function formatRs(n: number) {
@@ -96,12 +98,6 @@ function formatCompactRs(n: number) {
     .format(n)
     .replace(".0", "")
     .toLowerCase()}`;
-}
-
-function formatPeriod(period: string) {
-  const [start, end] = period.split(":");
-  if (!start || !end) return period;
-  return `${start} to ${end}`;
 }
 
 function relativeTime(value: string) {
@@ -145,10 +141,27 @@ function MiniSparkline({
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data}>
+        <Tooltip
+          formatter={(value) => formatRs(Number(value))}
+          labelFormatter={(label) => `Date: ${label}`}
+          contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
+          cursor={{ stroke: "#94a3b8", strokeDasharray: "3 3" }}
+        />
         <Line type="monotone" dataKey={dataKey} stroke={stroke} strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );
+}
+
+function trendLabel(current: number, previous: number) {
+  if (previous === 0) return current === 0 ? "No change" : "New in this period";
+  const percentage = ((current - previous) / Math.abs(previous)) * 100;
+  const direction = percentage >= 0 ? "▲" : "▼";
+  return `${direction} ${Math.abs(percentage).toFixed(1)}% vs previous period`;
+}
+
+function activityChange(count: number) {
+  return count > 0 ? `▲ ${count} new this period` : "No change";
 }
 
 function ChartCard({
@@ -376,6 +389,7 @@ function HomePageContent() {
   const greeting =
     now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
   const financial = stats?.financialOverview ?? null;
+  const comparison = stats?.comparison;
   const financialSeries = financial?.series ?? [];
   const recentActivity = stats?.recentActivity ?? [];
   const latestSeries = financialSeries.length ? financialSeries : Array.from({ length: 7 }, (_, idx) => ({
@@ -393,7 +407,7 @@ function HomePageContent() {
     {
       label: "Member Collect",
       value: stats ? formatCompactRs(stats.netCollectedInPeriod) : "—",
-      delta: stats ? `${Math.round((stats.netCollectedInPeriod / Math.max(stats.totalDueThisMonth || 1, 1)) * 100)}% collected` : "",
+      delta: stats && comparison ? trendLabel(stats.netCollectedInPeriod, comparison.previousMemberCollection) : "",
       icon: Users,
       color: "text-emerald-600",
       bg: "bg-emerald-500/10",
@@ -403,7 +417,7 @@ function HomePageContent() {
     {
       label: "Total Income",
       value: stats ? formatCompactRs(financial?.totalIncome ?? 0) : "—",
-      delta: "From P&L",
+      delta: stats && comparison ? trendLabel(financial?.totalIncome ?? 0, comparison.previousIncome) : "",
       icon: Banknote,
       color: "text-blue-600",
       bg: "bg-blue-500/10",
@@ -413,7 +427,7 @@ function HomePageContent() {
     {
       label: "Total Expense",
       value: stats ? formatCompactRs(financial?.totalExpense ?? 0) : "—",
-      delta: "From P&L",
+      delta: stats && comparison ? trendLabel(financial?.totalExpense ?? 0, comparison.previousExpense) : "",
       icon: Receipt,
       color: "text-red-500",
       bg: "bg-red-500/10",
@@ -423,7 +437,9 @@ function HomePageContent() {
     {
       label: "Net Income",
       value: stats ? formatCompactRs(financial?.netIncome ?? 0) : "—",
-      delta: "Income - Expense",
+      delta: stats && comparison
+        ? trendLabel(financial?.netIncome ?? 0, comparison.previousIncome - comparison.previousExpense)
+        : "",
       icon: ArrowUpRight,
       color: "text-violet-600",
       bg: "bg-violet-500/10",
@@ -439,6 +455,7 @@ function HomePageContent() {
       icon: Home,
       color: "text-blue-500",
       bg: "bg-blue-500/10",
+      delta: comparison ? activityChange(comparison.newHouseholds) : "",
     },
     {
       label: t("dashboard.totalHeadcount"),
@@ -446,6 +463,7 @@ function HomePageContent() {
       icon: Users,
       color: "text-indigo-500",
       bg: "bg-indigo-500/10",
+      delta: comparison ? activityChange(comparison.newPeople) : "",
     },
     {
       label: t("dashboard.adults"),
@@ -453,6 +471,7 @@ function HomePageContent() {
       icon: User,
       color: "text-sky-500",
       bg: "bg-sky-500/10",
+      delta: comparison ? activityChange(comparison.newAdults) : "",
     },
     {
       label: t("dashboard.youth"),
@@ -460,6 +479,7 @@ function HomePageContent() {
       icon: UserPlus,
       color: "text-purple-500",
       bg: "bg-purple-500/10",
+      delta: comparison ? activityChange(comparison.newYouth) : "",
     },
     {
       label: t("dashboard.children"),
@@ -467,6 +487,7 @@ function HomePageContent() {
       icon: Baby,
       color: "text-amber-500",
       bg: "bg-amber-500/10",
+      delta: comparison ? activityChange(comparison.newChildren) : "",
     },
   ];
 
@@ -740,9 +761,6 @@ function HomePageContent() {
                   minute: "2-digit",
                 })}
               </span>
-              <span className="rounded-full border bg-card px-3 py-1">
-                {stats ? formatPeriod(stats.period) : t("dashboard.overview")}
-              </span>
             </div>
           </div>
           <div className="w-full max-w-[220px]">
@@ -787,7 +805,7 @@ function HomePageContent() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {ROW2_CARDS.map(({ label, value, icon: Icon, color, bg }) => (
+          {ROW2_CARDS.map(({ label, value, delta, icon: Icon, color, bg }) => (
             <Card key={label} className="overflow-hidden">
               <CardContent className="flex items-center gap-3 p-4">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bg}`}>
@@ -796,7 +814,7 @@ function HomePageContent() {
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">{label}</p>
                   <p className="truncate text-xl font-semibold text-foreground">{statsLoading ? "—" : value}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">No change</p>
+                  <p className={`mt-1 text-xs ${delta?.startsWith("▲") ? "text-emerald-600" : "text-muted-foreground"}`}>{delta}</p>
                 </div>
               </CardContent>
             </Card>
@@ -824,10 +842,7 @@ function HomePageContent() {
         <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.35fr)_minmax(0,0.65fr)]">
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
-              <div>
-                <CardTitle className="text-base">Recent Activity</CardTitle>
-              </div>
-              <Link href="/reports" className="text-xs font-semibold text-emerald-700 hover:underline">View All</Link>
+              <CardTitle className="text-base">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {statsLoading ? (
@@ -839,7 +854,7 @@ function HomePageContent() {
               ) : recentActivity.length > 0 ? (
                 <div className="divide-y">
                   {recentActivity.slice(0, 5).map((item) => (
-                    <Link key={item.id} href={item.href ?? "#"} className={`flex items-center gap-3 p-3 transition ${item.href ? "hover:bg-muted/40" : "cursor-default"}`}>
+                    <div key={item.id} className="flex items-center gap-3 p-3">
                       <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${activityToneClass(item.tone)}`}>
                         <ActivityIcon kind={item.type} className="h-4 w-4" />
                       </div>
@@ -853,8 +868,7 @@ function HomePageContent() {
                         ) : null}
                         <div className="text-xs text-muted-foreground">{relativeTime(item.occurredAt)}</div>
                       </div>
-                      {item.href ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : null}
-                    </Link>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -873,7 +887,10 @@ function HomePageContent() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={latestSeries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <Tooltip />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                     <Bar dataKey="income" fill="#2563eb" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="expense" fill="#ef4444" radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -894,7 +911,10 @@ function HomePageContent() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <Tooltip />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                     <Area type="monotone" dataKey="cashIn" stroke="#16a34a" fill="url(#cashInFill)" strokeWidth={2} dot={false} />
                     <Area type="monotone" dataKey="cashOut" stroke="#f97316" fill="url(#cashOutFill)" strokeWidth={2} dot={false} />
                   </AreaChart>
@@ -903,7 +923,7 @@ function HomePageContent() {
 
               <ChartCard title="Collection Rate" subtitle="Current period" colorA="#10b981" colorB="#e5e7eb">
                 <div className="flex h-full items-center justify-center">
-                  <ResponsiveContainer width="100%" height={150}>
+                  <ResponsiveContainer width="100%" height={100}>
                     <PieChart>
                       <Pie
                         data={[
@@ -911,8 +931,8 @@ function HomePageContent() {
                           { name: "Remaining", value: Math.max(100 - (financial?.collectionRate ?? 0), 0) },
                         ]}
                         dataKey="value"
-                        innerRadius={42}
-                        outerRadius={58}
+                        innerRadius={30}
+                        outerRadius={43}
                         paddingAngle={4}
                       >
                         <Cell fill="#10b981" />
@@ -922,13 +942,19 @@ function HomePageContent() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-[-20px] text-center">
+                <div className="mt-[-14px] text-center">
                   <div className="text-2xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
                   <div className="text-xs text-muted-foreground">Collected this period</div>
                 </div>
               </ChartCard>
 
-              <ChartCard title="Outstanding Dues" subtitle="Balance movement" colorA="#ef4444" colorB="#fde2e2" className="md:col-span-3 [&>div:last-child]:h-32">
+              <ChartCard
+                title={`Outstanding Dues: ${formatCompactRs(stats?.currentOutstanding ?? 0)}`}
+                subtitle={`${comparison?.outstandingMemberCount ?? 0} members with outstanding dues`}
+                colorA="#ef4444"
+                colorB="#fde2e2"
+                className="md:col-span-3 [&>div:last-child]:h-32"
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={latestSeries}>
                     <defs>
@@ -938,7 +964,9 @@ function HomePageContent() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <Tooltip />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={formatCompactRs} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} />
+                    <Tooltip formatter={(value) => formatRs(Number(value))} labelFormatter={(label) => `Date: ${label}`} />
                     <Area type="monotone" dataKey="outstanding" stroke="#ef4444" fill="url(#outstandingFill)" strokeWidth={2} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
