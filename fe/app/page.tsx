@@ -167,12 +167,12 @@ function ChartCard({
   colorB?: string;
 }) {
   return (
-    <div className={`rounded-2xl border bg-card p-4 shadow-sm ${className ?? ""}`}>
+    <div className={`rounded-lg border bg-card p-3 shadow-sm ${className ?? ""}`}>
       <div className="mb-3">
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <div className="text-xs text-muted-foreground">{subtitle}</div>
       </div>
-      <div className="h-56">{children}</div>
+      <div className="h-36">{children}</div>
     </div>
   );
 }
@@ -397,6 +397,7 @@ function HomePageContent() {
       icon: Users,
       color: "text-emerald-600",
       bg: "bg-emerald-500/10",
+      stroke: "#16a34a",
       dataKey: "memberCollection",
     },
     {
@@ -406,6 +407,7 @@ function HomePageContent() {
       icon: Banknote,
       color: "text-blue-600",
       bg: "bg-blue-500/10",
+      stroke: "#2563eb",
       dataKey: "income",
     },
     {
@@ -415,6 +417,7 @@ function HomePageContent() {
       icon: Receipt,
       color: "text-red-500",
       bg: "bg-red-500/10",
+      stroke: "#ef4444",
       dataKey: "expense",
     },
     {
@@ -424,6 +427,7 @@ function HomePageContent() {
       icon: ArrowUpRight,
       color: "text-violet-600",
       bg: "bg-violet-500/10",
+      stroke: "#8b5cf6",
       dataKey: "netIncome",
     },
   ];
@@ -757,24 +761,24 @@ function HomePageContent() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {ROW1_CARDS.map(({ label, value, delta, icon: Icon, color, bg, dataKey }) => (
+          {ROW1_CARDS.map(({ label, value, delta, icon: Icon, color, bg, stroke, dataKey }) => (
             <Card key={label} className="overflow-hidden">
-              <CardContent className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">{label}</p>
-                    <p className="text-2xl font-semibold tracking-tight text-foreground">{statsLoading ? "—" : value}</p>
-                    {delta ? <p className="text-xs text-muted-foreground">{delta}</p> : null}
-                  </div>
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-start gap-4">
                   <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${bg}`}>
                     <Icon className={`h-5 w-5 ${color}`} />
                   </div>
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-foreground">{label}</p>
+                    <p className="text-xl font-semibold text-foreground">{statsLoading ? "—" : value}</p>
+                    {delta ? <p className={`text-xs font-medium ${label === "Total Expense" ? "text-red-500" : "text-emerald-600"}`}>{delta}</p> : null}
+                  </div>
                 </div>
-                <div className="h-14">
+                <div className="h-12">
                   {statsLoading ? (
                     <div className="h-full rounded-md bg-muted/70 animate-pulse" />
                   ) : (
-                    <MiniSparkline data={latestSeries} dataKey={dataKey} stroke={color} />
+                    <MiniSparkline data={latestSeries} dataKey={dataKey} stroke={stroke} />
                   )}
                 </div>
               </CardContent>
@@ -792,6 +796,7 @@ function HomePageContent() {
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">{label}</p>
                   <p className="truncate text-xl font-semibold text-foreground">{statsLoading ? "—" : value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">No change</p>
                 </div>
               </CardContent>
             </Card>
@@ -799,13 +804,13 @@ function HomePageContent() {
         </div>
 
         <div>
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Quick Actions</h3>
+          <h3 className="mb-3 text-base font-semibold text-foreground">Quick Actions</h3>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             {quickActionItems.map(({ label, href, icon: Icon, tone }) => (
               <Link key={label} href={href} className="group">
                 <Card className="h-full transition hover:border-primary/30 hover:bg-accent/20">
-                  <CardContent className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center">
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-full ${tone.split(" ")[1]}`}>
+                  <CardContent className="flex h-28 flex-col items-center justify-center gap-2 p-3 text-center">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${tone.split(" ")[1]}`}>
                       <Icon className={`h-5 w-5 ${tone.split(" ")[0]}`} />
                     </div>
                     <div className="text-sm font-medium text-foreground">{label}</div>
@@ -816,13 +821,13 @@ function HomePageContent() {
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.35fr)_minmax(0,0.65fr)]">
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
               <div>
                 <CardTitle className="text-base">Recent Activity</CardTitle>
-                <p className="text-sm text-muted-foreground">Latest transactions and updates across the organization</p>
               </div>
+              <Link href="/reports" className="text-xs font-semibold text-emerald-700 hover:underline">View All</Link>
             </CardHeader>
             <CardContent className="p-0">
               {statsLoading ? (
@@ -833,9 +838,9 @@ function HomePageContent() {
                 </div>
               ) : recentActivity.length > 0 ? (
                 <div className="divide-y">
-                  {recentActivity.map((item) => (
-                    <Link key={item.id} href={item.href ?? "#"} className={`flex items-center gap-3 p-4 transition ${item.href ? "hover:bg-muted/40" : "cursor-default"}`}>
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${activityToneClass(item.tone)}`}>
+                  {recentActivity.slice(0, 5).map((item) => (
+                    <Link key={item.id} href={item.href ?? "#"} className={`flex items-center gap-3 p-3 transition ${item.href ? "hover:bg-muted/40" : "cursor-default"}`}>
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${activityToneClass(item.tone)}`}>
                         <ActivityIcon kind={item.type} className="h-4 w-4" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -863,7 +868,7 @@ function HomePageContent() {
               <CardTitle className="text-base">Financial Overview</CardTitle>
               <p className="text-sm text-muted-foreground">Income, expense, cash flow, and collection performance</p>
             </CardHeader>
-            <CardContent className="grid gap-4 p-4 md:grid-cols-2">
+            <CardContent className="grid gap-3 p-4 md:grid-cols-3">
               <ChartCard title="Income vs Expenses" subtitle="Daily totals" colorA="#2563eb" colorB="#ef4444">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={latestSeries}>
@@ -898,7 +903,7 @@ function HomePageContent() {
 
               <ChartCard title="Collection Rate" subtitle="Current period" colorA="#10b981" colorB="#e5e7eb">
                 <div className="flex h-full items-center justify-center">
-                  <ResponsiveContainer width="100%" height={220}>
+                  <ResponsiveContainer width="100%" height={150}>
                     <PieChart>
                       <Pie
                         data={[
@@ -906,8 +911,8 @@ function HomePageContent() {
                           { name: "Remaining", value: Math.max(100 - (financial?.collectionRate ?? 0), 0) },
                         ]}
                         dataKey="value"
-                        innerRadius={68}
-                        outerRadius={92}
+                        innerRadius={42}
+                        outerRadius={58}
                         paddingAngle={4}
                       >
                         <Cell fill="#10b981" />
@@ -917,13 +922,13 @@ function HomePageContent() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-[-28px] text-center">
-                  <div className="text-3xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
+                <div className="mt-[-20px] text-center">
+                  <div className="text-2xl font-semibold text-foreground">{statsLoading ? "—" : `${financial?.collectionRate?.toFixed(0) ?? 0}%`}</div>
                   <div className="text-xs text-muted-foreground">Collected this period</div>
                 </div>
               </ChartCard>
 
-              <ChartCard title="Outstanding Dues" subtitle="Balance movement" colorA="#ef4444" colorB="#fde2e2" className="md:col-span-2">
+              <ChartCard title="Outstanding Dues" subtitle="Balance movement" colorA="#ef4444" colorB="#fde2e2" className="md:col-span-3 [&>div:last-child]:h-32">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={latestSeries}>
                     <defs>
