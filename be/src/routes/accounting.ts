@@ -2921,11 +2921,19 @@ accountingRouter.get("/banking/:id", asyncRoute(async (req, res) => {
         orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
       }),
     ]);
-    const relatedCashTransactions = await tx.cashTransaction.findMany({
-      where: { organizationId: orgId, journalEntryId: { in: entries.map((entry) => entry.id) } },
-      select: { journalEntryId: true, accountId: true, category: true },
-    });
+    const entryIds = entries.map((entry) => entry.id);
+    const [relatedCashTransactions, relatedFundTransactions] = await Promise.all([
+      tx.cashTransaction.findMany({
+        where: { organizationId: orgId, journalEntryId: { in: entryIds } },
+        select: { id: true, journalEntryId: true, accountId: true, category: true, documentNumber: true, reversedAt: true, reversalReason: true, reversalDocumentNumber: true, reversedBy: { select: { email: true } } },
+      }),
+      tx.fundTransaction.findMany({
+        where: { organizationId: orgId, journalEntryId: { in: entryIds } },
+        select: { id: true, journalEntryId: true, receiptNumber: true, reversedAt: true, reversalReason: true, reversedBy: { select: { email: true } } },
+      }),
+    ]);
     const cashTransactionByJournal = new Map(relatedCashTransactions.map((transaction) => [transaction.journalEntryId, transaction]));
+    const fundTransactionByJournal = new Map(relatedFundTransactions.map((transaction) => [transaction.journalEntryId, transaction]));
     let balance = bankingBalance(opening.get(account.id));
     const activity = entries.map((entry) => {
       const ownLine = entry.lines.find((line) => line.accountId === account.id)!;
@@ -2933,15 +2941,18 @@ accountingRouter.get("/banking/:id", asyncRoute(async (req, res) => {
       balance = ownLine.side === "debit" ? balance.add(amount) : balance.sub(amount);
       const banking = entry.bankingTransactions[0];
       const cashTransaction = cashTransactionByJournal.get(entry.id);
+      const fundTransaction = fundTransactionByJournal.get(entry.id);
+      const sourceTransaction = cashTransaction ?? fundTransaction;
       const otherAccounts = entry.lines.filter((line) => line.accountId !== account.id).map((line) => line.account.name).join(", ");
       const source = banking ? "Banking" : bankingSource(entry.referenceType);
       return {
         id: entry.id, transactionDate: entry.entryDate.toISOString(), source,
         description: banking ? `${bankingTransactionLabel(banking.transactionType, banking.isReversal)}${banking.description ? `: ${banking.description}` : ` ${banking.sourceAccount.name} to ${banking.destinationAccount.name}`}` : `${otherAccounts || entry.description}${entry.description && otherAccounts ? ` - ${entry.description}` : ""}`,
         amount: asNumber(amount), direction: ownLine.side === "debit" ? "in" : "out", balance: asNumber(balance),
-        status: banking?.reversedAt ? "reversed" : "posted", actionedBy: banking?.createdByUserId ? entry.createdBy?.email ?? "System" : entry.createdBy?.email ?? "System",
-        receiptNumber: banking?.receiptNumber ?? null, receiptTransactionId: banking?.id ?? null, reversalReason: banking?.reversalReason ?? null, reversedAt: banking?.reversedAt?.toISOString() ?? null,
-        reversedBy: banking?.reversedBy?.email ?? null, linkedReversalReceipt: banking?.reversal?.receiptNumber ?? banking?.reversalOf?.receiptNumber ?? null,
+        status: banking?.reversedAt || sourceTransaction?.reversedAt ? "reversed" : "posted", actionedBy: banking?.createdByUserId ? entry.createdBy?.email ?? "System" : entry.createdBy?.email ?? "System",
+        receiptNumber: banking?.receiptNumber ?? cashTransaction?.documentNumber ?? fundTransaction?.receiptNumber ?? null, receiptTransactionId: banking?.id ?? null,
+        reversalReason: banking?.reversalReason ?? sourceTransaction?.reversalReason ?? null, reversedAt: banking?.reversedAt?.toISOString() ?? sourceTransaction?.reversedAt?.toISOString() ?? null,
+        reversedBy: banking?.reversedBy?.email ?? sourceTransaction?.reversedBy?.email ?? null, linkedReversalReceipt: banking?.reversal?.receiptNumber ?? banking?.reversalOf?.receiptNumber ?? cashTransaction?.reversalDocumentNumber ?? null,
         linkedReversalTransactionId: banking?.reversal?.id ?? banking?.reversalOf?.id ?? null,
         bankingTransactionId: banking?.id ?? null, canReverse: Boolean(banking && !banking.reversedAt && !banking.isReversal && account.isActive),
         openHref: banking ? null : cashTransaction?.category.startsWith("receivable_") ? `/receivables/${cashTransaction.accountId}` : cashTransaction?.category.startsWith("payable_") ? `/payables/${cashTransaction.accountId}` : cashTransaction?.category === "operating_income" ? `/cash-in/accounts/${cashTransaction.accountId}` : cashTransaction?.category === "operating_expense" ? `/cash-out/accounts/${cashTransaction.accountId}` : bankingOpenHref(entry.referenceType, entry.referenceId),
