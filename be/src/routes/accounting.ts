@@ -2802,6 +2802,28 @@ function bankingTransactionLabel(type: BankingTransactionType, reversal = false)
   return reversal ? `Reversal of ${label}` : label;
 }
 
+function buildBankingReceipt(transaction: any) {
+  return {
+    receiptNumber: transaction.receiptNumber,
+    originalReceiptNumber: transaction.isReversal ? transaction.reversalOf?.receiptNumber ?? null : null,
+    transactionId: transaction.id,
+    transactionDate: transaction.transactionDate.toISOString(),
+    organizationName: transaction.organization.name,
+    organizationReceiptLogoUrl: transaction.organization.receiptLogoUrl,
+    accountName: transaction.sourceAccount.name,
+    counterpartyName: transaction.destinationAccount.name,
+    amount: Number(transaction.amount),
+    paymentMethod: `${transaction.sourceAccount.assetSubtype === "bank" ? "Bank" : "Cash"} to ${transaction.destinationAccount.assetSubtype === "bank" ? "Bank" : "Cash"}`,
+    reference: transaction.reference,
+    description: transaction.description,
+    reversalReason: transaction.isReversal ? transaction.reversalOf?.reversalReason ?? null : null,
+    collectedBy: transaction.createdBy?.email ?? null,
+    receiptTitle: transaction.isReversal ? "BANKING REVERSAL RECEIPT" : "BANKING TRANSFER RECEIPT",
+    counterpartyLabel: "Transferred To",
+    amountLabel: transaction.isReversal ? "Reversed Amount" : "Transfer Amount",
+  };
+}
+
 function bankingSource(referenceType?: string | null) {
   if (referenceType === "payment" || referenceType === "payment_credit_application") return "Members";
   if (referenceType?.startsWith("receivable_")) return "Receivable";
@@ -2895,7 +2917,7 @@ accountingRouter.get("/banking/:id", asyncRoute(async (req, res) => {
       bankingLineTotals(tx, orgId, [account.id], { toEnd }),
       tx.accountingJournalEntry.findMany({
         where: { organizationId: orgId, entryDate: { gte: from, lte: toEnd }, lines: { some: { accountId: account.id } } },
-        include: { lines: { include: { account: { select: { id: true, name: true, accountType: true, assetSubtype: true } } } }, createdBy: { select: { email: true } }, bankingTransactions: { include: { sourceAccount: { select: { name: true } }, destinationAccount: { select: { name: true } }, reversedBy: { select: { email: true } }, reversal: { select: { receiptNumber: true } } } } },
+        include: { lines: { include: { account: { select: { id: true, name: true, accountType: true, assetSubtype: true } } } }, createdBy: { select: { email: true } }, bankingTransactions: { include: { sourceAccount: { select: { name: true } }, destinationAccount: { select: { name: true } }, reversedBy: { select: { email: true } }, reversal: { select: { id: true, receiptNumber: true } }, reversalOf: { select: { id: true, receiptNumber: true } } } } },
         orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
       }),
     ]);
@@ -2918,8 +2940,9 @@ accountingRouter.get("/banking/:id", asyncRoute(async (req, res) => {
         description: banking ? `${bankingTransactionLabel(banking.transactionType, banking.isReversal)}${banking.description ? `: ${banking.description}` : ` ${banking.sourceAccount.name} to ${banking.destinationAccount.name}`}` : `${otherAccounts || entry.description}${entry.description && otherAccounts ? ` - ${entry.description}` : ""}`,
         amount: asNumber(amount), direction: ownLine.side === "debit" ? "in" : "out", balance: asNumber(balance),
         status: banking?.reversedAt ? "reversed" : "posted", actionedBy: banking?.createdByUserId ? entry.createdBy?.email ?? "System" : entry.createdBy?.email ?? "System",
-        receiptNumber: banking?.receiptNumber ?? null, reversalReason: banking?.reversalReason ?? null, reversedAt: banking?.reversedAt?.toISOString() ?? null,
-        reversedBy: banking?.reversedBy?.email ?? null, linkedReversalReceipt: banking?.reversal?.receiptNumber ?? null,
+        receiptNumber: banking?.receiptNumber ?? null, receiptTransactionId: banking?.id ?? null, reversalReason: banking?.reversalReason ?? null, reversedAt: banking?.reversedAt?.toISOString() ?? null,
+        reversedBy: banking?.reversedBy?.email ?? null, linkedReversalReceipt: banking?.reversal?.receiptNumber ?? banking?.reversalOf?.receiptNumber ?? null,
+        linkedReversalTransactionId: banking?.reversal?.id ?? banking?.reversalOf?.id ?? null,
         bankingTransactionId: banking?.id ?? null, canReverse: Boolean(banking && !banking.reversedAt && !banking.isReversal && account.isActive),
         openHref: banking ? null : cashTransaction?.category.startsWith("receivable_") ? `/receivables/${cashTransaction.accountId}` : cashTransaction?.category.startsWith("payable_") ? `/payables/${cashTransaction.accountId}` : cashTransaction?.category === "operating_income" ? `/cash-in/accounts/${cashTransaction.accountId}` : cashTransaction?.category === "operating_expense" ? `/cash-out/accounts/${cashTransaction.accountId}` : bankingOpenHref(entry.referenceType, entry.referenceId),
       };
@@ -2975,6 +2998,23 @@ accountingRouter.post("/banking/transactions/:id/reverse", requireAccountingAdmi
     return tx.bankingTransaction.update({ where: { id: reversal.id }, data: { journalEntryId: entry.id } });
   });
   return res.status(201).json(result);
+}));
+
+accountingRouter.get("/banking/transactions/:id/receipt", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+  const transaction = await prisma.bankingTransaction.findFirst({
+    where: { id: req.params.id, organizationId: orgId },
+    include: {
+      organization: { select: { name: true, receiptLogoUrl: true } },
+      sourceAccount: { select: { name: true, assetSubtype: true } },
+      destinationAccount: { select: { name: true, assetSubtype: true } },
+      createdBy: { select: { email: true } },
+      reversalOf: { select: { receiptNumber: true, reversalReason: true } },
+    },
+  });
+  if (!transaction?.receiptNumber) return res.status(404).json({ error: "Banking receipt not found" });
+  return res.json(buildBankingReceipt(transaction));
 }));
 
 accountingRouter.post("/banking/:id/close", requireAccountingAdmin, asyncRoute(async (req, res) => {
