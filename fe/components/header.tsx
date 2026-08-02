@@ -101,16 +101,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Expense Accounts", href: "/cash-out", actionKey: "nav-expense-accounts" },
     ],
   },
-  {
-    key: "banking",
-    label: "Banking",
-    icon: Landmark,
-    children: [
-      { label: "Bank Deposits", badge: "Soon", disabled: true },
-      { label: "Cash Withdrawals", badge: "Soon", disabled: true },
-      { label: "Bank Transfers", badge: "Soon", disabled: true },
-    ],
-  },
+  { key: "banking", label: "Banking", icon: Landmark, href: "/banking", actionKey: "nav-banking" },
   { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds", actionKey: "nav-special-funds" },
   { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables", actionKey: "nav-receivable" },
   { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables", actionKey: "nav-payable" },

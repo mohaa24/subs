@@ -168,6 +168,26 @@ const cashTransactionSchema = zod_1.z.object({
 const cashReverseSchema = zod_1.z.object({
     reason: zod_1.z.string().trim().min(1, "Reversal reason is required").max(500),
 });
+const bankingAccountSchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(1).max(120),
+    assetSubtype: zod_1.z.enum(["cash", "bank"]),
+    bankName: zod_1.z.string().trim().max(120).optional().nullable(),
+    accountNumber: zod_1.z.string().trim().max(80).optional().nullable(),
+    description: zod_1.z.string().trim().max(500).optional().nullable(),
+});
+const bankingTransactionSchema = zod_1.z.object({
+    transactionType: zod_1.z.enum(["deposit", "withdrawal", "cash_transfer", "bank_transfer"]),
+    sourceAccountId: zod_1.z.string().min(1),
+    destinationAccountId: zod_1.z.string().min(1),
+    amount: moneySchema,
+    transactionDate: zod_1.z.string().optional(),
+    description: zod_1.z.string().trim().max(500).optional().nullable(),
+    reference: zod_1.z.string().trim().max(120).optional().nullable(),
+});
+const bankingReverseSchema = zod_1.z.object({
+    reason: zod_1.z.enum(["Incorrect Amount", "Incorrect Account", "Duplicate Entry", "Entered by Mistake", "Other"]),
+    note: zod_1.z.string().trim().max(500).optional().nullable(),
+});
 const createReceivableSchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(1).max(120),
     assetSubtype: zod_1.z.literal("loan_receivable"),
@@ -2408,6 +2428,282 @@ exports.accountingRouter.post("/income", requireAccountingAdmin, asyncRoute(asyn
         });
     });
     return res.status(201).json(serializeJournalEntry(entry));
+}));
+function bankingAccountStatus(account) {
+    return account.isActive && !account.closedAt ? "active" : "closed";
+}
+async function bankingLineTotals(tx, organizationId, accountIds, range) {
+    if (!accountIds.length)
+        return new Map();
+    const rows = await tx.accountingJournalLine.groupBy({
+        by: ["accountId", "side"],
+        where: {
+            organizationId,
+            accountId: { in: accountIds },
+            journalEntry: {
+                entryDate: range.before
+                    ? { lt: range.before }
+                    : { ...(range.from ? { gte: range.from } : {}), ...(range.toEnd ? { lte: range.toEnd } : {}) },
+            },
+        },
+        _sum: { amount: true },
+    });
+    const totals = new Map();
+    for (const row of rows) {
+        const current = totals.get(row.accountId) ?? { debit: new library_1.Decimal(0), credit: new library_1.Decimal(0) };
+        if (row.side === "debit")
+            current.debit = current.debit.add(row._sum.amount ?? new library_1.Decimal(0));
+        else
+            current.credit = current.credit.add(row._sum.amount ?? new library_1.Decimal(0));
+        totals.set(row.accountId, current);
+    }
+    return totals;
+}
+function bankingBalance(totals) {
+    return (totals?.debit ?? new library_1.Decimal(0)).sub(totals?.credit ?? new library_1.Decimal(0));
+}
+async function generateBankingReceiptNumber(tx, organizationId, date, prefix) {
+    const key = `${prefix}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const latest = await tx.bankingTransaction.findFirst({
+        where: { organizationId, receiptNumber: { startsWith: key } },
+        orderBy: { receiptNumber: "desc" },
+        select: { receiptNumber: true },
+    });
+    const sequence = latest?.receiptNumber ? Number(latest.receiptNumber.slice(key.length)) || 0 : 0;
+    return `${key}${String(sequence + 1).padStart(4, "0")}`;
+}
+function bankingTransactionLabel(type, reversal = false) {
+    const label = type === "deposit" ? "Deposit" : type === "withdrawal" ? "Withdrawal" : "Transfer";
+    return reversal ? `Reversal of ${label}` : label;
+}
+function bankingSource(referenceType) {
+    if (referenceType === "payment" || referenceType === "payment_credit_application")
+        return "Members";
+    if (referenceType?.startsWith("receivable_"))
+        return "Receivable";
+    if (referenceType?.startsWith("payable_"))
+        return "Payable";
+    if (referenceType === "operating_income" || referenceType === "manual_income")
+        return "Income";
+    if (referenceType === "operating_expense" || referenceType === "manual_expense" || referenceType === "receivable_write_off")
+        return "Expense";
+    if (referenceType?.startsWith("fund_"))
+        return "Special Funds";
+    return "Accounting";
+}
+function bankingOpenHref(referenceType, referenceId) {
+    if (referenceType === "payment")
+        return "/payments";
+    if (referenceType?.startsWith("receivable_") && referenceId)
+        return `/receivables/${referenceId}`;
+    if (referenceType?.startsWith("payable_") && referenceId)
+        return `/payables/${referenceId}`;
+    if (referenceType === "operating_income" && referenceId)
+        return `/cash-in/accounts/${referenceId}`;
+    if (referenceType === "operating_expense" && referenceId)
+        return `/cash-out/accounts/${referenceId}`;
+    if (referenceType?.startsWith("fund_") && referenceId)
+        return `/funds/${referenceId}`;
+    return "/accounting";
+}
+exports.accountingRouter.get("/banking/overview", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const search = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const type = req.query.type === "cash" || req.query.type === "bank" ? req.query.type : null;
+    const status = typeof req.query.status === "string" ? req.query.status : "active";
+    const sort = typeof req.query.sort === "string" ? req.query.sort : "name_asc";
+    const data = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const accounts = await tx.accountingAccount.findMany({
+            where: {
+                organizationId: orgId, accountType: "asset", assetSubtype: type ?? { in: cashBankSubtypes },
+                ...(status === "closed" ? { OR: [{ isActive: false }, { closedAt: { not: null } }] } : status === "all" ? {} : { isActive: true, closedAt: null }),
+                ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+            },
+            orderBy: { name: "asc" },
+        });
+        const ids = accounts.map((account) => account.id);
+        const [opening, period, current] = await Promise.all([
+            bankingLineTotals(tx, orgId, ids, { before: from }),
+            bankingLineTotals(tx, orgId, ids, { from, toEnd }),
+            bankingLineTotals(tx, orgId, ids, { toEnd }),
+        ]);
+        const rows = accounts.map((account) => {
+            const periodTotals = period.get(account.id);
+            return {
+                ...serializeAccount(account),
+                accountTypeLabel: account.assetSubtype === "bank" ? "Bank" : "Cash",
+                status: bankingAccountStatus(account),
+                openingBalance: asNumber(bankingBalance(opening.get(account.id))),
+                cashIn: asNumber(periodTotals?.debit ?? new library_1.Decimal(0)),
+                cashOut: asNumber(periodTotals?.credit ?? new library_1.Decimal(0)),
+                currentBalance: asNumber(bankingBalance(current.get(account.id))),
+            };
+        });
+        if (sort === "balance_desc")
+            rows.sort((a, b) => b.currentBalance - a.currentBalance);
+        if (sort === "balance_asc")
+            rows.sort((a, b) => a.currentBalance - b.currentBalance);
+        return rows;
+    });
+    const totals = data.reduce((sum, row) => ({
+        openingBalance: sum.openingBalance + row.openingBalance, cashIn: sum.cashIn + row.cashIn,
+        cashOut: sum.cashOut + row.cashOut, currentBalance: sum.currentBalance + row.currentBalance,
+    }), { openingBalance: 0, cashIn: 0, cashOut: 0, currentBalance: 0 });
+    return res.json({ fromDate: from.toISOString(), toDate: toEnd.toISOString(), totals, rows: data });
+}));
+exports.accountingRouter.post("/banking/accounts", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = bankingAccountSchema.safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    const account = await prisma_js_1.prisma.$transaction(async (tx) => {
+        await (0, accounting_js_1.ensureDefaultAccountingAccounts)(tx, orgId);
+        const duplicate = await tx.accountingAccount.findFirst({ where: { organizationId: orgId, name: { equals: parsed.data.name, mode: "insensitive" } }, select: { id: true } });
+        if (duplicate) {
+            const error = new Error("An account with this name already exists");
+            error.statusCode = 409;
+            throw error;
+        }
+        return tx.accountingAccount.create({ data: { organizationId: orgId, name: parsed.data.name, accountType: "asset", assetSubtype: parsed.data.assetSubtype, bankName: parsed.data.bankName || null, accountNumber: parsed.data.accountNumber || null, description: parsed.data.description || null, createdByUserId: req.auth.userId } });
+    });
+    return res.status(201).json(serializeAccount(account));
+}));
+exports.accountingRouter.get("/banking/:id", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const { from, toEnd } = cashFlowRange(req.query);
+    const data = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const account = await tx.accountingAccount.findFirst({ where: { id: req.params.id, organizationId: orgId, accountType: "asset", assetSubtype: { in: cashBankSubtypes } } });
+        if (!account)
+            return null;
+        const [opening, current, entries] = await Promise.all([
+            bankingLineTotals(tx, orgId, [account.id], { before: from }),
+            bankingLineTotals(tx, orgId, [account.id], { toEnd }),
+            tx.accountingJournalEntry.findMany({
+                where: { organizationId: orgId, entryDate: { gte: from, lte: toEnd }, lines: { some: { accountId: account.id } } },
+                include: { lines: { include: { account: { select: { id: true, name: true, accountType: true, assetSubtype: true } } } }, createdBy: { select: { email: true } }, bankingTransactions: { include: { sourceAccount: { select: { name: true } }, destinationAccount: { select: { name: true } }, reversedBy: { select: { email: true } }, reversal: { select: { receiptNumber: true } } } } },
+                orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
+            }),
+        ]);
+        const relatedCashTransactions = await tx.cashTransaction.findMany({
+            where: { organizationId: orgId, journalEntryId: { in: entries.map((entry) => entry.id) } },
+            select: { journalEntryId: true, accountId: true, category: true },
+        });
+        const cashTransactionByJournal = new Map(relatedCashTransactions.map((transaction) => [transaction.journalEntryId, transaction]));
+        let balance = bankingBalance(opening.get(account.id));
+        const activity = entries.map((entry) => {
+            const ownLine = entry.lines.find((line) => line.accountId === account.id);
+            const amount = new library_1.Decimal(ownLine.amount);
+            balance = ownLine.side === "debit" ? balance.add(amount) : balance.sub(amount);
+            const banking = entry.bankingTransactions[0];
+            const cashTransaction = cashTransactionByJournal.get(entry.id);
+            const otherAccounts = entry.lines.filter((line) => line.accountId !== account.id).map((line) => line.account.name).join(", ");
+            const source = banking ? "Banking" : bankingSource(entry.referenceType);
+            return {
+                id: entry.id, transactionDate: entry.entryDate.toISOString(), source,
+                description: banking ? `${bankingTransactionLabel(banking.transactionType, banking.isReversal)}${banking.description ? `: ${banking.description}` : ` ${banking.sourceAccount.name} to ${banking.destinationAccount.name}`}` : `${otherAccounts || entry.description}${entry.description && otherAccounts ? ` - ${entry.description}` : ""}`,
+                amount: asNumber(amount), direction: ownLine.side === "debit" ? "in" : "out", balance: asNumber(balance),
+                status: banking?.reversedAt ? "reversed" : "posted", actionedBy: banking?.createdByUserId ? entry.createdBy?.email ?? "System" : entry.createdBy?.email ?? "System",
+                receiptNumber: banking?.receiptNumber ?? null, reversalReason: banking?.reversalReason ?? null, reversedAt: banking?.reversedAt?.toISOString() ?? null,
+                reversedBy: banking?.reversedBy?.email ?? null, linkedReversalReceipt: banking?.reversal?.receiptNumber ?? null,
+                bankingTransactionId: banking?.id ?? null, canReverse: Boolean(banking && !banking.reversedAt && !banking.isReversal && account.isActive),
+                openHref: banking ? null : cashTransaction?.category.startsWith("receivable_") ? `/receivables/${cashTransaction.accountId}` : cashTransaction?.category.startsWith("payable_") ? `/payables/${cashTransaction.accountId}` : cashTransaction?.category === "operating_income" ? `/cash-in/accounts/${cashTransaction.accountId}` : cashTransaction?.category === "operating_expense" ? `/cash-out/accounts/${cashTransaction.accountId}` : bankingOpenHref(entry.referenceType, entry.referenceId),
+            };
+        }).reverse();
+        const period = activity.reduce((sum, item) => ({ cashIn: item.direction === "in" ? sum.cashIn + item.amount : sum.cashIn, cashOut: item.direction === "out" ? sum.cashOut + item.amount : sum.cashOut }), { cashIn: 0, cashOut: 0 });
+        return { account: { ...serializeAccount(account), accountTypeLabel: account.assetSubtype === "bank" ? "Bank" : "Cash", status: bankingAccountStatus(account) }, summary: { openingBalance: asNumber(bankingBalance(opening.get(account.id))), cashIn: period.cashIn, cashOut: period.cashOut, currentBalance: asNumber(bankingBalance(current.get(account.id))) }, activity };
+    });
+    if (!data)
+        return res.status(404).json({ error: "Cash or bank account not found" });
+    return res.json(data);
+}));
+exports.accountingRouter.post("/banking/transactions", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = bankingTransactionSchema.safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    if (parsed.data.sourceAccountId === parsed.data.destinationAccountId)
+        return res.status(400).json({ error: "Source and destination accounts must be different" });
+    const date = parsed.data.transactionDate ? new Date(parsed.data.transactionDate) : new Date();
+    const result = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const accounts = await tx.accountingAccount.findMany({ where: { id: { in: [parsed.data.sourceAccountId, parsed.data.destinationAccountId] }, organizationId: orgId, accountType: "asset", assetSubtype: { in: cashBankSubtypes }, isActive: true } });
+        const source = accounts.find((account) => account.id === parsed.data.sourceAccountId);
+        const destination = accounts.find((account) => account.id === parsed.data.destinationAccountId);
+        if (!source || !destination)
+            throw new Error("Select active cash or bank accounts");
+        const valid = (parsed.data.transactionType === "deposit" && source.assetSubtype === "cash" && destination.assetSubtype === "bank")
+            || (parsed.data.transactionType === "withdrawal" && source.assetSubtype === "bank" && destination.assetSubtype === "cash")
+            || (parsed.data.transactionType === "cash_transfer" && source.assetSubtype === "cash" && destination.assetSubtype === "cash")
+            || (parsed.data.transactionType === "bank_transfer" && source.assetSubtype === "bank" && destination.assetSubtype === "bank");
+        if (!valid) {
+            const error = new Error("Selected accounts do not match this banking action");
+            error.statusCode = 400;
+            throw error;
+        }
+        const amount = new library_1.Decimal(parsed.data.amount);
+        const receiptNumber = await generateBankingReceiptNumber(tx, orgId, date, "BK");
+        const transaction = await tx.bankingTransaction.create({ data: { organizationId: orgId, transactionType: parsed.data.transactionType, sourceAccountId: source.id, destinationAccountId: destination.id, amount, transactionDate: date, description: parsed.data.description || null, reference: parsed.data.reference || null, receiptNumber, createdByUserId: req.auth.userId } });
+        const entry = await (0, accounting_js_1.createJournalEntry)(tx, { organizationId: orgId, entryDate: date, entryType: "transfer", description: parsed.data.description || `${bankingTransactionLabel(parsed.data.transactionType)}: ${source.name} to ${destination.name}`, referenceType: "banking_transaction", referenceId: transaction.id, isSystemEntry: false, createdByUserId: req.auth.userId, lines: [{ accountId: destination.id, side: "debit", amount }, { accountId: source.id, side: "credit", amount }] });
+        return tx.bankingTransaction.update({ where: { id: transaction.id }, data: { journalEntryId: entry.id }, include: { sourceAccount: true, destinationAccount: true } });
+    });
+    return res.status(201).json(result);
+}));
+exports.accountingRouter.post("/banking/transactions/:id/reverse", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const parsed = bankingReverseSchema.safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    const result = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const original = await tx.bankingTransaction.findFirst({ where: { id: req.params.id, organizationId: orgId }, include: { sourceAccount: true, destinationAccount: true, reversal: true } });
+        if (!original)
+            throw new Error("Banking transaction not found");
+        if (original.isReversal || original.reversedAt || original.reversal)
+            throw new Error("Banking transaction is already reversed");
+        if (!original.sourceAccount.isActive || !original.destinationAccount.isActive) {
+            const error = new Error("Closed cash or bank accounts cannot have entries reversed");
+            error.statusCode = 409;
+            throw error;
+        }
+        const date = new Date();
+        const receiptNumber = await generateBankingReceiptNumber(tx, orgId, date, "BR");
+        const reversal = await tx.bankingTransaction.create({ data: { organizationId: orgId, transactionType: original.transactionType, sourceAccountId: original.destinationAccountId, destinationAccountId: original.sourceAccountId, amount: original.amount, transactionDate: date, description: parsed.data.note || `Reversal of ${original.receiptNumber}`, reference: original.reference, receiptNumber, reversalOfId: original.id, isReversal: true, createdByUserId: req.auth.userId } });
+        const entry = await (0, accounting_js_1.createJournalEntry)(tx, { organizationId: orgId, entryDate: date, entryType: "manual_adjustment", description: `Reversal of ${bankingTransactionLabel(original.transactionType)} ${original.receiptNumber}: ${parsed.data.reason}`, referenceType: "banking_transaction_reversal", referenceId: reversal.id, isSystemEntry: true, createdByUserId: req.auth.userId, lines: [{ accountId: original.sourceAccountId, side: "debit", amount: original.amount }, { accountId: original.destinationAccountId, side: "credit", amount: original.amount }] });
+        await tx.bankingTransaction.update({ where: { id: original.id }, data: { reversedAt: date, reversedByUserId: req.auth.userId, reversalReason: parsed.data.note ? `${parsed.data.reason}: ${parsed.data.note}` : parsed.data.reason } });
+        return tx.bankingTransaction.update({ where: { id: reversal.id }, data: { journalEntryId: entry.id } });
+    });
+    return res.status(201).json(result);
+}));
+exports.accountingRouter.post("/banking/:id/close", requireAccountingAdmin, asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const account = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const current = await tx.accountingAccount.findFirst({ where: { id: req.params.id, organizationId: orgId, accountType: "asset", assetSubtype: { in: cashBankSubtypes } } });
+        if (!current)
+            throw new Error("Cash or bank account not found");
+        if (!current.isActive || current.closedAt)
+            throw new Error("Account is already closed");
+        const totals = await bankingLineTotals(tx, orgId, [current.id], { toEnd: endOfDay(new Date()) });
+        const balance = bankingBalance(totals.get(current.id));
+        if (!balance.eq(0)) {
+            const error = new Error(balance.gt(0) ? `This account has a balance of Rs. ${balance.toFixed(2)}. Please transfer before closing the account` : `This account has an overdraft of Rs. ${balance.abs().toFixed(2)}. Please clear before closing the account`);
+            error.statusCode = 409;
+            throw error;
+        }
+        return tx.accountingAccount.update({ where: { id: current.id }, data: { isActive: false, closedAt: new Date() } });
+    });
+    return res.json({ account: serializeAccount(account) });
 }));
 exports.accountingRouter.post("/transfers", requireAccountingAdmin, asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);

@@ -33,6 +33,7 @@ export const SIDEBAR_QUICK_ACTIONS: QuickAction[] = [
   action("nav-member-payments", "Member Payments", "Record and review member payments", "/payments", ArrowDownToLine, "text-emerald-600 bg-emerald-500/10"),
   action("nav-income-accounts", "Income Accounts", "Record income and collections", "/cash-in", ArrowDownToLine, "text-emerald-600 bg-emerald-500/10"),
   action("nav-expense-accounts", "Expense Accounts", "Record expenses and settlements", "/cash-out", ArrowUpFromLine, "text-rose-600 bg-rose-500/10"),
+  action("nav-banking", "Banking", "Manage cash and bank accounts", "/banking", Landmark, "text-cyan-600 bg-cyan-500/10"),
   action("nav-special-funds", "Special Funds", "Manage special funds", "/funds", Landmark, "text-violet-600 bg-violet-500/10"),
   action("nav-receivable", "Receivable", "Manage money to collect", "/receivables", ReceiptText, "text-cyan-600 bg-cyan-500/10"),
   action("nav-payable", "Payable", "Manage money to pay", "/payables", ClipboardList, "text-orange-600 bg-orange-500/10"),

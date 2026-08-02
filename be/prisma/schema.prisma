@@ -53,6 +53,7 @@ model Organization {
   fundPots           FundPot[]
   fundTransactions   FundTransaction[]
   cashTransactions   CashTransaction[]
+  bankingTransactions BankingTransaction[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -106,6 +107,8 @@ model User {
   createdCashTransactions CashTransaction[] @relation("CashTransactionCreatedBy")
   reversedCashTransactions CashTransaction[] @relation("CashTransactionReversedBy")
   reversedFundTransactions FundTransaction[] @relation("FundTransactionReversedBy")
+  createdBankingTransactions BankingTransaction[] @relation("BankingTransactionCreatedBy")
+  reversedBankingTransactions BankingTransaction[] @relation("BankingTransactionReversedBy")
 }
 
 enum UserRole {
@@ -601,6 +604,13 @@ enum CashTransactionCategory {
   payable_payment
 }
 
+enum BankingTransactionType {
+  deposit
+  withdrawal
+  cash_transfer
+  bank_transfer
+}
+
 model AccountingAccount {
   id              String                @id @default(cuid())
   organizationId  String
@@ -609,6 +619,8 @@ model AccountingAccount {
   assetSubtype    AccountingAssetSubtype @default(other)
   systemKey       String?
   description     String?               @db.Text
+  bankName        String?
+  accountNumber   String?
   counterpartyName String?
   counterpartyPhone String?
   counterpartyMembershipId String?
@@ -630,6 +642,8 @@ model AccountingAccount {
   fundTransactionsAsAssetAccount FundTransaction[] @relation("FundTransactionAssetAccount")
   cashTransactionsAsAccount CashTransaction[] @relation("CashTransactionAccount")
   cashTransactionsAsCashBankAccount CashTransaction[] @relation("CashTransactionCashBankAccount")
+  bankingTransactionsAsSource BankingTransaction[] @relation("BankingTransactionSourceAccount")
+  bankingTransactionsAsDestination BankingTransaction[] @relation("BankingTransactionDestinationAccount")
 
   @@unique([organizationId, name])
   @@unique([organizationId, systemKey])
@@ -732,6 +746,7 @@ model AccountingJournalEntry {
   lines        AccountingJournalLine[]
   fundTransactions FundTransaction[]
   cashTransactions CashTransaction[] @relation("CashTransactionJournalEntry")
+  bankingTransactions BankingTransaction[]
 
   @@index([organizationId, entryDate])
   @@index([organizationId, referenceType, referenceId])
@@ -774,6 +789,44 @@ model CashTransaction {
   @@index([organizationId, accountId, transactionDate])
   @@index([journalEntryId])
   @@index([counterpartyMembershipId])
+}
+
+model BankingTransaction {
+  id                   String                 @id @default(cuid())
+  organizationId       String
+  transactionType      BankingTransactionType
+  sourceAccountId      String
+  destinationAccountId String
+  amount               Decimal                @db.Decimal(12, 2)
+  transactionDate      DateTime
+  description          String?                @db.Text
+  reference            String?
+  receiptNumber        String?
+  journalEntryId       String?
+  reversedAt           DateTime?
+  reversedByUserId     String?
+  reversalReason       String?                @db.Text
+  reversalOfId         String?                @unique
+  isReversal           Boolean                @default(false)
+  createdByUserId      String?
+  createdAt            DateTime               @default(now())
+
+  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceAccount      AccountingAccount       @relation("BankingTransactionSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  destinationAccount AccountingAccount       @relation("BankingTransactionDestinationAccount", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  journalEntry       AccountingJournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+  reversedBy         User?                   @relation("BankingTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+  reversalOf         BankingTransaction?     @relation("BankingTransactionReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversal           BankingTransaction?     @relation("BankingTransactionReversal")
+  createdBy          User?                   @relation("BankingTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, receiptNumber])
+  @@index([organizationId, transactionDate])
+  @@index([sourceAccountId, transactionDate])
+  @@index([destinationAccountId, transactionDate])
+  @@index([journalEntryId])
+  @@index([reversedByUserId])
+  @@index([createdByUserId])
 }
 
 model AccountingJournalLine {
