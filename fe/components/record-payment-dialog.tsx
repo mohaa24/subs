@@ -22,29 +22,12 @@ import {
 import { getPaymentDueSubtitle, getPaymentDueTitle } from "@/lib/payment-due";
 import type { AccountingAccount } from "@/lib/api";
 
-export type PaymentMethod = "cash" | "bank_transfer" | "card" | "other";
-
-export function getPaymentMethodLabel(method: PaymentMethod) {
-  switch (method) {
-    case "cash":
-      return "Cash";
-    case "bank_transfer":
-      return "Bank Transfer";
-    case "card":
-      return "Card";
-    default:
-      return "Other";
-  }
-}
-
 type RecordPaymentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   due: PaymentDue | null;
   amount: string;
   onAmountChange: (value: string) => void;
-  paymentMethod: PaymentMethod;
-  onPaymentMethodChange: (value: PaymentMethod) => void;
   depositAccounts?: AccountingAccount[];
   depositAccountId?: string;
   onDepositAccountChange?: (value: string) => void;
@@ -68,8 +51,6 @@ export function RecordPaymentDialog({
   due,
   amount,
   onAmountChange,
-  paymentMethod,
-  onPaymentMethodChange,
   depositAccounts = [],
   depositAccountId = "",
   onDepositAccountChange,
@@ -150,24 +131,9 @@ export function RecordPaymentDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Payment Method</Label>
-            <Select value={paymentMethod} onValueChange={(value) => onPaymentMethodChange(value as PaymentMethod)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                <SelectItem value="card">Card</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           {depositAccounts.length > 0 ? (
             <div className="space-y-2">
-              <Label>Deposit Account</Label>
+              <Label>Payment Method</Label>
               <Select value={depositAccountId} onValueChange={(value) => onDepositAccountChange?.(value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select cash/bank account" />
@@ -180,9 +146,6 @@ export function RecordPaymentDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                This controls which cash/bank ledger receives the payment.
-              </p>
             </div>
           ) : null}
 

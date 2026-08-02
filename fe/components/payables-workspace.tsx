@@ -413,7 +413,7 @@ export function PayablesWorkspace({ accountId }: { accountId?: string }) {
             fromDate={fromDate}
             toDate={toDate}
             loadingData={loadingData}
-            canManage={canManage}
+            canManage={canManage && detail.account.status !== "closed"}
             hideManagementActions={hideManagementActions}
             expandedRows={expandedRows}
             onPeriodChange={handlePeriodChange}
@@ -945,7 +945,7 @@ function AddPayableDialog(props: {
         <DialogHeader><DialogTitle>Add New Borrowing</DialogTitle></DialogHeader>
         <form onSubmit={props.onSubmit} className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <div><Label>Payable Name</Label><Input value={props.value.name} onChange={(e) => props.setValue({ ...props.value, name: e.target.value })} required placeholder="Ahmed Loan" /></div>
+            <div><Label>Payable Name</Label><Input value={props.value.name} onChange={(e) => props.setValue({ ...props.value, name: e.target.value })} required placeholder="Community Borrowing, Bank Loan" /></div>
             <div><Label>Type</Label><Select value="loan_payable"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="loan_payable">Loan Payable</SelectItem></SelectContent></Select></div>
             <div><Label>Who lent you the money?</Label><Input value={props.value.counterpartyName} onChange={(e) => props.setValue({ ...props.value, counterpartyName: e.target.value, counterpartyMembershipId: "" })} placeholder="Member, staff, or organisation" /></div>
             <div>

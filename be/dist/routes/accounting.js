@@ -1719,7 +1719,7 @@ exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountin
     const updated = await prisma_js_1.prisma.$transaction(async (tx) => {
         const transaction = await tx.cashTransaction.findFirst({
             where: { id: req.params.id, organizationId: orgId },
-            include: { journalEntry: { include: { lines: true } } },
+            include: { account: true, journalEntry: { include: { lines: true } } },
         });
         if (!transaction)
             throw new Error("Cash transaction not found");
@@ -1727,6 +1727,18 @@ exports.accountingRouter.post("/cash-transactions/:id/reverse", requireAccountin
             throw new Error("Cash transaction is already reversed");
         if (!transaction.journalEntry)
             throw new Error("Original journal entry was not found");
+        const accountRequiresActiveStatus = transaction.category === "receivable_payment"
+            || transaction.category === "receivable_collection"
+            || transaction.category === "receivable_write_off"
+            || transaction.category === "payable_borrowing"
+            || transaction.category === "payable_repayment"
+            || transaction.category === "payable_payment"
+            || transaction.category === "payable_recovery";
+        if (accountRequiresActiveStatus && (!transaction.account?.isActive || transaction.account.closedAt)) {
+            const error = new Error("Closed receivable and payable accounts cannot have entries reversed");
+            error.statusCode = 409;
+            throw error;
+        }
         const reversedAt = new Date();
         const reversalDocumentNumber = await generateCashReversalDocumentNumber(tx, orgId, reversedAt);
         await (0, accounting_js_1.createJournalEntry)(tx, {

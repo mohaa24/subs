@@ -42,10 +42,7 @@ import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { ActivityFeedPanel } from "@/components/activity-feed-panel";
-import {
-  RecordPaymentDialog,
-  type PaymentMethod,
-} from "@/components/record-payment-dialog";
+import { RecordPaymentDialog } from "@/components/record-payment-dialog";
 import {
   ChevronLeft,
   ChevronRight,
@@ -306,7 +303,6 @@ export default function MembershipDetailPage() {
   const [payDialogOpen, setPayDialogOpen] = useState(false);
   const [payDue, setPayDue] = useState<PaymentDue | null>(null);
   const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
   const [payDepositAccountId, setPayDepositAccountId] = useState("");
   const [payNote, setPayNote] = useState("");
   const [paySubmitting, setPaySubmitting] = useState(false);
@@ -435,7 +431,8 @@ export default function MembershipDetailPage() {
           (account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive
         );
         setDepositAccounts(cashBankAccounts);
-        setPayDepositAccountId((current) => current || cashBankAccounts[0]?.id || "");
+        const cashOnHand = cashBankAccounts.find((account) => (account as any).systemKey === "asset_cash_on_hand");
+        setPayDepositAccountId((current) => current || cashOnHand?.id || cashBankAccounts[0]?.id || "");
       })
       .catch(() => setDepositAccounts([]));
   }, [membership, user?.role]);
@@ -570,8 +567,8 @@ export default function MembershipDetailPage() {
   function openCreditPaymentDialog() {
     setPayDue(null);
     setPayAmount("");
-    setPayMethod("cash");
-    setPayDepositAccountId((current) => current || depositAccounts[0]?.id || "");
+    const cashOnHand = depositAccounts.find((account) => (account as any).systemKey === "asset_cash_on_hand");
+    setPayDepositAccountId((current) => current || cashOnHand?.id || depositAccounts[0]?.id || "");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -670,8 +667,8 @@ export default function MembershipDetailPage() {
     const remaining = Number(due.amountDue) - Number(due.amountPaid);
     setPayDue(due);
     setPayAmount(String(remaining > 0 ? remaining.toFixed(2) : "0"));
-    setPayMethod("cash");
-    setPayDepositAccountId((current) => current || depositAccounts[0]?.id || "");
+    const cashOnHand = depositAccounts.find((account) => (account as any).systemKey === "asset_cash_on_hand");
+    setPayDepositAccountId((current) => current || cashOnHand?.id || depositAccounts[0]?.id || "");
     setPayNote("");
     setPayError("");
     setPayDialogOpen(true);
@@ -701,7 +698,7 @@ export default function MembershipDetailPage() {
             ? {
                 paymentDueId: payDue.id,
                 amount: amt,
-                paymentMethod: payMethod,
+                paymentMethod: depositAccounts.find((account) => account.id === payDepositAccountId)?.assetSubtype === "bank" ? "bank_transfer" : "cash",
                 depositAccountId: payDepositAccountId || undefined,
                 note: payNote.trim() || undefined,
               }
@@ -709,7 +706,7 @@ export default function MembershipDetailPage() {
                 paymentKind: "credit",
                 membershipId: membership.id,
                 amount: amt,
-                paymentMethod: payMethod,
+                paymentMethod: depositAccounts.find((account) => account.id === payDepositAccountId)?.assetSubtype === "bank" ? "bank_transfer" : "cash",
                 depositAccountId: payDepositAccountId || undefined,
                 note: payNote.trim() || undefined,
               }
@@ -1993,8 +1990,6 @@ export default function MembershipDetailPage() {
         due={payDue}
         amount={payAmount}
         onAmountChange={setPayAmount}
-        paymentMethod={payMethod}
-        onPaymentMethodChange={setPayMethod}
         depositAccounts={depositAccounts}
         depositAccountId={payDepositAccountId}
         onDepositAccountChange={setPayDepositAccountId}

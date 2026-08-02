@@ -407,7 +407,7 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
             fromDate={fromDate}
             toDate={toDate}
             loadingData={loadingData}
-            canManage={canManage}
+            canManage={canManage && detail.account.status !== "closed"}
             hideManagementActions={hideManagementActions}
             expandedRows={expandedRows}
             onPeriodChange={handlePeriodChange}
@@ -536,7 +536,7 @@ function ReceivableDashboard(props: {
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-foreground">Receivables</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Receivable (Money to Collect)</h1>
             <span
               className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
               title="Money that other people or organisations owe to your organisation"
