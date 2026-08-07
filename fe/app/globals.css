@@ -12,7 +12,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 239 84% 67%;
+    --primary: 155 100% 35%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -24,28 +24,6 @@
     --destructive-foreground: 0 0% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 239 84% 67%;
-    --cash-in: 160 84% 39%;
-    --cash-in-hover: 161 94% 30%;
-    --cash-in-foreground: 0 0% 100%;
-    --cash-out: 199 89% 48%;
-    --cash-out-hover: 201 90% 40%;
-    --cash-out-foreground: 0 0% 100%;
-    --danger-outline: 350 89% 60%;
-    --metric-neutral: 239 84% 60%;
-    --metric-neutral-soft: 239 84% 96%;
-    --metric-cash-in: 160 84% 35%;
-    --metric-cash-in-soft: 152 81% 94%;
-    --metric-cash-out: 199 89% 42%;
-    --metric-cash-out-soft: 204 94% 94%;
-    --metric-outstanding: 32 95% 44%;
-    --metric-outstanding-soft: 48 96% 89%;
-    --metric-credit: 189 94% 36%;
-    --metric-credit-soft: 185 96% 90%;
-  }
-
-  [data-civica-theme="legacy"] {
-    --primary: 155 100% 35%;
     --ring: 155 100% 35%;
   }
 }

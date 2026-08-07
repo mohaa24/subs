@@ -9,10 +9,6 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        cashIn: "bg-[hsl(var(--cash-in))] text-[hsl(var(--cash-in-foreground))] hover:bg-[hsl(var(--cash-in-hover))] focus-visible:ring-[hsl(var(--cash-in))]",
-        cashOut: "bg-[hsl(var(--cash-out))] text-[hsl(var(--cash-out-foreground))] hover:bg-[hsl(var(--cash-out-hover))] focus-visible:ring-[hsl(var(--cash-out))]",
-        transfer: "border border-primary/35 bg-background text-primary hover:bg-primary/10 focus-visible:ring-primary",
-        dangerOutline: "border border-[hsl(var(--danger-outline))]/50 bg-background text-[hsl(var(--danger-outline))] hover:bg-[hsl(var(--danger-outline))]/10 focus-visible:ring-[hsl(var(--danger-outline))]",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",

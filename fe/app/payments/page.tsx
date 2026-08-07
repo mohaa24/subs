@@ -573,7 +573,7 @@ export default function PaymentsPage() {
                         </div>
                         <div className="mt-3 flex gap-2">
                           {d.status !== "paid" && remaining > 0 && (
-                            <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
+                            <Button size="sm" onClick={() => openPayDialog(d)}>
                               {t("payments.makePayment")}
                             </Button>
                           )}
@@ -655,7 +655,7 @@ export default function PaymentsPage() {
                             <td className="p-2.5 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
+                                  <Button size="sm" onClick={() => openPayDialog(d)}>
                                     {t("payments.makePayment")}
                                   </Button>
                                 )}
@@ -785,7 +785,7 @@ export default function PaymentsPage() {
                           View Receipt
                         </Button>
                         {canManage && !(p as any).isReversed && (
-                          <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
+                          <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
                             <RotateCcw className="h-3.5 w-3.5 mr-1" />
                             Reverse
                           </Button>
@@ -859,8 +859,8 @@ export default function PaymentsPage() {
                             {canManage && !(p as any).isReversed ? (
                               <Button
                                 size="sm"
-                                variant="dangerOutline"
-                                className="h-8 w-8 p-0"
+                                variant="ghost"
+                                className="text-red-600 h-8 w-8 p-0"
                                 onClick={() => { setReverseTarget(p); setReverseReason(""); }}
                                 title="Reverse Payment"
                               >

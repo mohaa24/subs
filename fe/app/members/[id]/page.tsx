@@ -1513,7 +1513,7 @@ export default function MembershipDetailPage() {
                       </>
                     )}
                     {canRecordCreditPayment && (
-                      <Button size="sm" variant="cashIn" className="gap-1.5" onClick={openCreditPaymentDialog}>
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={openCreditPaymentDialog}>
                         <CreditCard className="h-4 w-4" />
                         Record Credit Payment
                       </Button>
@@ -1566,7 +1566,7 @@ export default function MembershipDetailPage() {
                               </div>
                               <div className="mt-3 flex gap-2">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
                                     <DollarSign className="h-3 w-3" />
                                     Pay
                                   </Button>
@@ -1638,7 +1638,7 @@ export default function MembershipDetailPage() {
                                   <td className="p-3 text-right print:hidden">
                                     <div className="flex items-center justify-end gap-1">
                                       {d.status !== "paid" && remaining > 0 && (
-                                        <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
                                           <DollarSign className="h-3 w-3" />
                                           Pay
                                         </Button>
@@ -1807,7 +1807,8 @@ export default function MembershipDetailPage() {
                             {canManage && entry.reversible && entry.paymentId && (
                               <Button
                                 size="sm"
-                                variant="dangerOutline"
+                                variant="ghost"
+                                className="text-red-600"
                                 onClick={() => {
                                   setReverseTarget({
                                     id: entry.paymentId!,
@@ -1926,8 +1927,8 @@ export default function MembershipDetailPage() {
                                 {canManage && entry.reversible && entry.paymentId ? (
                                   <Button
                                     size="sm"
-                                    variant="dangerOutline"
-                                    className="h-8 w-8 p-0"
+                                    variant="ghost"
+                                    className="text-red-600 h-8 w-8 p-0"
                                     onClick={() => {
                                       setReverseTarget({
                                         id: entry.paymentId!,
