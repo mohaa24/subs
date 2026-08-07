@@ -557,7 +557,7 @@ function PayableDashboard(props: {
         </div>
         <Button variant="addNew" onClick={props.onAdd} disabled={!props.canManage}>
           <Plus className="mr-2 h-4 w-4" />
-          Add New Borrowing
+          New Borrowing
         </Button>
       </div>
 

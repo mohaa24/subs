@@ -551,7 +551,7 @@ function ReceivableDashboard(props: {
         </div>
         <Button variant="addNew" onClick={props.onAdd} disabled={!props.canManage}>
           <Plus className="mr-2 h-4 w-4" />
-          Add New Receivable
+          New Receivable
         </Button>
       </div>
 
