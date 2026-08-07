@@ -43,6 +43,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import { RecordPaymentDialog } from "@/components/record-payment-dialog";
+import { MetricTile } from "@/components/ui/metric-tile";
 import {
   ChevronLeft,
   ChevronRight,
@@ -75,11 +76,14 @@ import {
     ArrowUpRight,
     Printer,
     Archive,
+    ArchiveX,
     ArchiveRestore,
   RotateCcw,
     Pencil,
     MessageSquareText,
     Plus,
+    SquarePlus,
+    Wallet,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { toast } from "@/hooks/use-toast";
@@ -1010,27 +1014,27 @@ export default function MembershipDetailPage() {
                 </div>
               </div>
               <div className="flex gap-2 flex-shrink-0 print:hidden">
-                <Button variant="outline" size="sm" onClick={generateQr} className="gap-1.5">
+                <Button variant="neutralOutline" size="sm" onClick={generateQr} className="gap-1.5">
                   <QrCode className="h-4 w-4" />
                   <span className="hidden sm:inline">QR Code</span>
                 </Button>
-                <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
+                <Button variant="neutralOutline" size="sm" onClick={handlePrint} className="gap-1.5">
                   <Printer className="h-4 w-4" />
-                  <span className="hidden sm:inline">Export Record</span>
+                  <span className="hidden sm:inline">Print Record</span>
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="dangerOutline"
                   size="sm"
                   onClick={handleToggleArchive}
                   className="gap-1.5"
                 >
                   {(membership as any).isArchived
                     ? <><ArchiveRestore className="h-4 w-4 text-emerald-600" /><span className="hidden sm:inline">Restore</span></>
-                    : <><Archive className="h-4 w-4 text-amber-600" /><span className="hidden sm:inline">Archive</span></>
+                    : <><ArchiveX className="h-4 w-4" /><span className="hidden sm:inline">Archive</span></>
                   }
                 </Button>
                 <Link href={`/members/${id}/edit`}>
-                  <Button size="sm" className="gap-1.5">
+                  <Button variant="neutralOutline" size="sm" className="gap-1.5">
                     <Edit className="h-4 w-4" />
                     <span className="hidden sm:inline">Edit</span>
                   </Button>
@@ -1062,58 +1066,10 @@ export default function MembershipDetailPage() {
 
               {/* ── Headcount Stat Widgets ────────────────────── */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent className="pt-4 pb-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center">
-                        <Users className="h-4.5 w-4.5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Total Headcount</p>
-                        <p className="text-2xl font-bold tabular-nums">{totalHeadcount}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4 pb-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-sky-100 flex items-center justify-center">
-                        <User className="h-4.5 w-4.5 text-sky-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Adults (18+)</p>
-                        <p className="text-2xl font-bold tabular-nums">{adults}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4 pb-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-purple-100 flex items-center justify-center">
-                        <UserPlus className="h-4.5 w-4.5 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Youth (13–17)</p>
-                        <p className="text-2xl font-bold tabular-nums">{youth}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4 pb-4 px-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center">
-                        <Baby className="h-4.5 w-4.5 text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Children (0–12)</p>
-                        <p className="text-2xl font-bold tabular-nums">{children}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <MetricTile icon={Users} label="Head Count" value={String(totalHeadcount)} intent="user" />
+                <MetricTile icon={UserPlus} label="Adults (18+)" value={String(adults)} intent="user" />
+                <MetricTile icon={User} label="Youth (13–17)" value={String(youth)} intent="user" />
+                <MetricTile icon={Baby} label="Children (0–12)" value={String(children)} intent="user" />
               </div>
 
               {/* Household Members */}
@@ -1408,58 +1364,10 @@ export default function MembershipDetailPage() {
               {/* Payment Statistics */}
               {balance && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <Card className="border-blue-100 bg-gradient-to-br from-blue-50/50 to-card">
-                    <CardContent className="pt-4 pb-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center">
-                          <DollarSign className="h-4.5 w-4.5 text-blue-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Total Due</p>
-                          <p className="text-2xl font-bold tabular-nums">{balance.totalDue.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card">
-                    <CardContent className="pt-4 pb-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-                          <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Total Received</p>
-                          <p className="text-2xl font-bold tabular-nums text-emerald-600">{balance.totalPaid.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className={balance.outstanding > 0 ? "border-red-100 bg-gradient-to-br from-red-50/50 to-card" : "border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-card"}>
-                    <CardContent className="pt-4 pb-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${balance.outstanding > 0 ? "bg-red-100" : "bg-emerald-100"}`}>
-                          {balance.outstanding > 0 ? <AlertTriangle className="h-4.5 w-4.5 text-red-600" /> : <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600" />}
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Outstanding Dues</p>
-                          <p className={`text-2xl font-bold tabular-nums ${balance.outstanding > 0 ? "text-red-600" : "text-emerald-600"}`}>{balance.outstanding.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-card">
-                    <CardContent className="pt-4 pb-4 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-indigo-100 flex items-center justify-center">
-                          <Landmark className="h-4.5 w-4.5 text-indigo-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Available Credit</p>
-                          <p className="text-2xl font-bold tabular-nums text-indigo-700">{balance.creditBalance.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <MetricTile label="Total Dues" value={balance.totalDue.toFixed(2)} intent="outstanding" />
+                  <MetricTile icon={Download} label="Total Received" value={balance.totalPaid.toFixed(2)} intent="cashIn" />
+                  <MetricTile icon={AlertTriangle} label="Outstanding Dues" value={balance.outstanding.toFixed(2)} intent="outstanding" />
+                  <MetricTile icon={Wallet} label="Available Credit" value={balance.creditBalance.toFixed(2)} intent="credit" />
                 </div>
               )}
 
@@ -1506,22 +1414,22 @@ export default function MembershipDetailPage() {
                           order={duesSortOrder}
                           onToggle={() => toggleSortOrder(duesSortOrder, setDuesSortOrder)}
                         />
-                        <Button size="sm" variant="outline" className="gap-1.5" onClick={exportDuesCsv}>
+                        <Button size="sm" variant="neutralOutline" className="gap-1.5" onClick={exportDuesCsv}>
                           <Download className="h-4 w-4" />
                           Export CSV
                         </Button>
                       </>
                     )}
                     {canRecordCreditPayment && (
-                      <Button size="sm" variant="outline" className="gap-1.5" onClick={openCreditPaymentDialog}>
-                        <CreditCard className="h-4 w-4" />
-                        Record Credit Payment
+                      <Button size="sm" variant="cashIn" className="gap-1.5" onClick={openCreditPaymentDialog}>
+                        <Download className="h-4 w-4" />
+                        Receive
                       </Button>
                     )}
                     {canManage && (
-                      <Button size="sm" className="gap-1.5" onClick={openManualDueDialog}>
-                        <Plus className="h-4 w-4" />
-                        Add Manual Due
+                      <Button size="sm" variant="generate" className="gap-1.5" onClick={openManualDueDialog}>
+                        <SquarePlus className="h-4 w-4" />
+                        Create Due
                       </Button>
                     )}
                   </div>
@@ -1566,9 +1474,9 @@ export default function MembershipDetailPage() {
                               </div>
                               <div className="mt-3 flex gap-2">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
-                                    <DollarSign className="h-3 w-3" />
-                                    Pay
+                                  <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                    <Download className="h-3 w-3" />
+                                    Receive
                                   </Button>
                                 )}
                                 {canManage &&
@@ -1589,7 +1497,7 @@ export default function MembershipDetailPage() {
                                     </Button>
                                   )}
                                 {canManage && d.status !== "paid" && (
-                                  <Button size="sm" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
+                                  <Button size="sm" variant="neutralOutline" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
                                     <Pencil className="h-3 w-3" />
                                     Edit
                                   </Button>
@@ -1638,9 +1546,9 @@ export default function MembershipDetailPage() {
                                   <td className="p-3 text-right print:hidden">
                                     <div className="flex items-center justify-end gap-1">
                                       {d.status !== "paid" && remaining > 0 && (
-                                        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
-                                          <DollarSign className="h-3 w-3" />
-                                          Pay
+                                        <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
+                                          <Download className="h-3 w-3" />
+                                          Receive
                                         </Button>
                                       )}
                                       {canManage &&
@@ -1661,7 +1569,7 @@ export default function MembershipDetailPage() {
                                           </Button>
                                         )}
                                       {canManage && d.status !== "paid" && (
-                                        <Button size="sm" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
+                                        <Button size="sm" variant="neutralOutline" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
                                           <Pencil className="h-3 w-3" />
                                         </Button>
                                       )}
@@ -1696,7 +1604,7 @@ export default function MembershipDetailPage() {
                       order={statementSortOrder}
                       onToggle={() => toggleSortOrder(statementSortOrder, setStatementSortOrder)}
                     />
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={exportStatementCsv}>
+                    <Button size="sm" variant="neutralOutline" className="gap-1.5" onClick={exportStatementCsv}>
                       <Download className="h-4 w-4" />
                       Export CSV
                     </Button>
@@ -1797,7 +1705,7 @@ export default function MembershipDetailPage() {
                             {entry.receiptAvailable && entry.paymentId && (
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant="neutralOutline"
                                 disabled={loadingReceiptPaymentId === entry.paymentId}
                                 onClick={() => openReceiptForPayment(entry.paymentId!)}
                               >
@@ -1807,8 +1715,7 @@ export default function MembershipDetailPage() {
                             {canManage && entry.reversible && entry.paymentId && (
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="text-red-600"
+                                variant="dangerOutline"
                                 onClick={() => {
                                   setReverseTarget({
                                     id: entry.paymentId!,
@@ -1927,8 +1834,8 @@ export default function MembershipDetailPage() {
                                 {canManage && entry.reversible && entry.paymentId ? (
                                   <Button
                                     size="sm"
-                                    variant="ghost"
-                                    className="text-red-600 h-8 w-8 p-0"
+                                    variant="dangerOutline"
+                                    className="h-8 w-8 p-0"
                                     onClick={() => {
                                       setReverseTarget({
                                         id: entry.paymentId!,
@@ -2006,7 +1913,7 @@ export default function MembershipDetailPage() {
             : "No open dues exist for this member. This payment will be added directly to available credit."
         }
         title={payDue ? "Record Payment" : "Record Credit Payment"}
-        submitLabel={payDue ? "Record Payment" : "Add to Credit"}
+        submitLabel="Receive"
         submittingLabel="Recording…"
         cancelLabel="Cancel"
       />
@@ -2103,10 +2010,11 @@ export default function MembershipDetailPage() {
             </div>
             <p className="text-xs text-muted-foreground">This action is recorded in the audit trail and cannot be undone.</p>
             <div className="flex gap-2">
-              <Button variant="destructive" onClick={handleReversePayment} disabled={reverseSubmitting || !reverseReason.trim()} className="flex-1">
+              <Button variant="dangerOutline" onClick={handleReversePayment} disabled={reverseSubmitting || !reverseReason.trim()} className="flex-1">
+                <RotateCcw className="mr-2 h-4 w-4" />
                 {reverseSubmitting ? "Reversing…" : "Confirm Reversal"}
               </Button>
-              <Button variant="outline" onClick={() => setReverseTarget(null)}>Cancel</Button>
+              <Button variant="dangerOutline" onClick={() => setReverseTarget(null)}>Cancel</Button>
             </div>
           </div>
         </DialogContent>
@@ -2141,7 +2049,7 @@ export default function MembershipDetailPage() {
               <Button onClick={handleEditDue} disabled={editDueSubmitting || !editDueReason.trim() || !editDueAmount} className="flex-1">
                 {editDueSubmitting ? "Saving…" : "Update Due"}
               </Button>
-              <Button variant="outline" onClick={() => setEditDueTarget(null)}>Cancel</Button>
+              <Button variant="dangerOutline" onClick={() => setEditDueTarget(null)}>Cancel</Button>
             </div>
           </div>
         </DialogContent>

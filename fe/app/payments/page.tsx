@@ -33,7 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Search, RotateCcw, Pencil, AlertTriangle, WandSparkles } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -434,10 +434,12 @@ export default function PaymentsPage() {
           <h1 className="text-xl font-semibold text-foreground">{t("payments.title")}</h1>
           {canManage && (
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={handleMarkOverdue}>
+              <Button size="sm" variant="warning" onClick={handleMarkOverdue}>
+                <AlertTriangle className="mr-2 h-4 w-4" />
                 {t("payments.markOverdue")}
               </Button>
-              <Button size="sm" onClick={handleGenerateDues} disabled={generating}>
+              <Button size="sm" variant="generate" onClick={handleGenerateDues} disabled={generating}>
+                <WandSparkles className="mr-2 h-4 w-4" />
                 {generating ? t("payments.generating") : t("payments.generateDues")}
               </Button>
             </div>
@@ -573,12 +575,12 @@ export default function PaymentsPage() {
                         </div>
                         <div className="mt-3 flex gap-2">
                           {d.status !== "paid" && remaining > 0 && (
-                            <Button size="sm" onClick={() => openPayDialog(d)}>
-                              {t("payments.makePayment")}
+                            <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
+                              <Download className="mr-2 h-4 w-4" />Receive
                             </Button>
                           )}
                           {canManage && d.status !== "paid" && (
-                            <Button size="sm" onClick={() => openEditDue(d)}>
+                            <Button size="sm" variant="neutralOutline" onClick={() => openEditDue(d)}>
                               <Pencil className="h-3.5 w-3.5 mr-1" />
                               Edit Due
                             </Button>
@@ -655,12 +657,12 @@ export default function PaymentsPage() {
                             <td className="p-2.5 text-right">
                               <div className="flex items-center justify-end gap-1">
                                 {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" onClick={() => openPayDialog(d)}>
-                                    {t("payments.makePayment")}
+                                  <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
+                                    <Download className="mr-2 h-4 w-4" />Receive
                                   </Button>
                                 )}
                                 {canManage && d.status !== "paid" && (
-                                  <Button size="sm" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
+                                  <Button size="sm" variant="neutralOutline" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
                                     <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                 )}
@@ -781,11 +783,11 @@ export default function PaymentsPage() {
                         </div>
                       )}
                       <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
+                        <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(p.id)}>
                           View Receipt
                         </Button>
                         {canManage && !(p as any).isReversed && (
-                          <Button size="sm" variant="ghost" className="text-red-600" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
+                          <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
                             <RotateCcw className="h-3.5 w-3.5 mr-1" />
                             Reverse
                           </Button>
@@ -851,7 +853,7 @@ export default function PaymentsPage() {
                             ) : null}
                           </td>
                           <td className="p-2.5 text-right">
-                            <Button size="sm" variant="outline" onClick={() => openReceiptForPayment(p.id)}>
+                            <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(p.id)}>
                               Receipt
                             </Button>
                           </td>
@@ -859,8 +861,8 @@ export default function PaymentsPage() {
                             {canManage && !(p as any).isReversed ? (
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="text-red-600 h-8 w-8 p-0"
+                                variant="dangerOutline"
+                                className="h-8 w-8 p-0"
                                 onClick={() => { setReverseTarget(p); setReverseReason(""); }}
                                 title="Reverse Payment"
                               >
@@ -919,7 +921,7 @@ export default function PaymentsPage() {
         submitting={paySubmitting}
         onSubmit={handleRecordPayment}
         title={t("payments.recordPayment")}
-        submitLabel={t("payments.recordPayment")}
+        submitLabel="Receive"
         submittingLabel={t("payments.recording")}
         cancelLabel={t("common.cancel")}
       />
@@ -965,14 +967,14 @@ export default function PaymentsPage() {
             </p>
             <div className="flex gap-2">
               <Button
-                variant="destructive"
+                variant="dangerOutline"
                 onClick={handleReversePayment}
                 disabled={reverseSubmitting || !reverseReason.trim()}
                 className="flex-1"
               >
                 {reverseSubmitting ? "Reversing…" : "Confirm Reversal"}
               </Button>
-              <Button variant="outline" onClick={() => setReverseTarget(null)}>
+              <Button variant="dangerOutline" onClick={() => setReverseTarget(null)}>
                 Cancel
               </Button>
             </div>
@@ -1026,7 +1028,7 @@ export default function PaymentsPage() {
               >
                 {editDueSubmitting ? "Saving…" : "Update Due"}
               </Button>
-              <Button variant="outline" onClick={() => setEditDueTarget(null)}>
+              <Button variant="dangerOutline" onClick={() => setEditDueTarget(null)}>
                 Cancel
               </Button>
             </div>

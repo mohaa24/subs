@@ -9,6 +9,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        addNew: "bg-[hsl(var(--action-add))] text-white hover:bg-[hsl(var(--action-add-hover))]",
+        generate: "bg-[hsl(var(--action-generate))] text-white hover:bg-[hsl(var(--action-generate-hover))]",
+        cashIn: "bg-[hsl(var(--action-cash-in))] text-white hover:bg-[hsl(var(--action-cash-in-hover))]",
+        cashOut: "bg-[hsl(var(--action-cash-out))] text-white hover:bg-[hsl(var(--action-cash-out-hover))]",
+        warning: "bg-[hsl(var(--action-warning))] text-white hover:bg-[hsl(var(--action-warning-hover))]",
+        neutralOutline: "border border-[hsl(var(--action-neutral))] bg-background text-foreground hover:bg-slate-50",
+        dangerOutline: "border border-[hsl(var(--action-danger))] bg-background text-[hsl(var(--action-danger))] hover:bg-rose-50 hover:text-rose-700",
+        transfer: "border border-[hsl(var(--action-transfer))] bg-background text-[hsl(var(--action-transfer))] hover:bg-teal-50 hover:text-teal-700",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",

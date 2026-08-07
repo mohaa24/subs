@@ -354,15 +354,15 @@ export default function PersonDetailPage() {
                     Back
                   </Button>
                 </Link>
-                <Button size="sm" className="gap-1.5" onClick={() => setEditOpen(true)}>
+                <Button variant="neutralOutline" size="sm" className="gap-1.5" onClick={() => setEditOpen(true)}>
                   <Edit className="h-4 w-4" />
                   <span className="hidden sm:inline">Edit</span>
                 </Button>
                 {person.membershipId && (
                   <Link href={`/members/${person.membershipId}`}>
-                    <Button variant="outline" size="sm" className="gap-1.5">
+                    <Button variant="neutralOutline" size="sm" className="gap-1.5">
                       <BadgeCheck className="h-4 w-4" />
-                      <span className="hidden sm:inline">Membership</span>
+                      <span className="hidden sm:inline">View Membership</span>
                     </Button>
                   </Link>
                 )}

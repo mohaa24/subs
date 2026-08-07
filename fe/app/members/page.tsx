@@ -22,7 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal, UserPlus } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -421,9 +421,9 @@ function MembersContent() {
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground">Members</h1>
           <Link href="/members/new">
-            <Button size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              New Membership
+            <Button size="sm" variant="addNew" className="gap-1.5">
+              <UserPlus className="h-4 w-4" />
+              New Member
             </Button>
           </Link>
         </div>

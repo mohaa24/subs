@@ -3,24 +3,26 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowDownCircle,
   ArrowLeft,
-  ArrowUpCircle,
   Banknote,
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Download,
   Info,
   Plus,
   ReceiptText,
   Search,
+  Upload,
   Undo2,
   Wallet,
+  X,
 } from "lucide-react";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { MetricTile, type MetricTileIntent } from "@/components/ui/metric-tile";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -500,8 +502,8 @@ export function PayablesWorkspace({ accountId }: { accountId?: string }) {
               </div>
               <p className="text-xs text-muted-foreground">This action is recorded in the audit trail and cannot be undone.</p>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setReverseTarget(null)}>Cancel</Button>
-                <Button type="submit" disabled={submitting || !reverseReason.trim()}>Confirm Reversal</Button>
+                <Button type="button" variant="dangerOutline" onClick={() => setReverseTarget(null)}>Cancel</Button>
+                <Button type="submit" variant="dangerOutline" disabled={submitting || !reverseReason.trim()}><Undo2 className="mr-2 h-4 w-4" />Confirm Reversal</Button>
               </div>
             </form>
           ) : null}
@@ -553,7 +555,7 @@ function PayableDashboard(props: {
           </div>
           <p className="mt-1 text-sm text-muted-foreground">Money that your organisation owes to other people or organisations.</p>
         </div>
-        <Button onClick={props.onAdd} disabled={!props.canManage}>
+        <Button variant="addNew" onClick={props.onAdd} disabled={!props.canManage}>
           <Plus className="mr-2 h-4 w-4" />
           Add New Borrowing
         </Button>
@@ -562,10 +564,10 @@ function PayableDashboard(props: {
       <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} />
-        <Metric icon={ArrowUpCircle} label="Total Borrowed" value={formatRs(props.overview?.totals.totalBorrowed ?? 0)} />
-        <Metric icon={ArrowDownCircle} label="Total Settled" value={formatRs(props.overview?.totals.totalSettled ?? 0)} />
-        <Metric icon={ReceiptText} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} />
+        <Metric icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} intent="neutral" />
+        <Metric icon={Download} label="Total Borrowed" value={formatRs(props.overview?.totals.totalBorrowed ?? 0)} intent="cashIn" />
+        <Metric icon={Upload} label="Total Settled" value={formatRs(props.overview?.totals.totalSettled ?? 0)} intent="cashOut" />
+        <Metric icon={ReceiptText} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
       </div>
 
       <Card>
@@ -698,15 +700,15 @@ function PayableDetailView(props: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric icon={ArrowUpCircle} label="Total Borrowed" value={formatRs(props.detail.summary.totalBorrowed)} />
-        <Metric icon={ArrowDownCircle} label="Total Settled" value={formatRs(props.detail.summary.totalSettled)} />
-        <Metric icon={ReceiptText} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} />
+        <Metric icon={Download} label="Total Borrowed" value={formatRs(props.detail.summary.totalBorrowed)} intent="cashIn" />
+        <Metric icon={Upload} label="Total Settled" value={formatRs(props.detail.summary.totalSettled)} intent="cashOut" />
+        <Metric icon={ReceiptText} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
-        {!props.hideManagementActions ? <Button variant="outline" onClick={props.onBorrowed} disabled={!props.canManage}>Add Borrowing (Cash In)</Button> : null}
-        <Button onClick={props.onSettled} disabled={!props.canManage}>Record Settlement (Cash Out)</Button>
-        {!props.hideManagementActions ? <Button variant="outline" onClick={props.onClose} disabled={!props.canManage || account.status === "closed"}>Close Account</Button> : null}
+        {!props.hideManagementActions ? <Button variant="cashIn" onClick={props.onBorrowed} disabled={!props.canManage}><Download className="mr-2 h-4 w-4" />Receive Loan</Button> : null}
+        <Button variant="cashOut" onClick={props.onSettled} disabled={!props.canManage}><Upload className="mr-2 h-4 w-4" />Repay</Button>
+        {!props.hideManagementActions ? <Button variant="neutralOutline" onClick={props.onClose} disabled={!props.canManage || account.status === "closed"}><X className="mr-2 h-4 w-4" />Close Account</Button> : null}
       </div>
 
       <Card>
@@ -771,7 +773,7 @@ function PayableDetailView(props: {
                         <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
                       </Button>
                       {!tx.reversedAt && props.canManage ? (
-                        <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
+                        <Button size="sm" variant="dangerOutline" onClick={() => props.onReverse(tx)}>
                           <Undo2 className="mr-2 h-4 w-4" />
                           Reverse
                         </Button>
@@ -821,7 +823,7 @@ function HistoryRows({
         <td className="p-3 text-right">
           <div className="flex items-center justify-end gap-2">
             {canManage && !tx.reversedAt ? (
-              <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+              <Button size="sm" variant="dangerOutline" onClick={() => onReverse(tx)}>
                 <Undo2 className="mr-2 h-4 w-4" />
                 Reverse
               </Button>
@@ -907,20 +909,8 @@ function PeriodControls(props: { period: Period; fromDate: string; toDate: strin
   );
 }
 
-function Metric({ icon: Icon, label, value }: { icon: typeof ReceiptText; label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="truncate text-lg font-semibold text-foreground">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
+function Metric({ icon, label, value, intent }: { icon: typeof ReceiptText; label: string; value: string; intent: MetricTileIntent }) {
+  return <MetricTile icon={icon} label={label} value={value} intent={intent} />;
 }
 
 function Mini({ label, value }: { label: string; value: string }) {
@@ -962,8 +952,8 @@ function AddPayableDialog(props: {
           </div>
           <div><Label>Description</Label><Textarea value={props.value.description} onChange={(e) => props.setValue({ ...props.value, description: e.target.value })} /></div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={props.submitting}>{props.submitting ? "Saving..." : "Add New Borrowing"}</Button>
+            <Button type="button" variant="dangerOutline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" variant="addNew" disabled={props.submitting}><Plus className="mr-2 h-4 w-4" />{props.submitting ? "Saving..." : "New Borrowing"}</Button>
           </div>
         </form>
       </DialogContent>
@@ -1012,8 +1002,11 @@ function TransactionDialog(props: {
           </div>
           <div><Label>Description</Label><Textarea value={props.form.description} onChange={(e) => props.setForm({ ...props.form, description: e.target.value })} /></div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={props.submitting}>{props.submitting ? "Saving..." : title}</Button>
+            <Button type="button" variant="dangerOutline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" variant={props.mode === "borrowed" ? "cashIn" : "cashOut"} disabled={props.submitting}>
+              {props.mode === "borrowed" ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+              {props.submitting ? "Saving..." : props.mode === "borrowed" ? "Receive Loan" : "Repay"}
+            </Button>
           </div>
         </form>
       </DialogContent>

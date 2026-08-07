@@ -12,7 +12,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 155 100% 35%;
+    --primary: 239 84% 67%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -24,6 +24,42 @@
     --destructive-foreground: 0 0% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
+    --ring: 239 84% 67%;
+
+    /* Marketing preview palette. Change these tokens to restyle every semantic action. */
+    --action-add: 239 84% 67%;
+    --action-add-hover: 239 84% 60%;
+    --action-generate: 258 90% 66%;
+    --action-generate-hover: 258 90% 59%;
+    --action-cash-in: 160 84% 39%;
+    --action-cash-in-hover: 161 94% 30%;
+    --action-cash-out: 199 89% 48%;
+    --action-cash-out-hover: 201 90% 40%;
+    --action-warning: 38 92% 50%;
+    --action-warning-hover: 32 95% 44%;
+    --action-neutral: 215 20% 65%;
+    --action-danger: 350 89% 60%;
+    --action-transfer: 173 80% 40%;
+
+    --tile-user-bg: 214 32% 91%;
+    --tile-user-accent: 215 25% 27%;
+    --tile-neutral-bg: 210 40% 96%;
+    --tile-neutral-accent: 215 25% 27%;
+    --tile-cash-in-bg: 149 80% 90%;
+    --tile-cash-in-accent: 161 94% 30%;
+    --tile-cash-out-bg: 204 94% 94%;
+    --tile-cash-out-accent: 201 90% 40%;
+    --tile-outstanding-bg: 48 96% 89%;
+    --tile-outstanding-accent: 32 95% 44%;
+    --tile-credit-bg: 183 100% 91%;
+    --tile-credit-accent: 188 86% 35%;
+    --tile-transfer-bg: 166 76% 90%;
+    --tile-transfer-accent: 173 80% 32%;
+  }
+
+  /* Retained as a one-line rollback target for a future palette review. */
+  [data-civica-theme="classic"] {
+    --primary: 155 100% 35%;
     --ring: 155 100% 35%;
   }
 }

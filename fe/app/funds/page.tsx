@@ -212,9 +212,9 @@ export default function FundsPage() {
             </p>
           </div>
           {canManageFunds ? (
-            <Button onClick={() => setCreateOpen(true)}>
+            <Button variant="addNew" onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Add New Fund
+              New Fund
             </Button>
           ) : null}
         </div>
@@ -343,7 +343,7 @@ export default function FundsPage() {
                 </Select>
               </div>
             ) : null}
-            <Button className="w-full" disabled={submitting}>{submitting ? "Creating..." : "Create Fund"}</Button>
+            <Button variant="addNew" className="w-full" disabled={submitting}><Plus className="mr-2 h-4 w-4" />{submitting ? "Creating..." : "New Fund"}</Button>
           </form>
         </DialogContent>
       </Dialog>

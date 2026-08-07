@@ -28,7 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, Plus, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X, UserRoundPlus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -654,13 +654,14 @@ function PersonsPageContent() {
               </Select>
             )}
             <Button
+              variant="addNew"
               size="sm"
               className="gap-1.5"
               onClick={() => setAddOpen(true)}
               disabled={!effectiveOrgId}
             >
-              <Plus className="h-4 w-4" />
-              Add Person
+              <UserRoundPlus className="h-4 w-4" />
+              New Person
             </Button>
           </div>
         </div>

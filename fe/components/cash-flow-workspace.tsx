@@ -12,9 +12,11 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
+  Download,
   Landmark,
   ReceiptText,
   Search,
+  Upload,
   Undo2,
   WalletCards,
 } from "lucide-react";
@@ -22,6 +24,7 @@ import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Button } from "@/components/ui/button";
+import { MetricTile, type MetricTileIntent } from "@/components/ui/metric-tile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -167,9 +170,15 @@ function subtypeLabel(subtype?: string | null) {
 }
 
 function buttonLabel(flow: CashFlowSlug, sectionKey?: string) {
-  if (sectionKey === "receivable_collection") return "Record Repayment";
-  if (sectionKey === "payable_repayment") return "Record Settlement";
-  return flow === "cash-in" ? "Record Income" : "Record Expense";
+  if (sectionKey === "receivable_collection") return "Receive Repayment";
+  if (sectionKey === "payable_repayment") return "Repay";
+  return flow === "cash-in" ? "Receive" : "Pay";
+}
+
+function isCashInAction(flow: CashFlowSlug, category?: CashTransactionCategory | null) {
+  if (category === "payable_borrowing" || category === "payable_recovery" || category === "receivable_collection") return true;
+  if (category === "payable_repayment" || category === "payable_payment" || category === "receivable_payment") return false;
+  return flow === "cash-in";
 }
 
 function actionLabel(flow: CashFlowSlug, category?: CashTransactionCategory | null, sectionKey?: string) {
@@ -473,9 +482,9 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-3">
-              <MetricCard icon={ReceiptText} label={flow === "cash-in" ? "Total Cash In" : "Total Cash Out"} value={formatRs(overview?.totals.periodTotal ?? 0)} />
-              <MetricCard icon={WalletCards} label="Accounts / Funds" value={String(overview?.totals.accountCount ?? 0)} />
-              <MetricCard icon={CalendarDays} label="Period" value={`${dateLabel(fromDate)} - ${dateLabel(toDate)}`} />
+              <MetricCard icon={flow === "cash-in" ? Download : Upload} label={flow === "cash-in" ? "Total Cash In" : "Total Cash Out"} value={formatRs(overview?.totals.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+              <MetricCard icon={WalletCards} label="No of Accounts" value={String(overview?.totals.accountCount ?? 0)} intent="neutral" />
+              <MetricCard icon={CalendarDays} label="Period" value={`${dateLabel(fromDate)} - ${dateLabel(toDate)}`} intent="neutral" />
             </div>
 
             <Card>
@@ -548,11 +557,15 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                           </div>
                           <div className="flex items-center gap-2 md:justify-end">
                             {isFund ? (
-                              <Button size="sm" onClick={() => openFundRecord(row, section.key)} disabled={!canManage}>
+                              <Button size="sm" variant={flow === "cash-in" ? "cashIn" : "cashOut"} onClick={() => openFundRecord(row, section.key)} disabled={!canManage}>
+                                {flow === "cash-in" ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
                                 {buttonLabel(flow, section.key)}
                               </Button>
                             ) : (
-                              <Button size="sm" onClick={(event) => { event.stopPropagation(); openRecord(row, category, section.key); }} disabled={!canManage}>{buttonLabel(flow, section.key)}</Button>
+                              <Button size="sm" variant={flow === "cash-in" ? "cashIn" : "cashOut"} onClick={(event) => { event.stopPropagation(); openRecord(row, category, section.key); }} disabled={!canManage}>
+                                {flow === "cash-in" ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+                                {buttonLabel(flow, section.key)}
+                              </Button>
                             )}
                             <Button asChild size="icon" variant="ghost" aria-label={isFund ? "Open fund" : "Open account"} onClick={(event) => event.stopPropagation()}>
                               <Link href={detailHref}>
@@ -641,8 +654,11 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
               <Textarea value={form.description} onChange={(e) => setForm((v) => ({ ...v, description: e.target.value }))} />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
-              <Button type="submit" disabled={submitting || !canManage}>{submitting ? "Saving..." : selectedAction}</Button>
+              <Button type="button" variant="dangerOutline" onClick={() => setSelected(null)}>Cancel</Button>
+              <Button type="submit" variant={isCashInAction(flow, selected?.category) ? "cashIn" : "cashOut"} disabled={submitting || !canManage}>
+                {isCashInAction(flow, selected?.category) ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+                {submitting ? "Saving..." : selectedAction}
+              </Button>
             </div>
           </form>
         </DialogContent>
@@ -651,20 +667,8 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
   );
 }
 
-function MetricCard({ icon: Icon, label, value }: { icon: typeof ReceiptText; label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="truncate text-lg font-semibold text-foreground">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
+function MetricCard({ icon, label, value, intent }: { icon: typeof ReceiptText; label: string; value: string; intent: MetricTileIntent }) {
+  return <MetricTile icon={icon} label={label} value={value} intent={intent} />;
 }
 
 function AccountDetailView({
@@ -693,21 +697,21 @@ function AccountDetailView({
       <div className="grid gap-3 md:grid-cols-3">
         {isReceivable ? (
           <>
-            <MetricCard icon={ReceiptText} label="Total Disbursed" value={formatRs(detail.summary.totalGiven ?? 0)} />
-            <MetricCard icon={WalletCards} label="Total Repaid" value={formatRs(detail.summary.totalCollected ?? 0)} />
-            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} />
+            <MetricCard icon={Upload} label="Total Given" value={formatRs(detail.summary.totalGiven ?? 0)} intent="cashOut" />
+            <MetricCard icon={Download} label="Total Repaid" value={formatRs(detail.summary.totalCollected ?? 0)} intent="cashIn" />
+            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
           </>
         ) : isPayable ? (
           <>
-            <MetricCard icon={ReceiptText} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} />
-            <MetricCard icon={WalletCards} label="Total Settled" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} />
-            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} />
+            <MetricCard icon={Download} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} intent="cashIn" />
+            <MetricCard icon={Upload} label="Total Settled" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} intent="cashOut" />
+            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
           </>
         ) : (
           <>
-            <MetricCard icon={ReceiptText} label="YTD Total" value={formatRs(detail.summary.periodTotal ?? 0)} />
-            <MetricCard icon={WalletCards} label="This Month" value={formatRs(detail.summary.thisMonthTotal ?? 0)} />
-            <MetricCard icon={CalendarDays} label="No. of Transactions" value={String(detail.summary.transactionCount ?? 0)} />
+            <MetricCard icon={flow === "cash-in" ? Download : Upload} label={flow === "cash-in" ? "YTD Income" : "YTD Expense"} value={formatRs(detail.summary.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+            <MetricCard icon={flow === "cash-in" ? Download : Upload} label="This Month" value={formatRs(detail.summary.thisMonthTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+            <MetricCard icon={CalendarDays} label="Transactions" value={String(detail.summary.transactionCount ?? 0)} intent="neutral" />
           </>
         )}
       </div>
@@ -716,7 +720,7 @@ function AccountDetailView({
           <div className="grid gap-4 xl:grid-cols-2">
           <CashHistoryCard
             title="Disburse History (Cash Out)"
-            action={<Button onClick={() => onRecord("receivable_payment")} disabled={!canManage}>Disburse Payment</Button>}
+            action={<Button variant="cashOut" onClick={() => onRecord("receivable_payment")} disabled={!canManage}><Upload className="mr-2 h-4 w-4" />Give Loan</Button>}
             flow={flow}
             rows={detail.history.filter((transaction) => transaction.category === "receivable_payment")}
             loadingData={loadingData}
@@ -725,7 +729,7 @@ function AccountDetailView({
           />
           <CashHistoryCard
             title="Recovery History (Cash In)"
-            action={<Button onClick={() => onRecord("receivable_collection")} disabled={!canManage}>Recover Payment</Button>}
+            action={<Button variant="cashIn" onClick={() => onRecord("receivable_collection")} disabled={!canManage}><Download className="mr-2 h-4 w-4" />Receive Repayment</Button>}
             flow={flow}
             rows={detail.history.filter((transaction) => transaction.category === "receivable_collection")}
             loadingData={loadingData}
@@ -736,8 +740,8 @@ function AccountDetailView({
       ) : isPayable ? (
         <div className="space-y-4">
           <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
-            <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Settlement (Cash Out)</Button>
+            <Button variant="cashIn" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}><Download className="mr-2 h-4 w-4" />Receive Loan</Button>
+            <Button variant="cashOut" onClick={() => onRecord("payable_repayment")} disabled={!canManage}><Upload className="mr-2 h-4 w-4" />Repay</Button>
           </div>
           <Card>
             <CardContent className="p-0">
@@ -813,7 +817,7 @@ function AccountDetailView({
                             </Button>
                           ) : null}
                           {!tx.reversedAt && canManage ? (
-                            <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+                            <Button size="sm" variant="dangerOutline" onClick={() => onReverse(tx)}>
                               <Undo2 className="mr-2 h-4 w-4" />
                               Reverse
                             </Button>
@@ -834,11 +838,14 @@ function AccountDetailView({
           action={
             isPayable ? (
               <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="outline" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}>Add Borrowing (Cash In)</Button>
-                <Button onClick={() => onRecord("payable_repayment")} disabled={!canManage}>Record Settlement (Cash Out)</Button>
+                <Button variant="cashIn" onClick={() => onRecord("payable_borrowing")} disabled={!canManage}><Download className="mr-2 h-4 w-4" />Receive Loan</Button>
+                <Button variant="cashOut" onClick={() => onRecord("payable_repayment")} disabled={!canManage}><Upload className="mr-2 h-4 w-4" />Repay</Button>
               </div>
             ) : (
-              <Button onClick={() => onRecord()} disabled={!canManage}>{config.actionLabel}</Button>
+              <Button variant={flow === "cash-in" ? "cashIn" : "cashOut"} onClick={() => onRecord()} disabled={!canManage}>
+                {flow === "cash-in" ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+                {flow === "cash-in" ? "Receive" : "Pay"}
+              </Button>
             )
           }
           flow={flow}
@@ -892,7 +899,7 @@ function PayableHistoryRow({
         <td className="p-3 text-right">
           <div className="flex items-center justify-end gap-2">
             {canManage && !tx.reversedAt ? (
-              <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+              <Button size="sm" variant="dangerOutline" onClick={() => onReverse(tx)}>
                 <Undo2 className="mr-2 h-4 w-4" />
                 Reverse
               </Button>
@@ -990,7 +997,7 @@ function CashHistoryCard({
                     <td className="p-2">{transaction.reversedAt ? <span className="text-destructive">Reversed</span> : <span className="text-emerald-700">Posted</span>}</td>
                     <td className="p-2 text-right">
                       {!transaction.reversedAt && canManage ? (
-                        <Button size="sm" variant="outline" onClick={() => onReverse(transaction)}>
+                        <Button size="sm" variant="dangerOutline" onClick={() => onReverse(transaction)}>
                           <Undo2 className="mr-2 h-4 w-4" />
                           Reverse
                         </Button>
