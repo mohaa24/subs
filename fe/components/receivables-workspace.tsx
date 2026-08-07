@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Banknote,
   CalendarDays,
   ChevronDown,
@@ -15,7 +17,6 @@ import {
   Search,
   Upload,
   Undo2,
-  Wallet,
   X,
 } from "lucide-react";
 import { AbstractBg } from "@/components/abstract-bg";
@@ -558,10 +559,10 @@ function ReceivableDashboard(props: {
       <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} intent="neutral" />
-        <Metric icon={Upload} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} intent="cashOut" />
-        <Metric icon={Download} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} intent="cashIn" />
-        <Metric icon={ReceiptText} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
+        <Metric icon={Banknote} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} intent="outstanding" />
+        <Metric icon={ArrowUpFromLine} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} intent="cashOut" />
+        <Metric icon={ArrowDownToLine} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} intent="cashIn" />
+        <Metric icon={Banknote} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
       </div>
 
       <Card>
@@ -694,9 +695,9 @@ function ReceivableDetailView(props: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric icon={Upload} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} intent="cashOut" />
-        <Metric icon={Download} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} intent="cashIn" />
-        <Metric icon={ReceiptText} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
+        <Metric icon={ArrowUpFromLine} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} intent="cashOut" />
+        <Metric icon={ArrowDownToLine} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} intent="cashIn" />
+        <Metric icon={Banknote} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">

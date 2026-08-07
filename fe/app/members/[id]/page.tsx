@@ -51,6 +51,8 @@ import {
   ArrowUpWideNarrow,
   QrCode,
   Download,
+  BadgeCheck,
+  Banknote,
   Edit,
   DollarSign,
   CheckCircle2,
@@ -1364,10 +1366,10 @@ export default function MembershipDetailPage() {
               {/* Payment Statistics */}
               {balance && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <MetricTile label="Total Dues" value={balance.totalDue.toFixed(2)} intent="outstanding" />
-                  <MetricTile icon={Download} label="Total Received" value={balance.totalPaid.toFixed(2)} intent="cashIn" />
-                  <MetricTile icon={AlertTriangle} label="Outstanding Dues" value={balance.outstanding.toFixed(2)} intent="outstanding" />
-                  <MetricTile icon={Wallet} label="Available Credit" value={balance.creditBalance.toFixed(2)} intent="credit" />
+                  <MetricTile icon={Banknote} label="Total Dues" value={`Rs. ${balance.totalDue.toFixed(2)}`} intent="outstanding" />
+                  <MetricTile icon={BadgeCheck} label="Total Received" value={`Rs. ${balance.totalPaid.toFixed(2)}`} intent="cashIn" />
+                  <MetricTile icon={AlertTriangle} label="Outstanding Dues" value={`Rs. ${balance.outstanding.toFixed(2)}`} intent="outstanding" />
+                  <MetricTile icon={Wallet} label="Available Credit" value={`Rs. ${balance.creditBalance.toFixed(2)}`} intent="credit" />
                 </div>
               )}
 

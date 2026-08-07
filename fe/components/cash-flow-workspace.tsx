@@ -6,19 +6,22 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownCircle,
+  ArrowDownToLine,
   ArrowLeft,
   ArrowUpCircle,
+  ArrowUpFromLine,
   Banknote,
-  CalendarDays,
+  BetweenHorizontalStart,
+  Calendar1,
   ChevronDown,
   ChevronRight,
   Download,
   Landmark,
   ReceiptText,
   Search,
+  SquareMenu,
   Upload,
   Undo2,
-  WalletCards,
 } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
@@ -482,9 +485,9 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-3">
-              <MetricCard icon={flow === "cash-in" ? Download : Upload} label={flow === "cash-in" ? "Total Cash In" : "Total Cash Out"} value={formatRs(overview?.totals.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
-              <MetricCard icon={WalletCards} label="No of Accounts" value={String(overview?.totals.accountCount ?? 0)} intent="neutral" />
-              <MetricCard icon={CalendarDays} label="Period" value={`${dateLabel(fromDate)} - ${dateLabel(toDate)}`} intent="neutral" />
+              <MetricCard icon={flow === "cash-in" ? ArrowDownToLine : ArrowUpFromLine} label={flow === "cash-in" ? "Total Cash In" : "Total Cash Out"} value={formatRs(overview?.totals.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+              <MetricCard icon={BetweenHorizontalStart} label="No of Accounts" value={String(overview?.totals.accountCount ?? 0)} intent="neutral" />
+              <MetricCard icon={Calendar1} label="Period" value={`${dateLabel(fromDate)} - ${dateLabel(toDate)}`} intent="neutral" />
             </div>
 
             <Card>
@@ -697,21 +700,21 @@ function AccountDetailView({
       <div className="grid gap-3 md:grid-cols-3">
         {isReceivable ? (
           <>
-            <MetricCard icon={Upload} label="Total Given" value={formatRs(detail.summary.totalGiven ?? 0)} intent="cashOut" />
-            <MetricCard icon={Download} label="Total Repaid" value={formatRs(detail.summary.totalCollected ?? 0)} intent="cashIn" />
-            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
+            <MetricCard icon={ArrowUpFromLine} label="Total Given" value={formatRs(detail.summary.totalGiven ?? 0)} intent="cashOut" />
+            <MetricCard icon={ArrowDownToLine} label="Total Repaid" value={formatRs(detail.summary.totalCollected ?? 0)} intent="cashIn" />
+            <MetricCard icon={Banknote} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
           </>
         ) : isPayable ? (
           <>
-            <MetricCard icon={Download} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} intent="cashIn" />
-            <MetricCard icon={Upload} label="Total Settled" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} intent="cashOut" />
-            <MetricCard icon={CalendarDays} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
+            <MetricCard icon={ArrowDownToLine} label="Total Borrowed" value={formatRs(detail.summary.totalBorrowed ?? detail.summary.totalPayable ?? 0)} intent="cashIn" />
+            <MetricCard icon={ArrowUpFromLine} label="Total Settled" value={formatRs(detail.summary.totalRepaid ?? detail.summary.totalPaid ?? 0)} intent="cashOut" />
+            <MetricCard icon={Banknote} label="Outstanding Balance" value={formatRs(detail.summary.outstandingBalance ?? 0)} intent="outstanding" />
           </>
         ) : (
           <>
-            <MetricCard icon={flow === "cash-in" ? Download : Upload} label={flow === "cash-in" ? "YTD Income" : "YTD Expense"} value={formatRs(detail.summary.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
-            <MetricCard icon={flow === "cash-in" ? Download : Upload} label="This Month" value={formatRs(detail.summary.thisMonthTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
-            <MetricCard icon={CalendarDays} label="Transactions" value={String(detail.summary.transactionCount ?? 0)} intent="neutral" />
+            <MetricCard icon={flow === "cash-in" ? ArrowDownToLine : ArrowUpFromLine} label={flow === "cash-in" ? "YTD Income" : "YTD Expense"} value={formatRs(detail.summary.periodTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+            <MetricCard icon={flow === "cash-in" ? ArrowDownToLine : ArrowUpFromLine} label="This Month" value={formatRs(detail.summary.thisMonthTotal ?? 0)} intent={flow === "cash-in" ? "cashIn" : "cashOut"} />
+            <MetricCard icon={SquareMenu} label="Transactions" value={String(detail.summary.transactionCount ?? 0)} intent="neutral" />
           </>
         )}
       </div>

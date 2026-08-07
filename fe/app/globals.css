@@ -41,19 +41,12 @@
     --action-danger: 350 89% 60%;
     --action-transfer: 173 80% 40%;
 
-    --tile-user-bg: 214 32% 91%;
-    --tile-user-accent: 215 25% 27%;
-    --tile-neutral-bg: 210 40% 96%;
-    --tile-neutral-accent: 215 25% 27%;
-    --tile-cash-in-bg: 149 80% 90%;
+    --tile-user-accent: 215 19% 35%;
+    --tile-neutral-accent: 215 19% 35%;
     --tile-cash-in-accent: 161 94% 30%;
-    --tile-cash-out-bg: 204 94% 94%;
-    --tile-cash-out-accent: 201 90% 40%;
-    --tile-outstanding-bg: 48 96% 89%;
+    --tile-cash-out-accent: 200 98% 39%;
     --tile-outstanding-accent: 32 95% 44%;
-    --tile-credit-bg: 183 100% 91%;
     --tile-credit-accent: 188 86% 35%;
-    --tile-transfer-bg: 166 76% 90%;
     --tile-transfer-accent: 173 80% 32%;
   }
 

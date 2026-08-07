@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowLeftRight, Download, Landmark, ReceiptText, Undo2, Upload, Wallet, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Banknote, Download, Landmark, ReceiptText, Undo2, Upload, X } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -419,15 +419,15 @@ export default function FundDetailPage() {
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard icon={Download} title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} intent="cashIn" />
-          <SummaryCard icon={Upload} title="Total Spent" value={-(fund?.summary?.spent ?? 0)} intent="cashOut" />
+          <SummaryCard icon={ArrowDownToLine} title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} intent="cashIn" />
+          <SummaryCard icon={ArrowUpFromLine} title="Total Spent" value={-(fund?.summary?.spent ?? 0)} intent="cashOut" />
           <SummaryCard
             icon={ArrowLeftRight}
             title="Total Transferred"
             value={transferredFromFundPerspective}
             intent="transfer"
           />
-          <SummaryCard icon={Wallet} title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} intent="credit" />
+          <SummaryCard icon={Banknote} title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} intent="credit" />
         </div>
 
         <Card>

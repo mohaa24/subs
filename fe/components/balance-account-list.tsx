@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, CalendarDays, ChevronRight, Download, Info, Plus, ReceiptText, Search, Upload, WalletCards } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Banknote, BetweenHorizontalStart, Calendar1, CalendarDays, ChevronRight, Info, Plus, ReceiptText, Search, WalletCards } from "lucide-react";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Header } from "@/components/header";
@@ -253,16 +253,16 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
 
         {kind === "payable" ? (
           <div className="grid gap-3 md:grid-cols-4">
-            <Metric intent="neutral" icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} helper="Opening balance of all payable accounts" />
-            <Metric intent="cashIn" icon={Download} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} helper="Total amount added across all accounts" />
-            <Metric intent="cashOut" icon={Upload} label="Total Settled" value={formatRs(totals?.totalRepaid ?? 0)} helper="Total amount paid across all accounts" />
-            <Metric intent="outstanding" icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} helper="Total outstanding amount still due" />
+            <Metric intent="outstanding" icon={Banknote} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} helper="Opening balance of all payable accounts" />
+            <Metric intent="cashIn" icon={ArrowDownToLine} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} helper="Total amount added across all accounts" />
+            <Metric intent="cashOut" icon={ArrowUpFromLine} label="Total Settled" value={formatRs(totals?.totalRepaid ?? 0)} helper="Total amount paid across all accounts" />
+            <Metric intent="outstanding" icon={Banknote} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} helper="Total outstanding amount still due" />
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-3">
-            <Metric intent="cashIn" icon={Download} label="YTD Income" value={formatRs(overview?.totals.periodTotal ?? 0)} />
-            <Metric intent="neutral" icon={WalletCards} label="No of Accounts" value={String(overview?.totals.accountCount ?? 0)} />
-            <Metric intent="neutral" icon={CalendarDays} label="Period" value={`${dateLabel(rangeFor(period).fromDate)} - ${dateLabel(rangeFor(period).toDate)}`} />
+            <Metric intent="cashIn" icon={ArrowDownToLine} label="YTD Income" value={formatRs(overview?.totals.periodTotal ?? 0)} />
+            <Metric intent="neutral" icon={BetweenHorizontalStart} label="No of Accounts" value={String(overview?.totals.accountCount ?? 0)} />
+            <Metric intent="neutral" icon={Calendar1} label="Period" value={`${dateLabel(rangeFor(period).fromDate)} - ${dateLabel(rangeFor(period).toDate)}`} />
           </div>
         )}
 

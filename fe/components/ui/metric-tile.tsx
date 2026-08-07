@@ -11,41 +11,48 @@ export type MetricTileIntent =
   | "credit"
   | "transfer";
 
-const intentStyles: Record<MetricTileIntent, { tile: string; icon: string; value: string }> = {
+const intentStyles: Record<MetricTileIntent, { tile: string; icon: string; value: string; dots: string }> = {
   user: {
-    tile: "border-slate-300 bg-[hsl(var(--tile-user-bg))]",
-    icon: "bg-white/75 text-[hsl(var(--tile-user-accent))]",
+    tile: "border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50",
+    icon: "border-slate-200 bg-slate-100 text-slate-600",
     value: "text-[hsl(var(--tile-user-accent))]",
+    dots: "border-slate-400",
   },
   neutral: {
-    tile: "border-slate-200 bg-[hsl(var(--tile-neutral-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-neutral-accent))]",
+    tile: "border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50",
+    icon: "border-slate-200 bg-slate-100 text-slate-600",
     value: "text-[hsl(var(--tile-neutral-accent))]",
+    dots: "border-slate-400",
   },
   cashIn: {
-    tile: "border-emerald-200 bg-[hsl(var(--tile-cash-in-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-cash-in-accent))]",
+    tile: "border-emerald-200/70 bg-gradient-to-b from-white via-white to-emerald-50",
+    icon: "border-emerald-200 bg-emerald-100 text-emerald-600",
     value: "text-[hsl(var(--tile-cash-in-accent))]",
+    dots: "border-emerald-500",
   },
   cashOut: {
-    tile: "border-sky-200 bg-[hsl(var(--tile-cash-out-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-cash-out-accent))]",
+    tile: "border-sky-200/70 bg-gradient-to-b from-white via-white to-sky-50",
+    icon: "border-sky-200 bg-sky-100 text-sky-600",
     value: "text-[hsl(var(--tile-cash-out-accent))]",
+    dots: "border-sky-500",
   },
   outstanding: {
-    tile: "border-amber-200 bg-[hsl(var(--tile-outstanding-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-outstanding-accent))]",
+    tile: "border-amber-200/70 bg-gradient-to-b from-white via-white to-amber-50",
+    icon: "border-amber-200 bg-amber-100 text-amber-600",
     value: "text-[hsl(var(--tile-outstanding-accent))]",
+    dots: "border-amber-500",
   },
   credit: {
-    tile: "border-cyan-200 bg-[hsl(var(--tile-credit-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-credit-accent))]",
+    tile: "border-cyan-200/70 bg-gradient-to-b from-white via-white to-cyan-50",
+    icon: "border-cyan-200 bg-cyan-100 text-cyan-600",
     value: "text-[hsl(var(--tile-credit-accent))]",
+    dots: "border-cyan-500",
   },
   transfer: {
-    tile: "border-teal-200 bg-[hsl(var(--tile-transfer-bg))]",
-    icon: "bg-white/80 text-[hsl(var(--tile-transfer-accent))]",
+    tile: "border-teal-200/70 bg-gradient-to-b from-white via-white to-teal-50",
+    icon: "border-teal-200 bg-teal-100 text-teal-600",
     value: "text-[hsl(var(--tile-transfer-accent))]",
+    dots: "border-teal-500",
   },
 };
 
@@ -66,18 +73,27 @@ export function MetricTile({
 }) {
   const styles = intentStyles[intent];
   return (
-    <Card className={cn("overflow-hidden shadow-sm", styles.tile, className)}>
-      <CardContent className="flex min-h-[92px] items-center gap-3 p-4">
-        {Icon ? (
-          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg shadow-sm", styles.icon)}>
-            <Icon className="h-5 w-5" />
+    <Card
+      className={cn(
+        "overflow-hidden rounded-2xl shadow-[0_4px_16px_rgba(15,23,42,0.05)]",
+        styles.tile,
+        className
+      )}
+    >
+      <CardContent className="min-h-[156px] p-5 sm:p-6">
+        <div className="flex items-center gap-4">
+          {Icon ? (
+            <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border shadow-sm", styles.icon)}>
+              <Icon className="h-6 w-6" strokeWidth={2} />
+            </div>
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-slate-700">{label}</p>
+            <span aria-hidden="true" className={cn("mt-2 block w-10 border-b-2 border-dotted", styles.dots)} />
           </div>
-        ) : null}
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-slate-600">{label}</p>
-          <p className={cn("truncate text-lg font-semibold tabular-nums", styles.value)}>{value}</p>
-          {helper ? <p className="mt-1 line-clamp-2 text-xs text-slate-600">{helper}</p> : null}
         </div>
+        <p className={cn("mt-5 truncate text-2xl font-semibold tabular-nums", styles.value)} title={value}>{value}</p>
+        {helper ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{helper}</p> : null}
       </CardContent>
     </Card>
   );
