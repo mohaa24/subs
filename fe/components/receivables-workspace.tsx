@@ -22,6 +22,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { MetricTile } from "@/components/ui/metric-tile";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -556,10 +557,10 @@ function ReceivableDashboard(props: {
       <PeriodControls period={props.period} fromDate={props.fromDate} toDate={props.toDate} onPeriodChange={props.onPeriodChange} setFromDate={props.setFromDate} setToDate={props.setToDate} />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} />
-        <Metric icon={ArrowUpCircle} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} />
-        <Metric icon={ArrowDownCircle} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} />
-        <Metric icon={ReceiptText} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} />
+        <MetricTile icon={Wallet} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} />
+        <MetricTile icon={ArrowUpCircle} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} intent="cashOut" />
+        <MetricTile icon={ArrowDownCircle} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} intent="cashIn" />
+        <MetricTile icon={ReceiptText} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
       </div>
 
       <Card>
@@ -692,14 +693,14 @@ function ReceivableDetailView(props: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric icon={ArrowUpCircle} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} />
-        <Metric icon={ArrowDownCircle} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} />
-        <Metric icon={ReceiptText} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} />
+        <MetricTile icon={ArrowUpCircle} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} intent="cashOut" />
+        <MetricTile icon={ArrowDownCircle} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} intent="cashIn" />
+        <MetricTile icon={ReceiptText} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
-        {!props.hideManagementActions ? <Button variant="outline" onClick={props.onGiven} disabled={!props.canManage}>Add Amount Due (Cash Out)</Button> : null}
-        <Button onClick={props.onRepaid} disabled={!props.canManage}>Record Repayment (Cash In)</Button>
+        {!props.hideManagementActions ? <Button variant="cashOut" onClick={props.onGiven} disabled={!props.canManage}>Add Amount Due (Cash Out)</Button> : null}
+        <Button variant="cashIn" onClick={props.onRepaid} disabled={!props.canManage}>Record Repayment (Cash In)</Button>
         {!props.hideManagementActions ? <Button variant="outline" onClick={props.onClose} disabled={!props.canManage || account.status === "closed"}>Close Account</Button> : null}
       </div>
 
@@ -765,7 +766,7 @@ function ReceivableDetailView(props: {
                         <ChevronDown className={`ml-2 h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
                       </Button>
                       {!tx.reversedAt && props.canManage ? (
-                        <Button size="sm" variant="outline" onClick={() => props.onReverse(tx)}>
+                        <Button size="sm" variant="dangerOutline" onClick={() => props.onReverse(tx)}>
                           <Undo2 className="mr-2 h-4 w-4" />
                           Reverse
                         </Button>
@@ -815,7 +816,7 @@ function HistoryRows({
         <td className="p-3 text-right">
           <div className="flex items-center justify-end gap-2">
             {canManage && !tx.reversedAt ? (
-              <Button size="sm" variant="outline" onClick={() => onReverse(tx)}>
+              <Button size="sm" variant="dangerOutline" onClick={() => onReverse(tx)}>
                 <Undo2 className="mr-2 h-4 w-4" />
                 Reverse
               </Button>
@@ -898,22 +899,6 @@ function PeriodControls(props: { period: Period; fromDate: string; toDate: strin
         </>
       ) : null}
     </div>
-  );
-}
-
-function Metric({ icon: Icon, label, value }: { icon: typeof ReceiptText; label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="truncate text-lg font-semibold text-foreground">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

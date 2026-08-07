@@ -9,6 +9,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetricTile } from "@/components/ui/metric-tile";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -252,16 +253,16 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
 
         {kind === "payable" ? (
           <div className="grid gap-3 md:grid-cols-4">
-            <Metric kind="blue" icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} helper="Opening balance of all payable accounts" />
-            <Metric kind="green" icon={ReceiptText} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} helper="Total amount added across all accounts" />
-            <Metric kind="purple" icon={ArrowLeftRight} label="Total Repaid" value={formatRs(totals?.totalRepaid ?? 0)} helper="Total amount paid across all accounts" />
-            <Metric kind="orange" icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} helper="Total outstanding amount still due" />
+            <MetricTile icon={WalletCards} label="Total Opening" value={formatRs(totals?.openingBalance ?? 0)} helper="Opening balance of all payable accounts" />
+            <MetricTile icon={ReceiptText} label="Total Borrowed" value={formatRs(totals?.totalBorrowed ?? 0)} helper="Total amount added across all accounts" intent="cashIn" />
+            <MetricTile icon={ArrowLeftRight} label="Total Repaid" value={formatRs(totals?.totalRepaid ?? 0)} helper="Total amount paid across all accounts" intent="cashOut" />
+            <MetricTile icon={CalendarDays} label="Outstanding Balance" value={formatRs(totals?.outstandingBalance ?? 0)} helper="Total outstanding amount still due" intent="outstanding" />
           </div>
         ) : (
           <div className="grid gap-3 md:grid-cols-3">
-            <Metric icon={ReceiptText} label="YTD Total" value={formatRs(overview?.totals.periodTotal ?? 0)} />
-            <Metric icon={WalletCards} label="Accounts / Funds" value={String(overview?.totals.accountCount ?? 0)} />
-            <Metric icon={CalendarDays} label="Period" value={`${dateLabel(rangeFor(period).fromDate)} - ${dateLabel(rangeFor(period).toDate)}`} />
+            <MetricTile icon={ReceiptText} label="YTD Total" value={formatRs(overview?.totals.periodTotal ?? 0)} intent="cashIn" />
+            <MetricTile icon={WalletCards} label="Accounts / Funds" value={String(overview?.totals.accountCount ?? 0)} />
+            <MetricTile icon={CalendarDays} label="Period" value={`${dateLabel(rangeFor(period).fromDate)} - ${dateLabel(rangeFor(period).toDate)}`} />
           </div>
         )}
 
@@ -411,7 +412,7 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
                         <div className="font-medium text-foreground">{dateLabel(row.lastRecordedAt)}</div>
                       </div>
                       <div className="flex items-center gap-2 md:justify-end">
-                        <Button asChild size="sm">
+                        <Button asChild size="sm" variant="cashIn">
                           <Link href={`${cfg.detailBase}/${row.id}`}>{cfg.actionLabel}</Link>
                         </Button>
                         <Button asChild size="icon" variant="ghost" aria-label="Open account">
@@ -427,37 +428,6 @@ export function BalanceAccountList({ kind }: { kind: BalanceKind }) {
         ) : null}
       </main>
     </div>
-  );
-}
-
-function Metric({ icon: Icon, label, value, helper, kind }: { icon: typeof ReceiptText; label: string; value: string; helper?: string; kind?: "blue" | "green" | "purple" | "orange" }) {
-  const shell = kind === "green"
-    ? "border-emerald-200 bg-emerald-50/70"
-    : kind === "purple"
-      ? "border-violet-200 bg-violet-50/70"
-      : kind === "orange"
-        ? "border-orange-200 bg-orange-50/70"
-        : "border-blue-200 bg-blue-50/70";
-  const iconShell = kind === "green"
-    ? "bg-white text-emerald-600"
-    : kind === "purple"
-      ? "bg-white text-violet-600"
-      : kind === "orange"
-        ? "bg-white text-orange-600"
-        : "bg-white text-blue-600";
-  return (
-    <Card className={shell}>
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className={`flex h-12 w-12 items-center justify-center rounded-lg shadow-sm ${iconShell}`}>
-          <Icon className="h-6 w-6" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="truncate text-lg font-semibold text-foreground">{value}</p>
-          {helper ? <p className="mt-1 text-xs text-muted-foreground">{helper}</p> : null}
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

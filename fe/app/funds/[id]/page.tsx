@@ -2,12 +2,13 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Landmark, Plus, ReceiptText, Undo2 } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Landmark, Plus, ReceiptText, Undo2, Wallet } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MetricTile, type MetricIntent } from "@/components/ui/metric-tile";
 import {
   Dialog,
   DialogContent,
@@ -395,20 +396,20 @@ export default function FundDetailPage() {
           {canManageFunds ? (
             <div className="flex flex-wrap gap-2">
               {fundMode !== "cash-out" ? (
-                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
+                <Button variant="cashIn" onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
                   <Plus className="mr-2 h-4 w-4" />
                   {fundMode === "cash-in" ? "Record Income" : "Add Collection"}
                 </Button>
               ) : null}
               {fundMode !== "cash-in" ? (
-                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant={fundMode === "cash-out" ? "default" : "outline"}>
+                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant="cashOut">
                   {fundMode === "cash-out" ? "Record Expense" : "Add Expense"}
                 </Button>
               ) : null}
               {!fundMode ? (
                 <>
-                  <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="outline">Transfer Balance</Button>
-                  <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="destructive">Close Fund</Button>
+                  <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="transfer">Transfer Balance</Button>
+                  <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="dangerOutline">Close Fund</Button>
                 </>
               ) : null}
             </div>
@@ -418,14 +419,14 @@ export default function FundDetailPage() {
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} />
-          <SummaryCard title="Total Spent" value={-(fund?.summary?.spent ?? 0)} tone="negative" />
+          <SummaryCard icon={ArrowDownToLine} title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} intent="cashIn" />
+          <SummaryCard icon={ArrowUpFromLine} title="Total Spent" value={-(fund?.summary?.spent ?? 0)} intent="cashOut" />
           <SummaryCard
+            icon={ArrowLeftRight}
             title="Total Transferred"
             value={transferredFromFundPerspective}
-            tone={transferredFromFundPerspective < 0 ? "negative" : transferredFromFundPerspective > 0 ? "positive" : "default"}
           />
-          <SummaryCard title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} emphasis />
+          <SummaryCard icon={Wallet} title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} intent="credit" />
         </div>
 
         <Card>
@@ -496,7 +497,7 @@ export default function FundDetailPage() {
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setCollectionOpen(false)}>Cancel</Button>
-              <Button disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-in" ? "Record Income" : "Add Collection"}</Button>
+              <Button variant="cashIn" disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-in" ? "Record Income" : "Add Collection"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -554,7 +555,7 @@ export default function FundDetailPage() {
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setExpenseOpen(false)}>Cancel</Button>
-              <Button disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-out" ? "Record Expense" : "Add Expense"}</Button>
+              <Button variant="cashOut" disabled={submitting}>{submitting ? "Saving..." : fundMode === "cash-out" ? "Record Expense" : "Add Expense"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -613,7 +614,7 @@ export default function FundDetailPage() {
               <Label>Optional Notes</Label>
               <Input value={transfer.memo} onChange={(e) => setTransfer((v) => ({ ...v, memo: e.target.value }))} placeholder="Reason or approval note" />
             </div>
-            <Button className="w-full" disabled={submitting || transferLimit <= 0}>
+            <Button variant="transfer" className="w-full" disabled={submitting || transferLimit <= 0}>
               {submitting ? "Transferring..." : "Transfer Balance"}
             </Button>
           </form>
@@ -629,27 +630,7 @@ export default function FundDetailPage() {
   );
 }
 
-function SummaryCard({
-  title,
-  value,
-  emphasis = false,
-  tone = "default",
-}: {
-  title: string;
-  value: number;
-  emphasis?: boolean;
-  tone?: "default" | "positive" | "negative";
-}) {
-  const toneClass = tone === "negative" ? "text-destructive" : tone === "positive" ? "text-primary" : "";
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-        <p className={`mt-2 text-lg font-semibold tabular-nums ${emphasis ? "text-primary" : toneClass}`}>{formatRs(value)}</p>
-      </CardContent>
-    </Card>
-  );
-}
+function SummaryCard({ icon, title, value, intent = "neutral" }: { icon: typeof Wallet; title: string; value: number; intent?: MetricIntent }) { return <MetricTile icon={icon} label={title} value={formatRs(value)} intent={intent} />; }
 
 function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
   return {
@@ -743,7 +724,7 @@ function FundActivityTable({
                 {showActionColumn ? (
                   <td className="p-2 text-right">
                     {!row.reversedAt && (row.transactionType === "collection" || row.transactionType === "expense") ? (
-                      <Button type="button" variant="outline" size="sm" onClick={() => onReverse?.(row)}>
+                      <Button type="button" variant="dangerOutline" size="sm" onClick={() => onReverse?.(row)}>
                         <Undo2 className="mr-1 h-3.5 w-3.5" />
                         Reverse
                       </Button>
