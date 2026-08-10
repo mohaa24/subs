@@ -560,6 +560,8 @@ exports.paymentsRouter.get("/dues", async (req, res) => {
                     OR: [
                         { hod: { fullName: { contains: q, mode: "insensitive" } } },
                         { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
+                        { hod: { mobileNumber: { contains: q, mode: "insensitive" } } },
+                        { hod: { whatsAppNumber: { contains: q, mode: "insensitive" } } },
                         { membershipNo: { contains: q, mode: "insensitive" } },
                     ],
                 },

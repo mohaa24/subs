@@ -3,7 +3,7 @@
 import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   api,
@@ -33,7 +33,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Banknote, ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle, WandSparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpDown,
+  Banknote,
+  Bookmark,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  LockKeyhole,
+  ListFilter,
+  Pencil,
+  QrCode,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  UserRound,
+  WandSparkles,
+} from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -100,6 +118,8 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<DueStatus | "all">("all");
   const [dueTypeFilter, setDueTypeFilter] = useState<string>("all");
   const [searchQ, setSearchQ] = useState("");
+  const [mobileSort, setMobileSort] = useState<"name" | "date" | "amount">("name");
+  const [expandedDueId, setExpandedDueId] = useState<string | null>(null);
   const [dueTypes, setDueTypes] = useState<DueType[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [history, setHistory] = useState<Payment[]>([]);
@@ -422,6 +442,34 @@ export default function PaymentsPage() {
   const paymentMemberZone = (payment: Payment) => zoneLabel(payment.membership?.areaCode);
   const paymentMemberMembershipId = (payment: Payment) => membershipIdOnly(payment.membership?.membershipNo);
 
+  const mobileDues = useMemo(() => {
+    return [...dues].sort((a, b) => {
+      if (mobileSort === "date") {
+        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+      }
+      if (mobileSort === "amount") {
+        const aRemaining = Number(a.amountDue) - Number(a.amountPaid);
+        const bRemaining = Number(b.amountDue) - Number(b.amountPaid);
+        return bRemaining - aRemaining;
+      }
+      return dueMemberDisplayName(a).localeCompare(dueMemberDisplayName(b));
+    });
+  }, [dues, mobileSort]);
+
+  const dueMonth = (dueDate: string) => {
+    const date = new Date(`${dueDate.slice(0, 10)}T00:00:00`);
+    return {
+      month: date.toLocaleDateString("en", { month: "short" }).toUpperCase(),
+      year: date.toLocaleDateString("en", { year: "2-digit" }),
+    };
+  };
+
+  const dueMemberArea = (due: PaymentDue) => {
+    const areaCode = due.membership?.areaCode;
+    if (areaCode === undefined || areaCode === null) return null;
+    return zones.find((item) => item.code === areaCode)?.name ?? `Zone ${areaCode}`;
+  };
+
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
   const canManage = user.role === "admin" || user.role === "super_user";
@@ -429,19 +477,23 @@ export default function PaymentsPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="p-6 max-w-5xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: view === "dues" ? "Dues Overview" : "Payment History" }]} />
+      <main className="mx-auto max-w-5xl px-3 py-4 sm:p-6">
+        <div className="hidden md:block">
+          <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: view === "dues" ? "Dues Overview" : "Payment History" }]} />
+        </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-          <h1 className="text-xl font-semibold text-foreground">{view === "dues" ? "Dues Overview" : "Payment History"}</h1>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:mb-5">
+          <h1 className="text-xl font-semibold text-foreground">
+            {view === "dues" ? <><span className="md:hidden">Member Dues</span><span className="hidden md:inline">Dues Overview</span></> : "Payment History"}
+          </h1>
           {view === "dues" && canManage && (
-            <div className="flex gap-2">
-              <Button size="sm" variant="warning" onClick={handleMarkOverdue}>
-                <AlertTriangle className="mr-2 h-4 w-4" />
+            <div className="grid grid-cols-2 gap-2 sm:flex">
+              <Button size="sm" variant="warning" className="h-10 sm:h-9" onClick={handleMarkOverdue}>
+                <AlertTriangle className="mr-2 h-4 w-4 shrink-0" />
                 {t("payments.markOverdue")}
               </Button>
-              <Button size="sm" variant="generate" onClick={handleGenerateDues} disabled={generating}>
-                <WandSparkles className="mr-2 h-4 w-4" />
+              <Button size="sm" variant="generate" className="h-10 sm:h-9" onClick={handleGenerateDues} disabled={generating}>
+                <WandSparkles className="mr-2 h-4 w-4 shrink-0" />
                 {generating ? t("payments.generating") : t("payments.generateDues")}
               </Button>
             </div>
@@ -452,8 +504,8 @@ export default function PaymentsPage() {
           <p className="text-sm mb-4 text-muted-foreground">{genResult}</p>
         )}
 
-        {view === "dues" ? <Card>
-          <CardHeader className="pb-2">
+        {view === "dues" ? <Card className="border-0 shadow-none md:border md:shadow-sm">
+          <CardHeader className="hidden pb-2 md:block">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -508,7 +560,98 @@ export default function PaymentsPage() {
               />
             </form>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0 md:p-6 md:pt-0">
+            <div className="mb-3 space-y-3 md:hidden">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search member dues"
+                  placeholder="Search by name, member ID or phone"
+                  value={searchQ}
+                  onChange={(event) => {
+                    setSearchQ(event.target.value);
+                    setPage(1);
+                  }}
+                  className="h-11 pl-10 pr-11 text-xs"
+                />
+                <button
+                  type="button"
+                  aria-label="Scan member QR code"
+                  title="Scan member QR code"
+                  onClick={() => router.push("/?scan=membership")}
+                  className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-emerald-600"
+                >
+                  <QrCode className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    setStatusFilter(value as DueStatus | "all");
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-10 min-w-0 px-2 text-[11px]">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <ListFilter className="h-3.5 w-3.5 shrink-0" />
+                      <SelectValue />
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Status: All</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="overdue">Overdue</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={dueTypeFilter}
+                  onValueChange={(value) => {
+                    setDueTypeFilter(value);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-10 min-w-0 px-2 text-[11px]">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Bookmark className="h-3.5 w-3.5 shrink-0" />
+                      <SelectValue placeholder="Type: All" />
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Type: All</SelectItem>
+                    {dueTypes.map((dueType) => (
+                      <SelectItem key={dueType.id} value={dueType.id}>{dueType.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={mobileSort} onValueChange={(value) => setMobileSort(value as typeof mobileSort)}>
+                  <SelectTrigger className="h-10 min-w-0 px-2 text-[11px]">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />
+                      <SelectValue />
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">Name A-Z</SelectItem>
+                    <SelectItem value="date">Newest</SelectItem>
+                    <SelectItem value="amount">Amount</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between px-0.5 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5"><UserRound className="h-3.5 w-3.5" />{total} Results</span>
+                <button type="button" onClick={loadDues} className="flex items-center gap-1.5 hover:text-foreground">
+                  <RefreshCw className="h-3.5 w-3.5" />Refresh
+                </button>
+              </div>
+            </div>
+
             {loading ? (
               <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
             ) : dues.length === 0 ? (
@@ -517,80 +660,78 @@ export default function PaymentsPage() {
               </p>
             ) : (
               <>
-                <div className="space-y-3 md:hidden">
-                  {dues.map((d) => {
+                <div className="space-y-2 md:hidden">
+                  {mobileDues.map((d) => {
                     const remaining = Number(d.amountDue) - Number(d.amountPaid);
+                    const month = dueMonth(d.dueDate);
+                    const expanded = expandedDueId === d.id;
                     return (
-                      <div key={d.id} className="rounded-md border p-3 bg-card">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <Link
-                              href={`/members/${d.membershipId}`}
-                              className="font-medium text-primary hover:underline break-words"
-                            >
-                              {dueMemberDisplayName(d)}
-                            </Link>
-                            {dueMemberZone(d) && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Zone: {dueMemberZone(d)}
-                              </p>
-                            )}
-                            {dueMemberMembershipId(d) && (
-                              <p className="text-xs text-muted-foreground">
-                                ID: {dueMemberMembershipId(d)}
-                              </p>
-                            )}
-                          </div>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
-                          >
-                            {t(`payments.${d.status}`)}
+                      <div key={d.id} className="overflow-hidden rounded-md border bg-card shadow-sm">
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedDueId(expanded ? null : d.id)}
+                          className="grid w-full grid-cols-[48px_minmax(0,1fr)_auto] gap-3 p-3 text-left"
+                        >
+                          <span className="flex h-14 w-12 flex-col items-center justify-center rounded-md bg-slate-50 text-slate-700">
+                            <span className="text-[10px] font-semibold">{month.month}</span>
+                            <span className="text-xl font-bold leading-5">{month.year}</span>
                           </span>
-                        </div>
-                        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                          <div>
-                            <p className="text-muted-foreground">Description</p>
-                            <p className="font-medium">{getPaymentDueTitle(d)}</p>
-                            {getPaymentDueSubtitle(d) && (
-                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
-                            )}
-                            {getPaymentDuePeriodLine(d) && (
-                              <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
-                            )}
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-foreground">{dueMemberDisplayName(d)}</span>
+                            <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                              {dueMemberMembershipId(d) ? `ID ${dueMemberMembershipId(d)}` : "No member ID"}
+                              {dueMemberArea(d) ? `  •  ${dueMemberArea(d)}` : ""}
+                            </span>
+                            <span className="mt-1 block truncate text-xs font-medium text-foreground">{getPaymentDueTitle(d)}</span>
+                            <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                              Paid Rs.{Number(d.amountPaid).toFixed(2)} of Rs.{Number(d.amountDue).toFixed(2)}
+                            </span>
+                          </span>
+                          <span className="flex min-w-[70px] flex-col items-end justify-between self-stretch">
+                            <span className={`rounded px-2 py-1 text-[9px] font-semibold uppercase ${statusColors[d.status] ?? ""}`}>
+                              {t(`payments.${d.status}`)}
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="text-base font-semibold tabular-nums text-foreground">Rs.{remaining.toFixed(2)}</span>
+                              <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                            </span>
+                          </span>
+                        </button>
+
+                        {expanded ? (
+                          <div className="mx-3 mb-3 rounded-md border bg-card p-3">
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground"><UserRound className="h-3.5 w-3.5" />Full Name</span>
+                              <span className="text-right font-medium">{dueMemberFullName(d)}</span>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              {d.status !== "paid" && remaining > 0 ? (
+                                <Button size="sm" variant="cashIn" className="w-full" onClick={() => openPayDialog(d)}>
+                                  <ArrowDownToLine className="mr-2 h-4 w-4" />Receive Payment
+                                </Button>
+                              ) : null}
+                              <div className={`grid gap-2 ${canManage && d.status !== "paid" ? "grid-cols-2" : "grid-cols-1"}`}>
+                                {canManage && d.status !== "paid" ? (
+                                  <Button size="sm" variant="neutralOutline" onClick={() => openEditDue(d)}>
+                                    <Pencil className="mr-2 h-3.5 w-3.5" />Edit
+                                  </Button>
+                                ) : null}
+                                <Button size="sm" variant="neutralOutline" className="border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" asChild>
+                                  <Link href={`/members/${d.membershipId}`}>
+                                    <UserRound className="mr-2 h-3.5 w-3.5" />Open Member Record
+                                  </Link>
+                                </Button>
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">Full Name</p>
-                            <p className="font-medium break-words">{dueMemberFullName(d)}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">{t("payments.amountDue")}</p>
-                            <p className="font-medium tabular-nums">{Number(d.amountDue).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">{t("payments.paid")}</p>
-                            <p className="font-medium tabular-nums">{Number(d.amountPaid).toFixed(2)}</p>
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground">{t("payments.remaining")}</p>
-                            <p className="font-medium tabular-nums">{remaining.toFixed(2)}</p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex gap-2">
-                          {d.status !== "paid" && remaining > 0 && (
-                            <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
-                              <Banknote className="mr-2 h-4 w-4" />Receive
-                            </Button>
-                          )}
-                          {canManage && d.status !== "paid" && (
-                            <Button size="sm" variant="neutralOutline" onClick={() => openEditDue(d)}>
-                              <Pencil className="h-3.5 w-3.5 mr-1" />
-                              Edit Due
-                            </Button>
-                          )}
-                        </div>
+                        ) : null}
                       </div>
                     );
                   })}
+                  <p className="flex items-center gap-1.5 px-1 pt-2 text-[10px] text-muted-foreground">
+                    <LockKeyhole className="h-3 w-3" />Dues are shown based on the selected filters.
+                  </p>
                 </div>
 
                 <div className="hidden md:block rounded-md border overflow-x-auto">
