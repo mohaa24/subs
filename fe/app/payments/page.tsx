@@ -2,7 +2,7 @@
 
 import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -89,6 +89,8 @@ export default function PaymentsPage() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const view = pathname.endsWith("/history") ? "history" : "dues";
 
   const [dues, setDues] = useState<PaymentDue[]>([]);
   const [total, setTotal] = useState(0);
@@ -141,13 +143,15 @@ export default function PaymentsPage() {
       return;
     }
 
-    api<DueType[]>("/due-types")
-      .then((items) => setDueTypes(items.filter((item) => item.isActive)))
-      .catch(() => setDueTypes([]));
-
     api<Zone[]>("/zones", { params: { includeInactive: "true" } })
       .then(setZones)
       .catch(() => setZones([]));
+
+    if (view !== "dues") return;
+
+    api<DueType[]>("/due-types")
+      .then((items) => setDueTypes(items.filter((item) => item.isActive)))
+      .catch(() => setDueTypes([]));
 
     api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } })
       .then((items) => {
@@ -159,10 +163,10 @@ export default function PaymentsPage() {
         setPayDepositAccountId((current) => current || cashOnHand?.id || cashBankAccounts[0]?.id || "");
       })
       .catch(() => setDepositAccounts([]));
-  }, [user?.organizationId]);
+  }, [user?.organizationId, view]);
 
   function loadDues() {
-    if (!user) return;
+    if (!user || view !== "dues") return;
     const params: Record<string, string> = {
       page: String(page),
       limit: String(limit),
@@ -182,10 +186,10 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadDues();
-  }, [user, page, statusFilter, dueTypeFilter, searchQ]);
+  }, [user, page, statusFilter, dueTypeFilter, searchQ, view]);
 
   function loadHistory() {
-    if (!user) return;
+    if (!user || view !== "history") return;
     setHistoryLoading(true);
     api<{ items: Payment[]; total: number }>("/payments/history", {
       params: {
@@ -207,7 +211,7 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadHistory();
-  }, [user, historyPage, historySearchQ]);
+  }, [user, historyPage, historySearchQ, view]);
 
   async function openReceiptForPayment(paymentId: string) {
     try {
@@ -241,7 +245,6 @@ export default function PaymentsPage() {
         description: `${r.period}: ${r.created} created, ${r.skipped} skipped.`,
       });
       loadDues();
-      loadHistory();
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("common.saveFailed");
       setGenResult(msg);
@@ -346,7 +349,6 @@ export default function PaymentsPage() {
       toast({ title: "Payment reversed", description: "The payment has been reversed successfully." });
       setReverseTarget(null);
       setReverseReason("");
-      loadDues();
       loadHistory();
     } catch (err) {
       toast({
@@ -428,11 +430,11 @@ export default function PaymentsPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="p-6 max-w-5xl mx-auto">
-        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: t("reports.payments") }]} />
+        <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: view === "dues" ? "Dues Overview" : "Payment History" }]} />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-          <h1 className="text-xl font-semibold text-foreground">{t("payments.title")}</h1>
-          {canManage && (
+          <h1 className="text-xl font-semibold text-foreground">{view === "dues" ? "Dues Overview" : "Payment History"}</h1>
+          {view === "dues" && canManage && (
             <div className="flex gap-2">
               <Button size="sm" variant="warning" onClick={handleMarkOverdue}>
                 <AlertTriangle className="mr-2 h-4 w-4" />
@@ -446,11 +448,11 @@ export default function PaymentsPage() {
           )}
         </div>
 
-        {genResult && (
+        {view === "dues" && genResult && (
           <p className="text-sm mb-4 text-muted-foreground">{genResult}</p>
         )}
 
-        <Card>
+        {view === "dues" ? <Card>
           <CardHeader className="pb-2">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
@@ -702,9 +704,9 @@ export default function PaymentsPage() {
               </>
             )}
           </CardContent>
-        </Card>
+        </Card> : null}
 
-        <Card className="mt-6">
+        {view === "history" ? <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Payment History</CardTitle>
             <form
@@ -903,7 +905,7 @@ export default function PaymentsPage() {
               </>
             )}
           </CardContent>
-        </Card>
+        </Card> : null}
       </main>
 
       <RecordPaymentDialog

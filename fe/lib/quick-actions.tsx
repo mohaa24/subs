@@ -29,7 +29,7 @@ export const SIDEBAR_QUICK_ACTIONS: QuickAction[] = [
   action("nav-dashboard", "Dashboard", "View your organization overview", "/", LayoutDashboard, "text-blue-600 bg-blue-500/10"),
   action("nav-manage-members", "Manage Members", "Manage memberships", "/members", Users, "text-indigo-600 bg-indigo-500/10"),
   action("nav-people-profile", "People Profile", "Manage people profiles", "/persons", Users, "text-indigo-600 bg-indigo-500/10"),
-  action("nav-member-transactions", "Member Transactions", "View payment history", "/payments", Users, "text-indigo-600 bg-indigo-500/10"),
+  action("nav-member-transactions", "Member Transactions", "View payment history", "/payments/history", Users, "text-indigo-600 bg-indigo-500/10"),
   action("nav-member-payments", "Member Payments", "Record and review member payments", "/payments", ArrowDownToLine, "text-emerald-600 bg-emerald-500/10"),
   action("nav-income-accounts", "Income Accounts", "Record income and collections", "/cash-in", ArrowDownToLine, "text-emerald-600 bg-emerald-500/10"),
   action("nav-expense-accounts", "Expense Accounts", "Record expenses and settlements", "/cash-out", ArrowUpFromLine, "text-rose-600 bg-rose-500/10"),

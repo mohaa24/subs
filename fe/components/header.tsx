@@ -81,7 +81,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Manage Members", href: "/members", actionKey: "nav-manage-members" },
       { label: "People Profile", href: "/persons", actionKey: "nav-people-profile" },
-      { label: "Member Transactions", href: "/payments", actionKey: "nav-member-transactions" },
+      { label: "Member Transactions", href: "/payments/history", actionKey: "nav-member-transactions" },
     ],
   },
   {

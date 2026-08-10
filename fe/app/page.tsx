@@ -590,7 +590,7 @@ function HomePageContent() {
           title: t("payments.paymentHistory"),
           description: t("payments.paymentHistory"),
           icon: Repeat,
-          href: "/payments",
+          href: "/payments/history",
         },
         {
           actionKey: "payment-scan",
