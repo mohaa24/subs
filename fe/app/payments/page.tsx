@@ -33,7 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Download, Search, RotateCcw, Pencil, AlertTriangle, WandSparkles } from "lucide-react";
+import { Banknote, ChevronLeft, ChevronRight, Search, RotateCcw, Pencil, AlertTriangle, WandSparkles } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -576,7 +576,7 @@ export default function PaymentsPage() {
                         <div className="mt-3 flex gap-2">
                           {d.status !== "paid" && remaining > 0 && (
                             <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
-                              <Download className="mr-2 h-4 w-4" />Receive
+                              <Banknote className="mr-2 h-4 w-4" />Receive
                             </Button>
                           )}
                           {canManage && d.status !== "paid" && (
@@ -658,7 +658,7 @@ export default function PaymentsPage() {
                               <div className="flex items-center justify-end gap-1">
                                 {d.status !== "paid" && remaining > 0 && (
                                   <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
-                                    <Download className="mr-2 h-4 w-4" />Receive
+                                    <Banknote className="mr-2 h-4 w-4" />Receive
                                   </Button>
                                 )}
                                 {canManage && d.status !== "paid" && (

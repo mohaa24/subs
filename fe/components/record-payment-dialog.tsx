@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { Download } from "lucide-react";
+import { Banknote } from "lucide-react";
 import type { PaymentDue } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +82,7 @@ export function RecordPaymentDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5 text-[hsl(var(--action-cash-in))]" />
+            <Banknote className="h-5 w-5 text-[hsl(var(--action-cash-in))]" />
             {title}
           </DialogTitle>
         </DialogHeader>
@@ -166,7 +166,7 @@ export function RecordPaymentDialog({
 
           <div className="flex gap-2">
             <Button type="submit" variant="cashIn" disabled={submitting} className="flex-1">
-              <Download className="mr-2 h-4 w-4" />
+              <Banknote className="mr-2 h-4 w-4" />
               {submitting ? submittingLabel : submitLabel}
             </Button>
             <Button type="button" variant="dangerOutline" onClick={() => onOpenChange(false)}>

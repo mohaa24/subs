@@ -4,18 +4,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
-  ArrowDownToLine,
-  ArrowUpFromLine,
   Banknote,
+  BanknoteArrowDown,
+  BanknoteArrowUp,
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  Download,
   Info,
   Plus,
   ReceiptText,
   Search,
-  Upload,
   Undo2,
   X,
 } from "lucide-react";
@@ -566,8 +564,8 @@ function PayableDashboard(props: {
 
       <div className="grid gap-3 md:grid-cols-4">
         <Metric icon={Banknote} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} intent="outstanding" />
-        <Metric icon={ArrowDownToLine} label="Total Borrowed" value={formatRs(props.overview?.totals.totalBorrowed ?? 0)} intent="cashIn" />
-        <Metric icon={ArrowUpFromLine} label="Total Settled" value={formatRs(props.overview?.totals.totalSettled ?? 0)} intent="cashOut" />
+        <Metric icon={BanknoteArrowDown} label="Total Borrowed" value={formatRs(props.overview?.totals.totalBorrowed ?? 0)} intent="cashIn" />
+        <Metric icon={BanknoteArrowUp} label="Total Settled" value={formatRs(props.overview?.totals.totalSettled ?? 0)} intent="cashOut" />
         <Metric icon={Banknote} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
       </div>
 
@@ -701,14 +699,14 @@ function PayableDetailView(props: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric icon={ArrowDownToLine} label="Total Borrowed" value={formatRs(props.detail.summary.totalBorrowed)} intent="cashIn" />
-        <Metric icon={ArrowUpFromLine} label="Total Settled" value={formatRs(props.detail.summary.totalSettled)} intent="cashOut" />
-        <Metric icon={Banknote} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
+        <Metric icon={BanknoteArrowDown} label="Total Borrowed" value={formatRs(props.detail.summary.totalBorrowed)} intent="cashIn" />
+        <Metric icon={BanknoteArrowUp} label="Total Settled" value={formatRs(props.detail.summary.totalSettled)} intent="cashOut" />
+        <Metric icon={Banknote} label="Total Outstanding" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
-        {!props.hideManagementActions ? <Button variant="cashIn" onClick={props.onBorrowed} disabled={!props.canManage}><Download className="mr-2 h-4 w-4" />Receive Loan</Button> : null}
-        <Button variant="cashOut" onClick={props.onSettled} disabled={!props.canManage}><Upload className="mr-2 h-4 w-4" />Repay</Button>
+        {!props.hideManagementActions ? <Button variant="cashIn" onClick={props.onBorrowed} disabled={!props.canManage}><Banknote className="mr-2 h-4 w-4" />Receive Loan</Button> : null}
+        <Button variant="cashOut" onClick={props.onSettled} disabled={!props.canManage}><BanknoteArrowUp className="mr-2 h-4 w-4" />Repay</Button>
         {!props.hideManagementActions ? <Button variant="neutralOutline" onClick={props.onClose} disabled={!props.canManage || account.status === "closed"}><X className="mr-2 h-4 w-4" />Close Account</Button> : null}
       </div>
 
@@ -1005,7 +1003,7 @@ function TransactionDialog(props: {
           <div className="flex justify-end gap-2">
             <Button type="button" variant="dangerOutline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
             <Button type="submit" variant={props.mode === "borrowed" ? "cashIn" : "cashOut"} disabled={props.submitting}>
-              {props.mode === "borrowed" ? <Download className="mr-2 h-4 w-4" /> : <Upload className="mr-2 h-4 w-4" />}
+              {props.mode === "borrowed" ? <Banknote className="mr-2 h-4 w-4" /> : <BanknoteArrowUp className="mr-2 h-4 w-4" />}
               {props.submitting ? "Saving..." : props.mode === "borrowed" ? "Receive Loan" : "Repay"}
             </Button>
           </div>

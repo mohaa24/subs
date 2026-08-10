@@ -51,12 +51,13 @@ import {
   ArrowUpWideNarrow,
   QrCode,
   Download,
-  BadgeCheck,
   Banknote,
+  BanknoteCheck,
   Edit,
   DollarSign,
   CheckCircle2,
   AlertTriangle,
+  TriangleAlert,
   Calendar,
   CreditCard,
   Shield,
@@ -1067,7 +1068,7 @@ export default function MembershipDetailPage() {
             <div className="space-y-6">
 
               {/* ── Headcount Stat Widgets ────────────────────── */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <MetricTile icon={Users} label="Head Count" value={String(totalHeadcount)} intent="user" />
                 <MetricTile icon={UserPlus} label="Adults (18+)" value={String(adults)} intent="user" />
                 <MetricTile icon={User} label="Youth (13–17)" value={String(youth)} intent="user" />
@@ -1365,10 +1366,10 @@ export default function MembershipDetailPage() {
 
               {/* Payment Statistics */}
               {balance && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <MetricTile icon={Banknote} label="Total Dues" value={`Rs. ${balance.totalDue.toFixed(2)}`} intent="outstanding" />
-                  <MetricTile icon={BadgeCheck} label="Total Received" value={`Rs. ${balance.totalPaid.toFixed(2)}`} intent="cashIn" />
-                  <MetricTile icon={AlertTriangle} label="Outstanding Dues" value={`Rs. ${balance.outstanding.toFixed(2)}`} intent="outstanding" />
+                  <MetricTile icon={BanknoteCheck} label="Total Received" value={`Rs. ${balance.totalPaid.toFixed(2)}`} intent="cashIn" />
+                  <MetricTile icon={TriangleAlert} label="Outstanding Dues" value={`Rs. ${balance.outstanding.toFixed(2)}`} intent="outstanding" />
                   <MetricTile icon={Wallet} label="Available Credit" value={`Rs. ${balance.creditBalance.toFixed(2)}`} intent="credit" />
                 </div>
               )}
@@ -1424,7 +1425,7 @@ export default function MembershipDetailPage() {
                     )}
                     {canRecordCreditPayment && (
                       <Button size="sm" variant="cashIn" className="gap-1.5" onClick={openCreditPaymentDialog}>
-                        <Download className="h-4 w-4" />
+                        <Banknote className="h-4 w-4" />
                         Receive
                       </Button>
                     )}
@@ -1477,7 +1478,7 @@ export default function MembershipDetailPage() {
                               <div className="mt-3 flex gap-2">
                                 {d.status !== "paid" && remaining > 0 && (
                                   <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
-                                    <Download className="h-3 w-3" />
+                                    <Banknote className="h-3 w-3" />
                                     Receive
                                   </Button>
                                 )}
@@ -1549,7 +1550,7 @@ export default function MembershipDetailPage() {
                                     <div className="flex items-center justify-end gap-1">
                                       {d.status !== "paid" && remaining > 0 && (
                                         <Button size="sm" variant="cashIn" className="h-7 text-xs gap-1" onClick={() => openPayDialog(d)}>
-                                          <Download className="h-3 w-3" />
+                                          <Banknote className="h-3 w-3" />
                                           Receive
                                         </Button>
                                       )}

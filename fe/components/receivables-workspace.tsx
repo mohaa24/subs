@@ -4,18 +4,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
-  ArrowDownToLine,
-  ArrowUpFromLine,
   Banknote,
+  BanknoteArrowDown,
+  BanknoteArrowUp,
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  Download,
   Info,
   Plus,
   ReceiptText,
   Search,
-  Upload,
   Undo2,
   X,
 } from "lucide-react";
@@ -560,8 +558,8 @@ function ReceivableDashboard(props: {
 
       <div className="grid gap-3 md:grid-cols-4">
         <Metric icon={Banknote} label="Total Opening" value={formatRs(props.overview?.totals.openingBalance ?? 0)} intent="outstanding" />
-        <Metric icon={ArrowUpFromLine} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} intent="cashOut" />
-        <Metric icon={ArrowDownToLine} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} intent="cashIn" />
+        <Metric icon={BanknoteArrowUp} label="Total Given" value={formatRs(props.overview?.totals.totalGiven ?? 0)} intent="cashOut" />
+        <Metric icon={BanknoteArrowDown} label="Total Repaid" value={formatRs(props.overview?.totals.totalRepaid ?? 0)} intent="cashIn" />
         <Metric icon={Banknote} label="Total Outstanding" value={formatRs(props.overview?.totals.outstandingBalance ?? 0)} intent="outstanding" />
       </div>
 
@@ -695,14 +693,14 @@ function ReceivableDetailView(props: {
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric icon={ArrowUpFromLine} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} intent="cashOut" />
-        <Metric icon={ArrowDownToLine} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} intent="cashIn" />
-        <Metric icon={Banknote} label="Outstanding Balance" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
+        <Metric icon={BanknoteArrowUp} label="Total Given" value={formatRs(props.detail.summary.totalGiven)} intent="cashOut" />
+        <Metric icon={BanknoteArrowDown} label="Total Repaid" value={formatRs(props.detail.summary.totalRepaid)} intent="cashIn" />
+        <Metric icon={Banknote} label="Total Outstanding" value={formatRs(props.detail.summary.outstandingBalance)} intent="outstanding" />
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
-        {!props.hideManagementActions ? <Button variant="cashOut" onClick={props.onGiven} disabled={!props.canManage}><Upload className="mr-2 h-4 w-4" />Give Loan</Button> : null}
-        <Button variant="cashIn" onClick={props.onRepaid} disabled={!props.canManage}><Download className="mr-2 h-4 w-4" />Receive Repayment</Button>
+        {!props.hideManagementActions ? <Button variant="cashOut" onClick={props.onGiven} disabled={!props.canManage}><BanknoteArrowUp className="mr-2 h-4 w-4" />Give Loan</Button> : null}
+        <Button variant="cashIn" onClick={props.onRepaid} disabled={!props.canManage}><Banknote className="mr-2 h-4 w-4" />Receive</Button>
         {!props.hideManagementActions ? <Button variant="neutralOutline" onClick={props.onClose} disabled={!props.canManage || account.status === "closed"}><X className="mr-2 h-4 w-4" />Close Account</Button> : null}
       </div>
 
@@ -999,8 +997,8 @@ function TransactionDialog(props: {
           <div className="flex justify-end gap-2">
             <Button type="button" variant="dangerOutline" onClick={() => props.onOpenChange(false)}>Cancel</Button>
             <Button type="submit" variant={props.mode === "given" ? "cashOut" : "cashIn"} disabled={props.submitting}>
-              {props.mode === "given" ? <Upload className="mr-2 h-4 w-4" /> : <Download className="mr-2 h-4 w-4" />}
-              {props.submitting ? "Saving..." : props.mode === "given" ? "Give Loan" : "Receive Repayment"}
+              {props.mode === "given" ? <BanknoteArrowUp className="mr-2 h-4 w-4" /> : <Banknote className="mr-2 h-4 w-4" />}
+              {props.submitting ? "Saving..." : props.mode === "given" ? "Give Loan" : "Receive"}
             </Button>
           </div>
         </form>

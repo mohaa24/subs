@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownToLine, ArrowLeft, ArrowLeftRight, ArrowUpFromLine, Banknote, Download, Landmark, ReceiptText, Undo2, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Banknote, BanknoteArrowDown, BanknoteArrowUp, Landmark, ReceiptText, Undo2, X } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -397,13 +397,13 @@ export default function FundDetailPage() {
             <div className="flex flex-wrap gap-2">
               {fundMode !== "cash-out" ? (
                 <Button variant="cashIn" onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
-                  <Download className="mr-2 h-4 w-4" />
+                  <Banknote className="mr-2 h-4 w-4" />
                   Receive
                 </Button>
               ) : null}
               {fundMode !== "cash-in" ? (
                 <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant="cashOut">
-                  <Upload className="mr-2 h-4 w-4" />Pay Expense
+                  <BanknoteArrowUp className="mr-2 h-4 w-4" />Pay Expense
                 </Button>
               ) : null}
               {!fundMode ? (
@@ -419,8 +419,8 @@ export default function FundDetailPage() {
         {error ? <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard icon={ArrowDownToLine} title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} intent="cashIn" />
-          <SummaryCard icon={ArrowUpFromLine} title="Total Spent" value={-(fund?.summary?.spent ?? 0)} intent="cashOut" />
+          <SummaryCard icon={BanknoteArrowDown} title="Total Collected" value={(fund?.summary?.opening ?? 0) + (fund?.summary?.received ?? 0)} intent="cashIn" />
+          <SummaryCard icon={BanknoteArrowUp} title="Total Spent" value={-(fund?.summary?.spent ?? 0)} intent="cashOut" />
           <SummaryCard
             icon={ArrowLeftRight}
             title="Total Transferred"
@@ -498,7 +498,7 @@ export default function FundDetailPage() {
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="dangerOutline" onClick={() => setCollectionOpen(false)}>Cancel</Button>
-              <Button variant="cashIn" disabled={submitting}><Download className="mr-2 h-4 w-4" />{submitting ? "Saving..." : "Receive"}</Button>
+              <Button variant="cashIn" disabled={submitting}><Banknote className="mr-2 h-4 w-4" />{submitting ? "Saving..." : "Receive"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -556,7 +556,7 @@ export default function FundDetailPage() {
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="dangerOutline" onClick={() => setExpenseOpen(false)}>Cancel</Button>
-              <Button variant="cashOut" disabled={submitting}><Upload className="mr-2 h-4 w-4" />{submitting ? "Saving..." : "Pay Expense"}</Button>
+              <Button variant="cashOut" disabled={submitting}><BanknoteArrowUp className="mr-2 h-4 w-4" />{submitting ? "Saving..." : "Pay Expense"}</Button>
             </div>
           </form>
         </DialogContent>
