@@ -285,8 +285,19 @@ export interface Payment {
   collectedByUserId: string;
   note?: string | null;
   createdAt: string;
-  paymentDue?: { id?: string; period: string; amountDue: number } | null;
+  paymentDue?: {
+    id?: string;
+    period: string;
+    periodStart?: string | null;
+    periodEnd?: string | null;
+    amountDue: number;
+  } | null;
   collectedBy?: { id: string; email: string };
+  isReversed?: boolean;
+  reversedAt?: string | null;
+  reversedByUserId?: string | null;
+  reversalReason?: string | null;
+  reversedBy?: { id: string; email: string } | null;
   membership?: {
     id?: string;
     membershipNo: string;

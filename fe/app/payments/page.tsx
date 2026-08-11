@@ -39,6 +39,7 @@ import {
   ArrowUpDown,
   Banknote,
   Bookmark,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -46,12 +47,15 @@ import {
   ListFilter,
   Pencil,
   QrCode,
+  ReceiptText,
   RefreshCw,
   RotateCcw,
   Search,
   UserRound,
+  UserRoundCheck,
   WandSparkles,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -73,6 +77,20 @@ const statusColors: Record<string, string> = {
   pending: "bg-gray-100 text-gray-800",
   overdue: "bg-red-100 text-red-800",
 };
+
+function PaymentHistoryDetail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] text-muted-foreground">{label}</span>
+        <span className="block break-words font-medium text-foreground">{value}</span>
+      </span>
+    </div>
+  );
+}
 
 function getPaymentPeriodLabel(payment: Payment | null) {
   if (!payment) return "—";
@@ -128,6 +146,7 @@ export default function PaymentsPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const historyLimit = 20;
   const [historySearchQ, setHistorySearchQ] = useState("");
+  const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState("");
@@ -468,6 +487,53 @@ export default function PaymentsPage() {
     const areaCode = due.membership?.areaCode;
     if (areaCode === undefined || areaCode === null) return null;
     return zones.find((item) => item.code === areaCode)?.name ?? `Zone ${areaCode}`;
+  };
+
+  const historyGroups = useMemo(() => {
+    const groups = new Map<string, Payment[]>();
+    history.forEach((payment) => {
+      const key = new Date(payment.paymentDate).toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" });
+      groups.set(key, [...(groups.get(key) ?? []), payment]);
+    });
+    return Array.from(groups.entries()).map(([date, payments]) => ({ date, payments }));
+  }, [history]);
+
+  const historyDateLabel = (date: string) =>
+    new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+  const detailDateLabel = (date: string | null | undefined, includeTime = false) => {
+    if (!date) return "—";
+    return new Date(date).toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+    });
+  };
+
+  const paymentMethodLabel = (method: Payment["paymentMethod"]) => {
+    if (method === "bank_transfer") return "Bank Transfer";
+    if (method === "card") return "Card";
+    if (method === "other") return "Other";
+    return "Cash";
+  };
+
+  const paymentPeriodLabel = (payment: Payment) => {
+    const start = payment.paymentDue?.periodStart;
+    const end = payment.paymentDue?.periodEnd;
+    if (start || end) {
+      return [detailDateLabel(start), detailDateLabel(end)].filter((value) => value !== "—").join(" - ");
+    }
+    const period = getPaymentPeriodLabel(payment);
+    if (/^\d{4}-\d{2}$/.test(period)) {
+      return new Date(`${period}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    }
+    return period;
   };
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
@@ -847,11 +913,11 @@ export default function PaymentsPage() {
           </CardContent>
         </Card> : null}
 
-        {view === "history" ? <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Payment History</CardTitle>
+        {view === "history" ? <Card className="border-0 shadow-none md:border md:shadow-sm">
+          <CardHeader className="px-0 pb-3 md:px-6 md:pb-2">
+            <CardTitle className="hidden text-sm font-medium md:block">Payment History</CardTitle>
             <form
-              className="mt-2 flex gap-2"
+              className="relative mt-0 flex gap-2 md:mt-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 setHistoryPage(1);
@@ -864,79 +930,99 @@ export default function PaymentsPage() {
                   setHistorySearchQ(e.target.value);
                   setHistoryPage(1);
                 }}
-                className="max-w-sm"
+                className="h-11 pl-10 text-xs md:h-10 md:max-w-sm md:text-sm"
               />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </form>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0 md:p-6 md:pt-0">
             {historyLoading ? (
               <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
             ) : history.length === 0 ? (
               <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
             ) : (
               <>
-                <div className="space-y-3 md:hidden">
-                  {history.map((p) => (
-                    <div key={p.id} className="rounded-md border p-3 bg-card">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Link
-                            href={`/members/${p.membershipId}`}
-                            className="font-medium text-primary hover:underline break-words"
-                          >
-                            {paymentMemberDisplayName(p)}
-                          </Link>
-                          {paymentMemberZone(p) && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Zone: {paymentMemberZone(p)}
-                            </p>
-                          )}
-                          {paymentMemberMembershipId(p) && (
-                            <p className="text-xs text-muted-foreground">
-                              ID: {paymentMemberMembershipId(p)}
-                            </p>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(p.paymentDate).toLocaleDateString()}
-                        </p>
+                <div className="space-y-2 md:hidden">
+                  {historyGroups.map((group) => (
+                    <section key={group.date}>
+                      <div className="mb-1.5 flex items-center gap-2 bg-muted/45 px-2.5 py-2 text-xs font-medium text-foreground">
+                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                        {historyDateLabel(group.date)}
                       </div>
-                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                        <div>
-                          <p className="text-muted-foreground">{t("payments.period")}</p>
-                          <p className="font-medium">{getPaymentPeriodLabel(p)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Full Name</p>
-                          <p className="font-medium break-words">{paymentMemberFullName(p)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">{t("payments.amount")}</p>
-                          <p className="font-medium tabular-nums">{Number(p.amount).toFixed(2)}</p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-muted-foreground">User ID</p>
-                          <p className="font-medium">{p.collectedBy?.email ?? "—"}</p>
-                        </div>
+                      <div className="divide-y overflow-hidden rounded-md border bg-card shadow-sm">
+                        {group.payments.map((payment) => {
+                          const reversed = Boolean(payment.isReversed);
+                          const expanded = expandedPaymentId === payment.id;
+                          const memberNumber = paymentMemberMembershipId(payment);
+                          return (
+                            <div key={payment.id}>
+                              <button
+                                type="button"
+                                aria-expanded={expanded}
+                                onClick={() => setExpandedPaymentId(expanded ? null : payment.id)}
+                                className="grid w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left"
+                              >
+                                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                  <ArrowDownToLine className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-sm font-semibold text-foreground">
+                                    {paymentMemberDisplayName(payment)}{memberNumber ? ` (${memberNumber})` : ""}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                                    Receipt #{payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}
+                                  </span>
+                                </span>
+                                <span className="flex min-w-[82px] items-center justify-end gap-2">
+                                  <span className="flex flex-col items-end">
+                                    <span className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600" : "text-emerald-700"}`}>
+                                      Rs. {Number(payment.amount).toFixed(2)}
+                                    </span>
+                                    <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[9px] font-medium ${reversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                                      {reversed ? "Reversed" : "Paid"}
+                                    </span>
+                                  </span>
+                                  <ChevronDown className={`h-4 w-4 shrink-0 text-primary transition-transform ${expanded ? "rotate-180" : ""}`} />
+                                </span>
+                              </button>
+
+                              {expanded ? (
+                                <div className="mx-3 mb-3 border-t pt-2">
+                                  <div className="divide-y text-xs">
+                                    <PaymentHistoryDetail icon={UserRound} label="Full Name" value={paymentMemberFullName(payment)} />
+                                    <PaymentHistoryDetail icon={UserRoundCheck} label="Collected By" value={payment.collectedBy?.email ?? "—"} />
+                                    <PaymentHistoryDetail icon={Banknote} label="Payment Method" value={paymentMethodLabel(payment.paymentMethod)} />
+                                    <PaymentHistoryDetail icon={CalendarDays} label="Payment Period" value={paymentPeriodLabel(payment)} />
+                                  </div>
+
+                                  {reversed ? (
+                                    <div className="mt-2 border-t pt-2">
+                                      <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Reversal Details</p>
+                                      <div className="divide-y text-xs">
+                                        <PaymentHistoryDetail icon={UserRoundCheck} label="Reversed By" value={payment.reversedBy?.email ?? "—"} />
+                                        <PaymentHistoryDetail icon={Pencil} label="Reason" value={payment.reversalReason ?? "—"} />
+                                        <PaymentHistoryDetail icon={CalendarDays} label="Reversed On" value={detailDateLabel(payment.reversedAt, true)} />
+                                      </div>
+                                    </div>
+                                  ) : null}
+
+                                  <div className={`mt-2 grid gap-2 ${canManage && !reversed ? "grid-cols-2" : "grid-cols-1"}`}>
+                                    <Button size="sm" variant="neutralOutline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" onClick={() => openReceiptForPayment(payment.id)}>
+                                      <ReceiptText className="mr-2 h-3.5 w-3.5" />Receipt
+                                    </Button>
+                                    {canManage && !reversed ? (
+                                      <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(payment); setReverseReason(""); }}>
+                                        <RotateCcw className="mr-2 h-3.5 w-3.5" />Reverse
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
-                      {(p as any).isReversed && (
-                        <div className="mt-2 flex items-center gap-1 text-xs text-red-600">
-                          <RotateCcw className="h-3 w-3" />
-                          Reversed{(p as any).reversalReason ? `: ${(p as any).reversalReason}` : ""}
-                        </div>
-                      )}
-                      <div className="mt-3 flex gap-2">
-                        <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(p.id)}>
-                          View Receipt
-                        </Button>
-                        {canManage && !(p as any).isReversed && (
-                          <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(p); setReverseReason(""); }}>
-                            <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                            Reverse
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                    </section>
                   ))}
                 </div>
 
@@ -957,7 +1043,7 @@ export default function PaymentsPage() {
                     </thead>
                     <tbody>
                       {history.map((p) => (
-                        <tr key={p.id} className={`border-t ${(p as any).isReversed ? "opacity-50" : ""}`}>
+                        <tr key={p.id} className="border-t">
                           <td className="p-2.5">
                             {new Date(p.paymentDate).toLocaleDateString()}
                           </td>
@@ -981,19 +1067,16 @@ export default function PaymentsPage() {
                           </td>
                           <td className="p-2.5">{paymentMemberFullName(p)}</td>
                           <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>
-                          <td className={`p-2.5 text-right tabular-nums ${(p as any).isReversed ? "line-through" : ""}`}>
+                          <td className={`p-2.5 text-right font-medium tabular-nums ${p.isReversed ? "text-red-600" : "text-emerald-700"}`}>
                             {Number(p.amount).toFixed(2)}
                           </td>
                           <td className="p-2.5 text-muted-foreground">
                             {p.collectedBy?.email ?? "—"}
                           </td>
                           <td className="p-2.5">
-                            {(p as any).isReversed ? (
-                              <span className="text-xs text-red-600 flex items-center gap-1">
-                                <RotateCcw className="h-3 w-3" />
-                                Reversed
-                              </span>
-                            ) : null}
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${p.isReversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                              {p.isReversed ? "Reversed" : "Paid"}
+                            </span>
                           </td>
                           <td className="p-2.5 text-right">
                             <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(p.id)}>
@@ -1001,7 +1084,7 @@ export default function PaymentsPage() {
                             </Button>
                           </td>
                           <td className="p-2.5 text-center">
-                            {canManage && !(p as any).isReversed ? (
+                            {canManage && !p.isReversed ? (
                               <Button
                                 size="sm"
                                 variant="dangerOutline"

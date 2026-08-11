@@ -1189,8 +1189,9 @@ exports.paymentsRouter.get("/history", async (req, res) => {
                         hod: { select: { fullName: true, nameWithInitials: true } },
                     },
                 },
-                paymentDue: { select: { id: true, period: true, amountDue: true } },
+                paymentDue: { select: { id: true, period: true, periodStart: true, periodEnd: true, amountDue: true } },
                 collectedBy: { select: { id: true, email: true } },
+                reversedBy: { select: { id: true, email: true } },
             },
         }),
         prisma_js_1.prisma.payment.count({ where }),
@@ -1232,8 +1233,9 @@ exports.paymentsRouter.get("/history/:membershipId", async (req, res) => {
             take: limit,
             orderBy: { paymentDate: "desc" },
             include: {
-                paymentDue: { select: { period: true, amountDue: true } },
+                paymentDue: { select: { period: true, periodStart: true, periodEnd: true, amountDue: true } },
                 collectedBy: { select: { id: true, email: true } },
+                reversedBy: { select: { id: true, email: true } },
             },
         }),
         prisma_js_1.prisma.payment.count({
