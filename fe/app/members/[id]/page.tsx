@@ -1084,6 +1084,54 @@ export default function MembershipDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
+                  {/* Head of Household */}
+                  {membership.hod && (
+                    <div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <Home className="h-4 w-4 text-indigo-500" />
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Head of Household
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/30">
+                        <PersonAvatar name={membership.hod.fullName} />
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/persons/${membership.hod.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-sm font-medium transition-colors hover:text-primary"
+                          >
+                            {membership.hod.fullName}
+                            <ArrowUpRight className="h-3 w-3" />
+                          </Link>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {membership.hod.nameWithInitials}
+                            {membership.hod.dateOfBirth && (() => {
+                              const age = getAge(membership.hod.dateOfBirth);
+                              return age !== null ? ` · ${age} years` : "";
+                            })()}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {membership.hod.livingStatus && membership.hod.livingStatus !== "Active" ? (
+                            <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                              membership.hod.livingStatus === "Deceased"
+                                ? "border-red-200 bg-red-50 text-red-700"
+                                : "border-slate-200 bg-slate-100 text-slate-600"
+                            }`}>
+                              {membership.hod.livingStatus === "PermanentlyRelocated" ? "Relocated" : membership.hod.livingStatus}
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Spouse */}
                   {membership.spouse && (
                     <div>
