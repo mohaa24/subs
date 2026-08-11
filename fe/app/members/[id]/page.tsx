@@ -41,6 +41,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
+import { PAYMENT_REVERSAL_REASONS } from "@/lib/payment-reversal";
 import { ActivityFeedPanel } from "@/components/activity-feed-panel";
 import { RecordPaymentDialog } from "@/components/record-payment-dialog";
 import { MetricTile } from "@/components/ui/metric-tile";
@@ -1340,6 +1341,14 @@ export default function MembershipDetailPage() {
                         label: "Registered",
                         value: new Date(membership.dateOfRegistration).toLocaleDateString(),
                       },
+                      {
+                        label: "Mobile Number",
+                        value: membership.hod?.mobileNumber?.trim() || "Not Set",
+                      },
+                      {
+                        label: "WhatsApp Number",
+                        value: membership.hod?.whatsAppNumber?.trim() || "Not Set",
+                      },
                       { label: "Disability", value: yesNo(membership.disability) },
                       {
                         label: "Zakath Eligible",
@@ -2053,11 +2062,19 @@ export default function MembershipDetailPage() {
             </div>
             <div className="space-y-2">
               <Label>Reason for reversal *</Label>
-              <Input
+              <Select
                 value={reverseReason}
-                onChange={(e) => setReverseReason(e.target.value)}
-                placeholder="e.g. Wrong member, duplicate entry..."
-              />
+                onValueChange={setReverseReason}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reversal reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_REVERSAL_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-xs text-muted-foreground">This action is recorded in the audit trail and cannot be undone.</p>
             <div className="flex gap-2">

@@ -60,6 +60,7 @@ import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
+import { PAYMENT_REVERSAL_REASONS } from "@/lib/payment-reversal";
 import {
   getPaymentDuePeriodLine,
   getPaymentDueSubtitle,
@@ -1183,12 +1184,19 @@ export default function PaymentsPage() {
             </div>
             <div className="space-y-2">
               <Label>Reason for reversal *</Label>
-              <Input
+              <Select
                 value={reverseReason}
-                onChange={(e) => setReverseReason(e.target.value)}
-                placeholder="e.g. Wrong member, duplicate entry..."
-                required
-              />
+                onValueChange={setReverseReason}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a reversal reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_REVERSAL_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <p className="text-xs text-muted-foreground">
               This will undo the payment and adjust the due balance. This action is recorded in the audit trail.
