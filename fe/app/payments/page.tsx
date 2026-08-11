@@ -739,7 +739,7 @@ export default function PaymentsPage() {
                           onClick={() => setExpandedDueId(expanded ? null : d.id)}
                           className="grid w-full grid-cols-[48px_minmax(0,1fr)_auto] gap-3 p-3 text-left"
                         >
-                          <span className="flex h-14 w-12 flex-col items-center justify-center rounded-md bg-slate-50 text-slate-700">
+                          <span className="flex h-14 w-12 flex-col items-center justify-center rounded-md bg-slate-100 text-slate-600">
                             <span className="text-[10px] font-semibold">{month.month}</span>
                             <span className="text-xl font-bold leading-5">{month.year}</span>
                           </span>
@@ -749,7 +749,9 @@ export default function PaymentsPage() {
                               {dueMemberMembershipId(d) ? `ID ${dueMemberMembershipId(d)}` : "No member ID"}
                               {dueMemberArea(d) ? `  •  ${dueMemberArea(d)}` : ""}
                             </span>
-                            <span className="mt-1 block truncate text-xs font-medium text-foreground">{getPaymentDueTitle(d)}</span>
+                            <span className="mt-1 block truncate text-xs font-medium text-foreground">
+                              {d.dueType?.name ?? getPaymentDueTitle(d)}
+                            </span>
                             <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
                               Paid Rs.{Number(d.amountPaid).toFixed(2)} of Rs.{Number(d.amountDue).toFixed(2)}
                             </span>
@@ -785,7 +787,7 @@ export default function PaymentsPage() {
                                 ) : null}
                                 <Button size="sm" variant="neutralOutline" className="border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" asChild>
                                   <Link href={`/members/${d.membershipId}`}>
-                                    <UserRound className="mr-2 h-3.5 w-3.5" />Open Member Record
+                                    <UserRound className="mr-2 h-3.5 w-3.5" />Open Record
                                   </Link>
                                 </Button>
                               </div>
