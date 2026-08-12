@@ -234,7 +234,11 @@ function MenuPanel({
           const active = itemIsActive(pathname, item);
           const open = openGroups[item.key] ?? false;
           const baseClass = `group flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
-            active ? "bg-white/12 text-white" : "text-blue-50/90 hover:bg-white/10 hover:text-white"
+            active
+              ? item.children?.length
+                ? "text-white hover:bg-white/10"
+                : "bg-white/10 text-white"
+              : "text-blue-50/90 hover:bg-white/10 hover:text-white"
           }`;
 
           return (
@@ -259,7 +263,7 @@ function MenuPanel({
                           child.disabled
                             ? "cursor-not-allowed text-blue-100/40"
                             : childActive
-                              ? "bg-white/12 text-white"
+                              ? "bg-white/10 text-white"
                               : "text-blue-100/75 hover:bg-white/10 hover:text-white"
                         }`;
                         const childContent = (
