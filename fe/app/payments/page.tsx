@@ -81,27 +81,23 @@ const statusColors: Record<string, string> = {
   overdue: "bg-red-100 text-red-800",
 };
 
-const dueStatusTones: Record<DueStatus, { tile: string; text: string; badge: string; progress: string }> = {
+const dueStatusTones: Record<DueStatus, { text: string; badge: string; progress: string }> = {
   paid: {
-    tile: "border-emerald-100 bg-emerald-50 text-emerald-700",
     text: "text-emerald-700",
     badge: "bg-emerald-100 text-emerald-700",
     progress: "bg-emerald-500",
   },
   partial: {
-    tile: "border-amber-100 bg-amber-50 text-amber-700",
     text: "text-amber-700",
     badge: "bg-amber-100 text-amber-700",
     progress: "bg-amber-500",
   },
   pending: {
-    tile: "border-amber-100 bg-amber-50 text-amber-700",
     text: "text-amber-700",
     badge: "bg-amber-100 text-amber-700",
     progress: "bg-amber-500",
   },
   overdue: {
-    tile: "border-red-100 bg-red-50 text-red-700",
     text: "text-red-700",
     badge: "bg-red-100 text-red-700",
     progress: "bg-red-500",
@@ -641,12 +637,6 @@ export default function PaymentsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-              <span className="flex items-center gap-2"><UserRound className="h-4 w-4" />{total} Results</span>
-              <button type="button" onClick={loadDues} className="flex items-center gap-2 transition-colors hover:text-foreground">
-                <RefreshCw className="h-4 w-4" />Refresh
-              </button>
-            </div>
           </CardHeader>
           <CardContent className="p-0 md:p-6 md:pt-0">
             <div className="mb-3 space-y-3 md:hidden">
@@ -836,7 +826,7 @@ export default function PaymentsPage() {
                     return (
                       <div key={d.id} className="min-w-[1060px] rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md">
                         <div className="grid grid-cols-[64px_minmax(190px,1.35fr)_minmax(120px,.75fr)_minmax(190px,1.2fr)_90px_115px_150px] items-center gap-4 px-4 py-3">
-                          <div className={`flex h-14 w-14 flex-col items-center justify-center rounded-lg border ${tone.tile}`}>
+                          <div className="flex h-14 w-14 flex-col items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                             <span className="text-[11px] font-semibold leading-none">{month.month}</span>
                             <span className="mt-1 text-xl font-bold leading-none">{month.year}</span>
                           </div>
@@ -1116,7 +1106,7 @@ export default function PaymentsPage() {
 
                               {expanded ? (
                                 <div className={`mx-3 mb-3 rounded-md border-l-2 px-4 py-3 ${reversed ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
-                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center gap-5">
+                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px] items-center gap-5">
                                     <PaymentHistoryDetail icon={UserRound} label="Full Name" value={paymentMemberFullName(payment)} />
                                     <PaymentHistoryDetail icon={UserRoundCheck} label="Collected By" value={payment.collectedBy?.email ?? "—"} />
                                     <PaymentHistoryDetail icon={CalendarDays} label="Payment Period" value={paymentPeriodLabel(payment)} />
@@ -1135,10 +1125,11 @@ export default function PaymentsPage() {
                                   {reversed ? (
                                     <div className="mt-3 border-t border-red-100 pt-3">
                                       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-red-600">Reversal Details</p>
-                                      <div className="grid grid-cols-3 gap-5">
+                                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px] items-center gap-5">
                                         <PaymentHistoryDetail icon={UserRoundCheck} label="Reversed By" value={payment.reversedBy?.email ?? "—"} />
                                         <PaymentHistoryDetail icon={Pencil} label="Reason" value={payment.reversalReason ?? "—"} />
                                         <PaymentHistoryDetail icon={CalendarDays} label="Reversed On" value={detailDateLabel(payment.reversedAt, true)} />
+                                        <span aria-hidden="true" />
                                       </div>
                                     </div>
                                   ) : null}
