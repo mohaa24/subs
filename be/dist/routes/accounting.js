@@ -7,6 +7,7 @@ const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
 const accounting_js_1 = require("../lib/accounting.js");
+const audit_log_js_1 = require("../lib/audit-log.js");
 exports.accountingRouter = (0, express_1.Router)();
 exports.accountingRouter.use(auth_js_1.requireAuth);
 exports.accountingRouter.use(auth_js_1.withOrgScope);
@@ -1405,15 +1406,27 @@ exports.accountingRouter.post("/accounts", requireAccountingAdmin, asyncRoute(as
     });
     if (existing)
         return res.status(409).json({ error: "An account with this name already exists" });
-    const account = await prisma_js_1.prisma.accountingAccount.create({
-        data: {
+    const account = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const created = await tx.accountingAccount.create({
+            data: {
+                organizationId: orgId,
+                name: parsed.data.name,
+                accountType: parsed.data.accountType,
+                assetSubtype: parsed.data.assetSubtype ?? (0, accounting_js_1.defaultAccountSubtype)(parsed.data.accountType),
+                description: parsed.data.description ?? null,
+                createdByUserId: req.auth.userId,
+            },
+        });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
             organizationId: orgId,
-            name: parsed.data.name,
-            accountType: parsed.data.accountType,
-            assetSubtype: parsed.data.assetSubtype ?? (0, accounting_js_1.defaultAccountSubtype)(parsed.data.accountType),
-            description: parsed.data.description ?? null,
-            createdByUserId: req.auth.userId,
-        },
+            actorUserId: req.auth.userId,
+            action: "finance.account.created",
+            entityType: "accounting_account",
+            entityId: created.id,
+            summary: `Created account ${created.name}`,
+            metadata: { accountType: created.accountType, assetSubtype: created.assetSubtype },
+        });
+        return created;
     });
     return res.status(201).json(account);
 }));
@@ -1438,14 +1451,26 @@ exports.accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRou
     if (lineCount > 0 && parsed.data.isActive === false && account.systemKey) {
         return res.status(409).json({ error: "System accounts with activity cannot be archived" });
     }
-    const updated = await prisma_js_1.prisma.accountingAccount.update({
-        where: { id: account.id },
-        data: {
-            ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-            ...(parsed.data.assetSubtype !== undefined ? { assetSubtype: parsed.data.assetSubtype } : {}),
-            ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
-            ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
-        },
+    const updated = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const next = await tx.accountingAccount.update({
+            where: { id: account.id },
+            data: {
+                ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+                ...(parsed.data.assetSubtype !== undefined ? { assetSubtype: parsed.data.assetSubtype } : {}),
+                ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+                ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {}),
+            },
+        });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: account.organizationId,
+            actorUserId: req.auth.userId,
+            action: "finance.account.updated",
+            entityType: "accounting_account",
+            entityId: account.id,
+            summary: `Updated account ${next.name}`,
+            metadata: { changedFields: Object.keys(parsed.data) },
+        });
+        return next;
     });
     return res.json(updated);
 }));
@@ -1514,7 +1539,7 @@ exports.accountingRouter.post("/receivables", requireAccountingAdmin, asyncRoute
                 throw error;
             }
         }
-        return tx.accountingAccount.create({
+        const created = await tx.accountingAccount.create({
             data: {
                 organizationId: orgId,
                 name: parsed.data.name,
@@ -1527,6 +1552,16 @@ exports.accountingRouter.post("/receivables", requireAccountingAdmin, asyncRoute
                 createdByUserId: req.auth.userId,
             },
         });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.receivable.created",
+            entityType: "accounting_account",
+            entityId: created.id,
+            summary: `Created receivable ${created.name}`,
+            metadata: { assetSubtype: created.assetSubtype, counterpartyMembershipId: created.counterpartyMembershipId },
+        });
+        return created;
     });
     return res.status(201).json(serializeAccount(account));
 }));
@@ -1610,6 +1645,15 @@ exports.accountingRouter.post("/receivables/:id/close", requireAccountingAdmin, 
             where: { id: account.id },
             data: { isActive: false, closedAt: new Date() },
         });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.receivable.closed",
+            entityType: "accounting_account",
+            entityId: account.id,
+            summary: `Closed receivable ${account.name}`,
+            metadata: { writtenOffAmount: outstanding.gt(0) ? outstanding.toFixed(2) : "0.00" },
+        });
         return { account: serializeAccount(updated), outstandingBalance: asNumber(outstanding.gt(0) ? new library_1.Decimal(0) : outstanding), journalEntryId };
     });
     return res.json(result);
@@ -1666,7 +1710,7 @@ exports.accountingRouter.post("/payables", requireAccountingAdmin, asyncRoute(as
                 throw error;
             }
         }
-        return tx.accountingAccount.create({
+        const created = await tx.accountingAccount.create({
             data: {
                 organizationId: orgId,
                 name: parsed.data.name,
@@ -1679,6 +1723,16 @@ exports.accountingRouter.post("/payables", requireAccountingAdmin, asyncRoute(as
                 createdByUserId: req.auth.userId,
             },
         });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.payable.created",
+            entityType: "accounting_account",
+            entityId: created.id,
+            summary: `Created payable ${created.name}`,
+            metadata: { assetSubtype: created.assetSubtype, counterpartyMembershipId: created.counterpartyMembershipId },
+        });
+        return created;
     });
     return res.status(201).json(serializeAccount(account));
 }));
@@ -1716,7 +1770,16 @@ exports.accountingRouter.post("/payables/:id/close", requireAccountingAdmin, asy
             error.statusCode = 409;
             throw error;
         }
-        return tx.accountingAccount.update({ where: { id: payable.id }, data: { isActive: false, closedAt: new Date() } });
+        const updated = await tx.accountingAccount.update({ where: { id: payable.id }, data: { isActive: false, closedAt: new Date() } });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.payable.closed",
+            entityType: "accounting_account",
+            entityId: payable.id,
+            summary: `Closed payable ${payable.name}`,
+        });
+        return updated;
     });
     return res.json({ account: serializeAccount(account) });
 }));
@@ -1993,10 +2056,20 @@ exports.accountingRouter.post("/funds", requireAccountingAdmin, asyncRoute(async
                 },
             });
         }
-        return tx.fundPot.findUniqueOrThrow({
+        const result = await tx.fundPot.findUniqueOrThrow({
             where: { id: createdFund.id },
             include: { fundAccount: true, surplusAccount: true, deficitAccount: true, transactions: true },
         });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.fund.created",
+            entityType: "fund_pot",
+            entityId: createdFund.id,
+            summary: `Created special fund ${createdFund.name}`,
+            metadata: { openingBalance: openingBalance.toFixed(2) },
+        });
+        return result;
     });
     return res.status(201).json(serializeFundPot(fund));
 }));
@@ -2337,11 +2410,20 @@ exports.accountingRouter.post("/funds/:id/close", requireAccountingAdmin, asyncR
             transactionDate,
             memo: parsed.data.memo ?? null,
         });
-        return tx.fundPot.update({
+        const updated = await tx.fundPot.update({
             where: { id: existing.id },
             data: { status: "closed", closedAt: new Date() },
             include: { fundAccount: true, surplusAccount: true, deficitAccount: true, transactions: true },
         });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.fund.closed",
+            entityType: "fund_pot",
+            entityId: existing.id,
+            summary: `Closed special fund ${updated.name}`,
+        });
+        return updated;
     });
     return res.json(serializeFundPot(fund));
 }));
@@ -2591,7 +2673,17 @@ exports.accountingRouter.post("/banking/accounts", requireAccountingAdmin, async
             error.statusCode = 409;
             throw error;
         }
-        return tx.accountingAccount.create({ data: { organizationId: orgId, name: parsed.data.name, accountType: "asset", assetSubtype: parsed.data.assetSubtype, bankName: parsed.data.bankName || null, accountNumber: parsed.data.accountNumber || null, description: parsed.data.description || null, createdByUserId: req.auth.userId } });
+        const created = await tx.accountingAccount.create({ data: { organizationId: orgId, name: parsed.data.name, accountType: "asset", assetSubtype: parsed.data.assetSubtype, bankName: parsed.data.bankName || null, accountNumber: parsed.data.accountNumber || null, description: parsed.data.description || null, createdByUserId: req.auth.userId } });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.banking_account.created",
+            entityType: "accounting_account",
+            entityId: created.id,
+            summary: `Created ${created.assetSubtype} account ${created.name}`,
+            metadata: { assetSubtype: created.assetSubtype },
+        });
+        return created;
     });
     return res.status(201).json(serializeAccount(account));
 }));
@@ -2752,7 +2844,16 @@ exports.accountingRouter.post("/banking/:id/close", requireAccountingAdmin, asyn
             error.statusCode = 409;
             throw error;
         }
-        return tx.accountingAccount.update({ where: { id: current.id }, data: { isActive: false, closedAt: new Date() } });
+        const updated = await tx.accountingAccount.update({ where: { id: current.id }, data: { isActive: false, closedAt: new Date() } });
+        await (0, audit_log_js_1.writeAuditLog)(tx, {
+            organizationId: orgId,
+            actorUserId: req.auth.userId,
+            action: "finance.banking_account.closed",
+            entityType: "accounting_account",
+            entityId: current.id,
+            summary: `Closed ${current.assetSubtype} account ${current.name}`,
+        });
+        return updated;
     });
     return res.json({ account: serializeAccount(account) });
 }));

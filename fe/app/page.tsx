@@ -136,7 +136,7 @@ function activityToneClass(tone?: string | null) {
 
 function ActivityIcon({ kind, className }: { kind: string; className?: string }) {
   if (kind === "payment" || kind === "payment_reversal") return <CreditCard className={className} />;
-  if (kind === "cash_out" || kind === "fund_expense") return <ArrowDownRight className={className} />;
+  if (kind === "cash_out" || kind === "fund_expense" || kind === "cash_reversal" || kind === "fund_reversal") return <ArrowDownRight className={className} />;
   if (kind === "cash_in" || kind === "fund_collection" || kind === "income") return <ArrowUpRight className={className} />;
   if (kind === "remark") return <MessageSquare className={className} />;
   return <Receipt className={className} />;
@@ -847,6 +847,39 @@ function HomePageContent() {
           ))}
         </div>
 
+        {bookmarkedQuickActions.length > 0 && (
+          <div>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-foreground">Quick Actions</h3>
+              <Button variant="outline" size="sm" onClick={() => setEditingQuickActions((editing) => !editing)} className="h-8 gap-1.5 text-xs">
+                {editingQuickActions ? <Check className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                {editingQuickActions ? "Done" : "Edit"}
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              {bookmarkedQuickActions.map(({ bookmark, action }) => {
+                const Icon = action.icon;
+                const card = (
+                  <Card className="group relative h-full transition hover:border-primary/30 hover:bg-accent/20">
+                    {editingQuickActions ? (
+                      <button type="button" onClick={() => void toggleBookmark(bookmark.actionKey)} className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm" aria-label={`Remove ${action.title} from quick actions`} title="Remove quick action">
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                    <CardContent className="flex h-28 flex-col items-center justify-center gap-2 p-3 text-center">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${action.tone.split(" ")[1]}`}>
+                        <Icon className={`h-5 w-5 ${action.tone.split(" ")[0]}`} />
+                      </div>
+                      <div className="text-sm font-medium text-foreground">{action.title}</div>
+                    </CardContent>
+                  </Card>
+                );
+                return editingQuickActions ? <div key={bookmark.id}>{card}</div> : <Link key={bookmark.id} href={action.href}>{card}</Link>;
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.35fr)_minmax(0,0.65fr)]">
           <Card className="overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between gap-3 border-b pb-4">
@@ -986,39 +1019,6 @@ function HomePageContent() {
             </CardContent>
           </Card>
         </div>
-
-        {bookmarkedQuickActions.length > 0 && (
-          <div>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold text-foreground">Quick Actions</h3>
-              <Button variant="outline" size="sm" onClick={() => setEditingQuickActions((editing) => !editing)} className="h-8 gap-1.5 text-xs">
-                {editingQuickActions ? <Check className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-                {editingQuickActions ? "Done" : "Edit"}
-              </Button>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              {bookmarkedQuickActions.map(({ bookmark, action }) => {
-                const Icon = action.icon;
-                const card = (
-                  <Card className="group relative h-full transition hover:border-primary/30 hover:bg-accent/20">
-                    {editingQuickActions ? (
-                      <button type="button" onClick={() => void toggleBookmark(bookmark.actionKey)} className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm" aria-label={`Remove ${action.title} from quick actions`} title="Remove quick action">
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                    <CardContent className="flex h-28 flex-col items-center justify-center gap-2 p-3 text-center">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${action.tone.split(" ")[1]}`}>
-                        <Icon className={`h-5 w-5 ${action.tone.split(" ")[0]}`} />
-                      </div>
-                      <div className="text-sm font-medium text-foreground">{action.title}</div>
-                    </CardContent>
-                  </Card>
-                );
-                return editingQuickActions ? <div key={bookmark.id}>{card}</div> : <Link key={bookmark.id} href={action.href}>{card}</Link>;
-              })}
-            </div>
-          </div>
-        )}
 
       </main>
 

@@ -40,10 +40,12 @@ import {
   Banknote,
   Bookmark,
   CalendarDays,
+  CreditCard,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   LockKeyhole,
+  Landmark,
   ListFilter,
   Pencil,
   QrCode,
@@ -75,8 +77,35 @@ import {
 const statusColors: Record<string, string> = {
   paid: "bg-green-100 text-green-800",
   partial: "bg-yellow-100 text-yellow-800",
-  pending: "bg-gray-100 text-gray-800",
+  pending: "bg-amber-100 text-amber-800",
   overdue: "bg-red-100 text-red-800",
+};
+
+const dueStatusTones: Record<DueStatus, { tile: string; text: string; badge: string; progress: string }> = {
+  paid: {
+    tile: "border-emerald-100 bg-emerald-50 text-emerald-700",
+    text: "text-emerald-700",
+    badge: "bg-emerald-100 text-emerald-700",
+    progress: "bg-emerald-500",
+  },
+  partial: {
+    tile: "border-amber-100 bg-amber-50 text-amber-700",
+    text: "text-amber-700",
+    badge: "bg-amber-100 text-amber-700",
+    progress: "bg-amber-500",
+  },
+  pending: {
+    tile: "border-amber-100 bg-amber-50 text-amber-700",
+    text: "text-amber-700",
+    badge: "bg-amber-100 text-amber-700",
+    progress: "bg-amber-500",
+  },
+  overdue: {
+    tile: "border-red-100 bg-red-50 text-red-700",
+    text: "text-red-700",
+    badge: "bg-red-100 text-red-700",
+    progress: "bg-red-500",
+  },
 };
 
 function PaymentHistoryDetail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
@@ -210,6 +239,7 @@ export default function PaymentsPage() {
     const params: Record<string, string> = {
       page: String(page),
       limit: String(limit),
+      sort: mobileSort,
     };
     if (statusFilter !== "all") params.status = statusFilter;
     if (dueTypeFilter !== "all") params.dueTypeId = dueTypeFilter;
@@ -226,7 +256,7 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     loadDues();
-  }, [user, page, statusFilter, dueTypeFilter, searchQ, view]);
+  }, [user, page, statusFilter, dueTypeFilter, searchQ, mobileSort, view]);
 
   function loadHistory() {
     if (!user || view !== "history") return;
@@ -462,19 +492,7 @@ export default function PaymentsPage() {
   const paymentMemberZone = (payment: Payment) => zoneLabel(payment.membership?.areaCode);
   const paymentMemberMembershipId = (payment: Payment) => membershipIdOnly(payment.membership?.membershipNo);
 
-  const mobileDues = useMemo(() => {
-    return [...dues].sort((a, b) => {
-      if (mobileSort === "date") {
-        return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
-      }
-      if (mobileSort === "amount") {
-        const aRemaining = Number(a.amountDue) - Number(a.amountPaid);
-        const bRemaining = Number(b.amountDue) - Number(b.amountPaid);
-        return bRemaining - aRemaining;
-      }
-      return dueMemberDisplayName(a).localeCompare(dueMemberDisplayName(b));
-    });
-  }, [dues, mobileSort]);
+  const sortedDues = dues;
 
   const dueMonth = (dueDate: string) => {
     const date = new Date(`${dueDate.slice(0, 10)}T00:00:00`);
@@ -524,6 +542,14 @@ export default function PaymentsPage() {
     return "Cash";
   };
 
+  const paymentAmountLabel = (payment: Payment) => {
+    const amount = new Intl.NumberFormat("en-LK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(payment.amount));
+    return `${payment.isReversed ? "-" : ""}LKR ${amount}`;
+  };
+
   const paymentPeriodLabel = (payment: Payment) => {
     const start = payment.paymentDue?.periodStart;
     const end = payment.paymentDue?.periodEnd;
@@ -544,15 +570,18 @@ export default function PaymentsPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="mx-auto max-w-5xl px-3 py-4 sm:p-6">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:p-6">
         <div className="hidden md:block">
           <Breadcrumb items={[{ label: t("dashboard.title"), href: dashboardFlowHref("payment") }, { label: view === "dues" ? "Dues Overview" : "Payment History" }]} />
         </div>
 
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between md:mb-5">
-          <h1 className="text-xl font-semibold text-foreground">
-            {view === "dues" ? <><span className="md:hidden">Member Dues</span><span className="hidden md:inline">Dues Overview</span></> : "Payment History"}
-          </h1>
+          <div>
+            <h1 className="text-xl font-semibold text-foreground md:text-2xl">
+              {view === "dues" ? "Member Dues" : "Payment History"}
+            </h1>
+            {view === "dues" ? <p className="mt-1 hidden text-sm text-muted-foreground md:block">Collect membership payments and manage outstanding dues.</p> : null}
+          </div>
           {view === "dues" && canManage && (
             <div className="grid grid-cols-2 gap-2 sm:flex">
               <Button size="sm" variant="warning" className="h-10 sm:h-9" onClick={handleMarkOverdue}>
@@ -572,60 +601,52 @@ export default function PaymentsPage() {
         )}
 
         {view === "dues" ? <Card className="border-0 shadow-none md:border md:shadow-sm">
-          <CardHeader className="hidden pb-2 md:block">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium">{t("payments.duesOverview")}</CardTitle>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Select
-                  value={statusFilter}
-                  onValueChange={(v) => {
-                    setStatusFilter(v as DueStatus | "all");
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-full text-xs sm:w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("payments.allStatuses")}</SelectItem>
-                    <SelectItem value="pending">{t("payments.pending")}</SelectItem>
-                    <SelectItem value="partial">{t("payments.partial")}</SelectItem>
-                    <SelectItem value="paid">{t("payments.paid")}</SelectItem>
-                    <SelectItem value="overdue">{t("payments.overdue")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={dueTypeFilter}
-                  onValueChange={(value) => {
-                    setDueTypeFilter(value);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="h-8 w-full text-xs sm:w-40">
-                    <SelectValue placeholder="All due types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Due Types</SelectItem>
-                    {dueTypes.map((dueType) => (
-                      <SelectItem key={dueType.id} value={dueType.id}>
-                        {dueType.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <CardHeader className="hidden border-b p-4 md:block">
+            <div className="grid grid-cols-[minmax(260px,1fr)_150px_180px_170px] gap-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Search member dues"
+                  placeholder="Search by name, member ID or phone"
+                  value={searchQ}
+                  onChange={(event) => { setSearchQ(event.target.value); setPage(1); }}
+                  className="h-10 pl-10 text-sm"
+                />
               </div>
+              <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value as DueStatus | "all"); setPage(1); }}>
+                <SelectTrigger className="h-10 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="overdue">Overdue</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={dueTypeFilter} onValueChange={(value) => { setDueTypeFilter(value); setPage(1); }}>
+                <SelectTrigger className="h-10 text-xs"><SelectValue placeholder="All due types" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Due Types</SelectItem>
+                  {dueTypes.map((dueType) => <SelectItem key={dueType.id} value={dueType.id}>{dueType.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={mobileSort} onValueChange={(value) => setMobileSort(value as typeof mobileSort)}>
+                <SelectTrigger className="h-10 text-xs">
+                  <span className="flex items-center gap-2"><ArrowUpDown className="h-3.5 w-3.5" /><SelectValue /></span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">Sort: Name A-Z</SelectItem>
+                  <SelectItem value="date">Sort: Newest</SelectItem>
+                  <SelectItem value="amount">Sort: Amount</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <form
-              className="flex gap-2 mt-2"
-              onSubmit={(e) => { e.preventDefault(); setPage(1); }}
-            >
-              <Input
-                placeholder="Search by member, membership no, or due type..."
-                value={searchQ}
-                onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
-                className="max-w-sm"
-              />
-            </form>
+            <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+              <span className="flex items-center gap-2"><UserRound className="h-4 w-4" />{total} Results</span>
+              <button type="button" onClick={loadDues} className="flex items-center gap-2 transition-colors hover:text-foreground">
+                <RefreshCw className="h-4 w-4" />Refresh
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="p-0 md:p-6 md:pt-0">
             <div className="mb-3 space-y-3 md:hidden">
@@ -728,7 +749,7 @@ export default function PaymentsPage() {
             ) : (
               <>
                 <div className="space-y-2 md:hidden">
-                  {mobileDues.map((d) => {
+                  {sortedDues.map((d) => {
                     const remaining = Number(d.amountDue) - Number(d.amountPaid);
                     const month = dueMonth(d.dueDate);
                     const expanded = expandedDueId === d.id;
@@ -803,92 +824,82 @@ export default function PaymentsPage() {
                   </p>
                 </div>
 
-                <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[900px]">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
-                        <th className="text-left p-2.5 font-medium">Full Name</th>
-                        <th className="text-left p-2.5 font-medium">Description</th>
-                        <th className="text-right p-2.5 font-medium">{t("payments.amountDue")}</th>
-                        <th className="text-right p-2.5 font-medium">{t("payments.paid")}</th>
-                        <th className="text-right p-2.5 font-medium">{t("payments.remaining")}</th>
-                        <th className="text-center p-2.5 font-medium">{t("common.status")}</th>
-                        <th className="p-2.5"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dues.map((d) => {
-                        const remaining = Number(d.amountDue) - Number(d.amountPaid);
-                        return (
-                          <tr key={d.id} className="border-t">
-                            <td className="p-2.5">
-                              <Link
-                                href={`/members/${d.membershipId}`}
-                                className="font-medium text-primary hover:underline"
-                              >
-                                {dueMemberDisplayName(d)}
-                              </Link>
-                              {dueMemberZone(d) && (
-                                <p className="text-muted-foreground text-xs">
-                                  Zone: {dueMemberZone(d)}
-                                </p>
-                              )}
-                              {dueMemberMembershipId(d) && (
-                                <p className="text-muted-foreground text-xs">
-                                  ID: {dueMemberMembershipId(d)}
-                                </p>
-                              )}
-                            </td>
-                            <td className="p-2.5">{dueMemberFullName(d)}</td>
-                            <td className="p-2.5">
-                              <p className="font-medium">{getPaymentDueTitle(d)}</p>
-                              {getPaymentDueSubtitle(d) && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDueSubtitle(d)}</p>
-                              )}
-                              {getPaymentDuePeriodLine(d) && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">{getPaymentDuePeriodLine(d)}</p>
-                              )}
-                            </td>
-                            <td className="p-2.5 text-right tabular-nums">
-                              {Number(d.amountDue).toFixed(2)}
-                            </td>
-                            <td className="p-2.5 text-right tabular-nums">
-                              {Number(d.amountPaid).toFixed(2)}
-                            </td>
-                            <td className="p-2.5 text-right tabular-nums">
-                              {remaining.toFixed(2)}
-                            </td>
-                            <td className="p-2.5 text-center">
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded-full ${statusColors[d.status] ?? ""}`}
-                              >
-                                {t(`payments.${d.status}`)}
-                              </span>
-                            </td>
-                            <td className="p-2.5 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {d.status !== "paid" && remaining > 0 && (
-                                  <Button size="sm" variant="cashIn" onClick={() => openPayDialog(d)}>
-                                    <Banknote className="mr-2 h-4 w-4" />Receive
-                                  </Button>
-                                )}
-                                {canManage && d.status !== "paid" && (
-                                  <Button size="sm" variant="neutralOutline" className="h-8 w-8 p-0" onClick={() => openEditDue(d)} title="Edit Due">
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="hidden space-y-2 overflow-x-auto md:block">
+                  {sortedDues.map((d) => {
+                    const amountDue = Number(d.amountDue);
+                    const amountPaid = Number(d.amountPaid);
+                    const remaining = Math.max(amountDue - amountPaid, 0);
+                    const progress = amountDue > 0 ? Math.min(Math.max((amountPaid / amountDue) * 100, 0), 100) : 0;
+                    const month = dueMonth(d.dueDate);
+                    const tone = dueStatusTones[d.status];
+                    const dueType = d.dueType?.name ?? getPaymentDueSubtitle(d) ?? getPaymentDueTitle(d);
+                    return (
+                      <div key={d.id} className="min-w-[1060px] rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md">
+                        <div className="grid grid-cols-[64px_minmax(190px,1.35fr)_minmax(120px,.75fr)_minmax(190px,1.2fr)_90px_115px_150px] items-center gap-4 px-4 py-3">
+                          <div className={`flex h-14 w-14 flex-col items-center justify-center rounded-lg border ${tone.tile}`}>
+                            <span className="text-[11px] font-semibold leading-none">{month.month}</span>
+                            <span className="mt-1 text-xl font-bold leading-none">{month.year}</span>
+                          </div>
+
+                          <div className="min-w-0 border-r pr-4">
+                            <Link href={`/members/${d.membershipId}`} className="block truncate text-sm font-semibold text-foreground hover:text-primary hover:underline">
+                              {dueMemberDisplayName(d)}
+                            </Link>
+                            <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                              {dueMemberArea(d) ?? "Location not set"}
+                              {dueMemberMembershipId(d) ? `  •  ID: ${dueMemberMembershipId(d)}` : ""}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-foreground" title={dueMemberFullName(d)}>{dueMemberFullName(d)}</p>
+                          </div>
+
+                          <div className="min-w-0 border-r pr-4">
+                            <p className="text-[10px] font-medium text-muted-foreground">Due Type</p>
+                            <p className={`mt-1 truncate text-xs font-semibold ${tone.text}`} title={dueType}>{dueType}</p>
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-medium text-muted-foreground">Payment Progress</p>
+                            <p className="mt-1 truncate text-[11px] font-medium text-foreground">Paid Rs.{amountPaid.toFixed(2)} of Rs.{amountDue.toFixed(2)}</p>
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200" aria-label={`${progress.toFixed(0)}% paid`}>
+                              <div className={`h-full rounded-full ${tone.progress}`} style={{ width: `${progress}%` }} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-[10px] font-medium text-muted-foreground">Status</p>
+                            <span className={`mt-1.5 inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase ${tone.badge}`}>{t(`payments.${d.status}`)}</span>
+                          </div>
+
+                          <div>
+                            <p className="text-[10px] font-medium text-muted-foreground">Remaining</p>
+                            <p className={`mt-1 text-lg font-bold tabular-nums ${tone.text}`}>Rs.{remaining.toFixed(2)}</p>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2">
+                            {d.status !== "paid" && remaining > 0 ? (
+                              <Button size="sm" variant="cashIn" className="h-8 px-3 text-xs" onClick={() => openPayDialog(d)}>
+                                <Banknote className="mr-1.5 h-3.5 w-3.5" />Receive
+                              </Button>
+                            ) : null}
+                            {canManage && d.status !== "paid" ? (
+                              <Button size="sm" variant="neutralOutline" className="h-8 px-2.5 text-xs" onClick={() => openEditDue(d)} title="Edit Due">
+                                <Pencil className="mr-1.5 h-3.5 w-3.5" />Edit
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="flex items-center gap-1.5 px-1 pt-2 text-[10px] text-muted-foreground">
+                    <LockKeyhole className="h-3 w-3" />Dues are shown based on the selected filters.
+                  </p>
                 </div>
 
-                <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">
-                  <span>{total} {t("payments.dues")}</span>
+                <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>
+                    Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} results
+                  </span>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -965,8 +976,8 @@ export default function PaymentsPage() {
                                 onClick={() => setExpandedPaymentId(expanded ? null : payment.id)}
                                 className="grid w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-left"
                               >
-                                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white">
-                                  <ArrowDownToLine className="h-4 w-4" />
+                                <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white ${reversed ? "bg-red-500" : "bg-emerald-600"}`}>
+                                  {reversed ? <RotateCcw className="h-4 w-4" /> : <ArrowDownToLine className="h-4 w-4" />}
                                 </span>
                                 <span className="min-w-0">
                                   <span className="block truncate text-sm font-semibold text-foreground">
@@ -994,7 +1005,6 @@ export default function PaymentsPage() {
                                   <div className="divide-y text-xs">
                                     <PaymentHistoryDetail icon={UserRound} label="Full Name" value={paymentMemberFullName(payment)} />
                                     <PaymentHistoryDetail icon={UserRoundCheck} label="Collected By" value={payment.collectedBy?.email ?? "—"} />
-                                    <PaymentHistoryDetail icon={Banknote} label="Payment Method" value={paymentMethodLabel(payment.paymentMethod)} />
                                     <PaymentHistoryDetail icon={CalendarDays} label="Payment Period" value={paymentPeriodLabel(payment)} />
                                   </div>
 
@@ -1029,80 +1039,117 @@ export default function PaymentsPage() {
                   ))}
                 </div>
 
-                <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[940px]">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left p-2.5 font-medium">Date</th>
-                        <th className="text-left p-2.5 font-medium">{t("payments.member")}</th>
-                        <th className="text-left p-2.5 font-medium">Full Name</th>
-                        <th className="text-left p-2.5 font-medium">{t("payments.period")}</th>
-                        <th className="text-right p-2.5 font-medium">{t("payments.amount")}</th>
-                        <th className="text-left p-2.5 font-medium">User ID</th>
-                        <th className="text-center p-2.5 font-medium">Status</th>
-                        <th className="text-right p-2.5 font-medium">Receipt</th>
-                        <th className="text-center p-2.5 font-medium w-16">Reverse</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map((p) => (
-                        <tr key={p.id} className="border-t">
-                          <td className="p-2.5">
-                            {new Date(p.paymentDate).toLocaleDateString()}
-                          </td>
-                          <td className="p-2.5">
-                            <Link
-                              href={`/members/${p.membershipId}`}
-                              className="font-medium text-primary hover:underline"
-                            >
-                              {paymentMemberDisplayName(p)}
-                            </Link>
-                            {paymentMemberZone(p) && (
-                              <p className="text-muted-foreground text-xs">
-                                Zone: {paymentMemberZone(p)}
-                              </p>
-                            )}
-                            {paymentMemberMembershipId(p) && (
-                              <p className="text-muted-foreground text-xs">
-                                ID: {paymentMemberMembershipId(p)}
-                              </p>
-                            )}
-                          </td>
-                          <td className="p-2.5">{paymentMemberFullName(p)}</td>
-                          <td className="p-2.5">{getPaymentPeriodLabel(p)}</td>
-                          <td className={`p-2.5 text-right font-medium tabular-nums ${p.isReversed ? "text-red-600" : "text-emerald-700"}`}>
-                            {Number(p.amount).toFixed(2)}
-                          </td>
-                          <td className="p-2.5 text-muted-foreground">
-                            {p.collectedBy?.email ?? "—"}
-                          </td>
-                          <td className="p-2.5">
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs ${p.isReversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
-                              {p.isReversed ? "Reversed" : "Paid"}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right">
-                            <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(p.id)}>
-                              Receipt
-                            </Button>
-                          </td>
-                          <td className="p-2.5 text-center">
-                            {canManage && !p.isReversed ? (
-                              <Button
-                                size="sm"
-                                variant="dangerOutline"
-                                className="h-8 w-8 p-0"
-                                onClick={() => { setReverseTarget(p); setReverseReason(""); }}
-                                title="Reverse Payment"
+                <div className="hidden space-y-3 overflow-x-auto pb-1 md:block">
+                  {historyGroups.map((group) => (
+                    <section key={group.date} className="min-w-[980px] overflow-hidden rounded-lg border bg-card shadow-sm">
+                      <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-2.5 text-xs">
+                        <div className="flex items-center gap-2 font-semibold text-slate-700">
+                          <CalendarDays className="h-4 w-4 text-slate-500" />
+                          {historyDateLabel(group.date)}
+                        </div>
+                        <span className="text-muted-foreground">{group.payments.length} {group.payments.length === 1 ? "transaction" : "transactions"}</span>
+                      </div>
+
+                      <div className="grid min-w-[980px] grid-cols-[64px_minmax(220px,1.5fr)_140px_150px_150px_110px_40px] items-center gap-3 border-b bg-muted/20 px-4 py-2 text-[10px] font-medium text-muted-foreground">
+                        <span>Transaction</span>
+                        <span>Member Details</span>
+                        <span>Receipt No.</span>
+                        <span>Payment Method</span>
+                        <span className="text-right">Amount (LKR)</span>
+                        <span className="text-center">Status</span>
+                        <span />
+                      </div>
+
+                      <div className="divide-y">
+                        {group.payments.map((payment) => {
+                          const reversed = Boolean(payment.isReversed);
+                          const expanded = expandedPaymentId === payment.id;
+                          const memberNumber = paymentMemberMembershipId(payment);
+                          const zone = paymentMemberZone(payment);
+                          const MethodIcon = payment.paymentMethod === "bank_transfer"
+                            ? Landmark
+                            : payment.paymentMethod === "card"
+                              ? CreditCard
+                              : Banknote;
+                          return (
+                            <div key={payment.id} className="bg-card">
+                              <div
+                                className="grid w-full min-w-[980px] grid-cols-[64px_minmax(220px,1.5fr)_140px_150px_150px_110px_40px] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20"
                               >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm ${reversed ? "bg-red-500" : "bg-emerald-600"}`}>
+                                  {reversed ? <RotateCcw className="h-4 w-4" /> : <ArrowDownToLine className="h-4 w-4" />}
+                                </span>
+                                <span className="min-w-0">
+                                  <Link
+                                    href={`/members/${payment.membershipId}`}
+                                    className="block truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                                  >
+                                    {paymentMemberDisplayName(payment)}{memberNumber ? ` (${memberNumber})` : ""}
+                                  </Link>
+                                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                    {zone ? `Zone ${zone}` : "Location not set"}
+                                  </span>
+                                </span>
+                                <span className="font-mono text-xs text-foreground">{payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}</span>
+                                <span className="flex items-center gap-2 text-xs text-foreground">
+                                  <MethodIcon className="h-4 w-4 text-muted-foreground" />
+                                  {paymentMethodLabel(payment.paymentMethod)}
+                                </span>
+                                <span className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600" : "text-emerald-700"}`}>
+                                  {paymentAmountLabel(payment)}
+                                </span>
+                                <span className="text-center">
+                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${reversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                                    {reversed ? "Reversed" : "Paid"}
+                                  </span>
+                                </span>
+                                <button
+                                  type="button"
+                                  aria-expanded={expanded}
+                                  aria-label={expanded ? "Collapse transaction details" : "Expand transaction details"}
+                                  onClick={() => setExpandedPaymentId(expanded ? null : payment.id)}
+                                  className="flex h-8 w-8 items-center justify-center justify-self-end rounded-md text-primary transition hover:bg-primary/10"
+                                >
+                                  <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                                </button>
+                              </div>
+
+                              {expanded ? (
+                                <div className={`mx-3 mb-3 rounded-md border-l-2 px-4 py-3 ${reversed ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
+                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center gap-5">
+                                    <PaymentHistoryDetail icon={UserRound} label="Full Name" value={paymentMemberFullName(payment)} />
+                                    <PaymentHistoryDetail icon={UserRoundCheck} label="Collected By" value={payment.collectedBy?.email ?? "—"} />
+                                    <PaymentHistoryDetail icon={CalendarDays} label="Payment Period" value={paymentPeriodLabel(payment)} />
+                                    <div className="flex justify-end gap-2">
+                                      <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(payment.id)}>
+                                        <ReceiptText className="mr-2 h-3.5 w-3.5" />Receipt
+                                      </Button>
+                                      {canManage && !reversed ? (
+                                        <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(payment); setReverseReason(""); }}>
+                                          <RotateCcw className="mr-2 h-3.5 w-3.5" />Reverse
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+
+                                  {reversed ? (
+                                    <div className="mt-3 border-t border-red-100 pt-3">
+                                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-red-600">Reversal Details</p>
+                                      <div className="grid grid-cols-3 gap-5">
+                                        <PaymentHistoryDetail icon={UserRoundCheck} label="Reversed By" value={payment.reversedBy?.email ?? "—"} />
+                                        <PaymentHistoryDetail icon={Pencil} label="Reason" value={payment.reversalReason ?? "—"} />
+                                        <PaymentHistoryDetail icon={CalendarDays} label="Reversed On" value={detailDateLabel(payment.reversedAt, true)} />
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
 
                 <div className="flex items-center justify-between text-sm text-muted-foreground mt-4">

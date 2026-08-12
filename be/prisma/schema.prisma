@@ -54,6 +54,7 @@ model Organization {
   fundTransactions   FundTransaction[]
   cashTransactions   CashTransaction[]
   bankingTransactions BankingTransaction[]
+  auditLogs           AuditLog[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -109,6 +110,7 @@ model User {
   reversedFundTransactions FundTransaction[] @relation("FundTransactionReversedBy")
   createdBankingTransactions BankingTransaction[] @relation("BankingTransactionCreatedBy")
   reversedBankingTransactions BankingTransaction[] @relation("BankingTransactionReversedBy")
+  auditLogs            AuditLog[]             @relation("AuditLogActor")
 }
 
 enum UserRole {
@@ -879,6 +881,26 @@ model ActivityFeedItem {
   @@index([organizationId, createdAt])
   @@index([personId, createdAt])
   @@index([membershipId, createdAt])
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  actorUserId     String?
+  action          String
+  entityType      String
+  entityId        String?
+  summary         String   @db.Text
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, entityType, entityId])
+  @@index([actorUserId, createdAt])
 }
 
 model MembershipCreditLedger {

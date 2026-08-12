@@ -70,7 +70,7 @@ exports.dashboardRouter.get("/activity", async (req, res) => {
             take: 500,
             select: {
                 id: true, amount: true, transactionDate: true, category: true, flowType: true,
-                counterpartyName: true, description: true, documentNumber: true, reversedAt: true,
+                counterpartyName: true, description: true, documentNumber: true, reversedAt: true, reversalReason: true,
             },
         }),
         prisma_js_1.prisma.fundTransaction.findMany({
@@ -79,7 +79,7 @@ exports.dashboardRouter.get("/activity", async (req, res) => {
             take: 500,
             select: {
                 id: true, amount: true, transactionDate: true, transactionType: true, receiptNumber: true,
-                paidByName: true, description: true, memo: true, reversedAt: true,
+                paidByName: true, description: true, memo: true, reversedAt: true, reversalReason: true,
                 fundPot: { select: { id: true, name: true } },
             },
         }),
@@ -98,22 +98,34 @@ exports.dashboardRouter.get("/activity", async (req, res) => {
             description: `${payment.membership?.hod?.nameWithInitials ?? payment.membership?.hod?.fullName ?? payment.membership?.membershipNo ?? "Member"} • ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}`,
             amount: Number(payment.amount), occurredAt: payment.paymentDate.toISOString(), tone: payment.isReversed ? "rose" : "emerald",
         })),
-        ...cashTransactions.map((transaction) => ({
-            id: `cash-${transaction.id}`,
-            type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
-            title: transaction.category.replace(/_/g, " "),
-            description: transaction.description ?? transaction.counterpartyName ?? transaction.documentNumber ?? "Cash transaction",
-            amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
-            tone: transaction.reversedAt ? "rose" : transaction.flowType === "cash_in" ? "blue" : "orange",
-        })),
-        ...fundTransactions.map((transaction) => ({
-            id: `fund-${transaction.id}`,
-            type: transaction.transactionType === "collection" ? "fund_collection" : "fund_expense",
-            title: transaction.transactionType === "collection" ? "Fund collection" : "Fund expense",
-            description: `${transaction.fundPot.name} • ${transaction.description ?? transaction.memo ?? transaction.paidByName ?? transaction.receiptNumber ?? "Fund transaction"}`,
-            amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
-            tone: transaction.reversedAt ? "rose" : transaction.transactionType === "collection" ? "violet" : "rose",
-        })),
+        ...cashTransactions.flatMap((transaction) => [{
+                id: `cash-${transaction.id}`,
+                type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
+                title: transaction.category.replace(/_/g, " "),
+                description: transaction.description ?? transaction.counterpartyName ?? transaction.documentNumber ?? "Cash transaction",
+                amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
+                tone: transaction.flowType === "cash_in" ? "blue" : "orange",
+            }, ...(transaction.reversedAt ? [{
+                    id: `cash-reversal-${transaction.id}`,
+                    type: "cash_reversal",
+                    title: "Cash transaction reversed",
+                    description: `${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+                    amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), tone: "rose",
+                }] : [])]),
+        ...fundTransactions.flatMap((transaction) => [{
+                id: `fund-${transaction.id}`,
+                type: transaction.transactionType === "collection" ? "fund_collection" : "fund_expense",
+                title: transaction.transactionType === "collection" ? "Fund collection" : "Fund expense",
+                description: `${transaction.fundPot.name} • ${transaction.description ?? transaction.memo ?? transaction.paidByName ?? transaction.receiptNumber ?? "Fund transaction"}`,
+                amount: Number(transaction.amount), occurredAt: transaction.transactionDate.toISOString(),
+                tone: transaction.transactionType === "collection" ? "violet" : "rose",
+            }, ...(transaction.reversedAt ? [{
+                    id: `fund-reversal-${transaction.id}`,
+                    type: "fund_reversal",
+                    title: "Fund transaction reversed",
+                    description: `${transaction.fundPot.name} • ${transaction.reversalReason ?? "No reason recorded"}`,
+                    amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), tone: "rose",
+                }] : [])]),
         ...feedItems.map((item) => ({
             id: `feed-${item.id}`, type: item.entryType, title: item.body ?? "Activity",
             description: item.createdBy?.email ?? "System", amount: null, occurredAt: item.createdAt.toISOString(),
@@ -215,10 +227,12 @@ exports.dashboardRouter.get("/", async (req, res) => {
         prisma_js_1.prisma.payment.findMany({
             where: {
                 ...orgFilter,
-                paymentDate: { gte: financeWindowStart, lt: rangeEnd },
+                OR: [
+                    { paymentDate: { gte: financeWindowStart, lt: rangeEnd } },
+                    { reversedAt: { gte: financeWindowStart, lt: rangeEnd } },
+                ],
             },
             orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
-            take: 20,
             select: {
                 id: true,
                 amount: true,
@@ -227,6 +241,7 @@ exports.dashboardRouter.get("/", async (req, res) => {
                 paymentMethod: true,
                 paymentKind: true,
                 isReversed: true,
+                reversedAt: true,
                 reversalReason: true,
                 membership: { select: { membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
                 collectedBy: { select: { email: true } },
@@ -235,10 +250,12 @@ exports.dashboardRouter.get("/", async (req, res) => {
         prisma_js_1.prisma.cashTransaction.findMany({
             where: {
                 ...orgFilter,
-                transactionDate: { gte: financeWindowStart, lt: rangeEnd },
+                OR: [
+                    { transactionDate: { gte: financeWindowStart, lt: rangeEnd } },
+                    { reversedAt: { gte: financeWindowStart, lt: rangeEnd } },
+                ],
             },
             orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
-            take: 20,
             select: {
                 id: true,
                 amount: true,
@@ -250,16 +267,19 @@ exports.dashboardRouter.get("/", async (req, res) => {
                 documentNumber: true,
                 createdBy: { select: { email: true } },
                 reversedAt: true,
+                reversalReason: true,
                 accountId: true,
             },
         }),
         prisma_js_1.prisma.fundTransaction.findMany({
             where: {
                 organizationId: orgId,
-                transactionDate: { gte: financeWindowStart, lt: rangeEnd },
+                OR: [
+                    { transactionDate: { gte: financeWindowStart, lt: rangeEnd } },
+                    { reversedAt: { gte: financeWindowStart, lt: rangeEnd } },
+                ],
             },
             orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
-            take: 20,
             select: {
                 id: true,
                 amount: true,
@@ -270,6 +290,7 @@ exports.dashboardRouter.get("/", async (req, res) => {
                 description: true,
                 memo: true,
                 reversedAt: true,
+                reversalReason: true,
                 fundPot: { select: { id: true, name: true } },
             },
         }),
@@ -336,45 +357,58 @@ exports.dashboardRouter.get("/", async (req, res) => {
             continue;
         const amount = Number(line.amount);
         if (line.account.accountType === "income") {
-            bucket.income += line.side === "credit" ? amount : 0;
+            bucket.income += line.side === "credit" ? amount : -amount;
         }
         if (line.account.accountType === "expense") {
-            bucket.expense += line.side === "debit" ? amount : 0;
+            bucket.expense += line.side === "debit" ? amount : -amount;
         }
     }
     for (const payment of payments) {
-        if (payment.isReversed)
-            continue;
-        const bucket = bucketFor(payment.paymentDate);
-        if (!bucket)
-            continue;
-        bucket.memberCollection += Number(payment.amount);
+        const amount = Number(payment.amount);
+        const paymentBucket = bucketFor(payment.paymentDate);
+        if (paymentBucket) {
+            paymentBucket.memberCollection += amount;
+            paymentBucket.cashIn += amount;
+        }
+        if (payment.isReversed && payment.reversedAt) {
+            const reversalBucket = bucketFor(payment.reversedAt);
+            if (reversalBucket)
+                reversalBucket.cashOut += amount;
+        }
     }
     for (const transaction of cashTransactions) {
-        if (transaction.reversedAt)
-            continue;
-        const bucket = bucketFor(transaction.transactionDate);
-        if (!bucket)
-            continue;
         const amount = Number(transaction.amount);
         const inflowCategories = new Set(["operating_income", "receivable_collection", "payable_borrowing", "payable_recovery"]);
         const outflowCategories = new Set(["operating_expense", "receivable_payment", "receivable_write_off", "payable_repayment", "payable_payment"]);
-        if (inflowCategories.has(transaction.category))
-            bucket.cashIn += amount;
-        if (outflowCategories.has(transaction.category))
-            bucket.cashOut += amount;
+        const transactionBucket = bucketFor(transaction.transactionDate);
+        const isInflow = inflowCategories.has(transaction.category);
+        const isOutflow = outflowCategories.has(transaction.category);
+        if (transactionBucket && isInflow)
+            transactionBucket.cashIn += amount;
+        if (transactionBucket && isOutflow)
+            transactionBucket.cashOut += amount;
+        if (transaction.reversedAt) {
+            const reversalBucket = bucketFor(transaction.reversedAt);
+            if (reversalBucket && isInflow)
+                reversalBucket.cashOut += amount;
+            if (reversalBucket && isOutflow)
+                reversalBucket.cashIn += amount;
+        }
     }
     for (const transaction of fundTransactions) {
-        if (transaction.reversedAt)
-            continue;
-        const bucket = bucketFor(transaction.transactionDate);
-        if (!bucket)
-            continue;
         const amount = Number(transaction.amount);
-        if (transaction.transactionType === "collection")
-            bucket.cashIn += amount;
-        if (transaction.transactionType === "expense")
-            bucket.cashOut += amount;
+        const transactionBucket = bucketFor(transaction.transactionDate);
+        if (transactionBucket && transaction.transactionType === "collection")
+            transactionBucket.cashIn += amount;
+        if (transactionBucket && transaction.transactionType === "expense")
+            transactionBucket.cashOut += amount;
+        if (transaction.reversedAt) {
+            const reversalBucket = bucketFor(transaction.reversedAt);
+            if (reversalBucket && transaction.transactionType === "collection")
+                reversalBucket.cashOut += amount;
+            if (reversalBucket && transaction.transactionType === "expense")
+                reversalBucket.cashIn += amount;
+        }
     }
     for (const day of financeDays) {
         day.outstanding = Number((day.expense + day.cashOut - day.income - day.cashIn).toFixed(2));
@@ -412,26 +446,38 @@ exports.dashboardRouter.get("/", async (req, res) => {
             href: "/payments",
             tone: payment.isReversed ? "rose" : "emerald",
         })),
-        ...cashTransactions.slice(0, 8).map((transaction) => ({
-            id: `cash-${transaction.id}`,
-            type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
-            title: transaction.category.replace(/_/g, " "),
-            description: transaction.description ?? transaction.counterpartyName ?? transaction.documentNumber ?? "Cash transaction",
-            amount: Number(transaction.amount),
-            occurredAt: transaction.transactionDate.toISOString(),
-            href: transaction.flowType === "cash_in" ? "/cash-in" : "/cash-out",
-            tone: transaction.flowType === "cash_in" ? "blue" : "orange",
-        })),
-        ...fundTransactions.slice(0, 8).map((transaction) => ({
-            id: `fund-${transaction.id}`,
-            type: transaction.transactionType === "collection" ? "fund_collection" : "fund_expense",
-            title: transaction.transactionType === "collection" ? "Fund collection" : "Fund expense",
-            description: `${transaction.fundPot.name} • ${transaction.description ?? transaction.memo ?? transaction.paidByName ?? transaction.receiptNumber ?? "Fund transaction"}`,
-            amount: Number(transaction.amount),
-            occurredAt: transaction.transactionDate.toISOString(),
-            href: `/funds/${transaction.fundPot.id}`,
-            tone: transaction.transactionType === "collection" ? "violet" : "rose",
-        })),
+        ...cashTransactions.slice(0, 8).flatMap((transaction) => [{
+                id: `cash-${transaction.id}`,
+                type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
+                title: transaction.category.replace(/_/g, " "),
+                description: transaction.description ?? transaction.counterpartyName ?? transaction.documentNumber ?? "Cash transaction",
+                amount: Number(transaction.amount),
+                occurredAt: transaction.transactionDate.toISOString(),
+                href: transaction.flowType === "cash_in" ? "/cash-in" : "/cash-out",
+                tone: transaction.flowType === "cash_in" ? "blue" : "orange",
+            }, ...(transaction.reversedAt ? [{
+                    id: `cash-reversal-${transaction.id}`,
+                    type: "cash_reversal",
+                    title: "Cash transaction reversed",
+                    description: `${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+                    amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), href: transaction.flowType === "cash_in" ? "/cash-in" : "/cash-out", tone: "rose",
+                }] : [])]),
+        ...fundTransactions.slice(0, 8).flatMap((transaction) => [{
+                id: `fund-${transaction.id}`,
+                type: transaction.transactionType === "collection" ? "fund_collection" : "fund_expense",
+                title: transaction.transactionType === "collection" ? "Fund collection" : "Fund expense",
+                description: `${transaction.fundPot.name} • ${transaction.description ?? transaction.memo ?? transaction.paidByName ?? transaction.receiptNumber ?? "Fund transaction"}`,
+                amount: Number(transaction.amount),
+                occurredAt: transaction.transactionDate.toISOString(),
+                href: `/funds/${transaction.fundPot.id}`,
+                tone: transaction.transactionType === "collection" ? "violet" : "rose",
+            }, ...(transaction.reversedAt ? [{
+                    id: `fund-reversal-${transaction.id}`,
+                    type: "fund_reversal",
+                    title: "Fund transaction reversed",
+                    description: `${transaction.fundPot.name} • ${transaction.reversalReason ?? "No reason recorded"}`,
+                    amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), href: `/funds/${transaction.fundPot.id}`, tone: "rose",
+                }] : [])]),
         ...recentFeedItems.map((item) => ({
             id: `feed-${item.id}`,
             type: item.entryType,

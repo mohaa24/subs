@@ -15,6 +15,7 @@ exports.postCreditApplicationAccountingEntry = postCreditApplicationAccountingEn
 exports.postPaymentCorrectionEntries = postPaymentCorrectionEntries;
 exports.accountBalances = accountBalances;
 const library_1 = require("@prisma/client/runtime/library");
+const audit_log_js_1 = require("./audit-log.js");
 const ZERO = new library_1.Decimal(0);
 const CASH_ACCOUNT_KEY = "asset_cash_on_hand";
 const BANK_ACCOUNT_KEY = "asset_bank_account";
@@ -251,7 +252,7 @@ async function createJournalEntry(tx, input) {
         .map((line) => ({ ...line, amount: normalizeAmount(line.amount) }))
         .filter((line) => line.amount.gt(ZERO));
     assertBalanced(lines);
-    return tx.accountingJournalEntry.create({
+    const entry = await tx.accountingJournalEntry.create({
         data: {
             organizationId: input.organizationId,
             entryDate: input.entryDate,
@@ -276,6 +277,26 @@ async function createJournalEntry(tx, input) {
             createdBy: { select: { id: true, email: true } },
         },
     });
+    const referenceType = input.referenceType ?? input.entryType;
+    const debitTotal = lines
+        .filter((line) => line.side === "debit")
+        .reduce((sum, line) => sum.add(line.amount), new library_1.Decimal(0));
+    await (0, audit_log_js_1.writeAuditLog)(tx, {
+        organizationId: input.organizationId,
+        actorUserId: input.createdByUserId,
+        action: `finance.${referenceType}`,
+        entityType: input.referenceType ?? "accounting_journal_entry",
+        entityId: input.referenceId ?? entry.id,
+        summary: input.description,
+        metadata: {
+            journalEntryId: entry.id,
+            entryType: input.entryType,
+            referenceType,
+            amount: debitTotal.toFixed(2),
+            isSystemEntry: input.isSystemEntry ?? false,
+        },
+    });
+    return entry;
 }
 async function postPaymentAccountingEntry(tx, input) {
     const paymentAmount = input.directAppliedAmount.add(input.creditAmount);

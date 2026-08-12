@@ -734,6 +734,29 @@ export interface ActivityPage {
   items: NonNullable<DashboardStats["recentActivity"]>;
 }
 
+export interface AuditLogItem {
+  id: string;
+  organizationId: string;
+  actorUserId?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  actor?: { id: string; email: string } | null;
+}
+
+export interface AuditLogPage {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  limit: number;
+  pageCount: number;
+  actions: string[];
+  entityTypes: string[];
+}
+
 export interface MembershipBalance {
   membershipId: string;
   membershipNo: string;

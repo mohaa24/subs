@@ -1,5 +1,6 @@
 import type { AccountingAccountType, AccountingAssetSubtype, AccountingJournalEntryType, AccountingJournalLineSide, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { writeAuditLog } from "./audit-log.js";
 
 export type AccountingTx = Prisma.TransactionClient;
 
@@ -303,7 +304,7 @@ export async function createJournalEntry(
     .filter((line) => line.amount.gt(ZERO));
   assertBalanced(lines);
 
-  return tx.accountingJournalEntry.create({
+  const entry = await tx.accountingJournalEntry.create({
     data: {
       organizationId: input.organizationId,
       entryDate: input.entryDate,
@@ -328,6 +329,28 @@ export async function createJournalEntry(
       createdBy: { select: { id: true, email: true } },
     },
   });
+
+  const referenceType = input.referenceType ?? input.entryType;
+  const debitTotal = lines
+    .filter((line) => line.side === "debit")
+    .reduce((sum, line) => sum.add(line.amount), new Decimal(0));
+  await writeAuditLog(tx, {
+    organizationId: input.organizationId,
+    actorUserId: input.createdByUserId,
+    action: `finance.${referenceType}`,
+    entityType: input.referenceType ?? "accounting_journal_entry",
+    entityId: input.referenceId ?? entry.id,
+    summary: input.description,
+    metadata: {
+      journalEntryId: entry.id,
+      entryType: input.entryType,
+      referenceType,
+      amount: debitTotal.toFixed(2),
+      isSystemEntry: input.isSystemEntry ?? false,
+    },
+  });
+
+  return entry;
 }
 
 export async function postPaymentAccountingEntry(

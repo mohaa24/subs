@@ -541,6 +541,7 @@ exports.paymentsRouter.get("/dues", async (req, res) => {
     const status = req.query.status;
     const dueTypeId = req.query.dueTypeId?.trim();
     const q = req.query.q?.trim() || "";
+    const sort = req.query.sort === "name" || req.query.sort === "amount" ? req.query.sort : "date";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 20));
     const where = {};
@@ -574,7 +575,11 @@ exports.paymentsRouter.get("/dues", async (req, res) => {
             where,
             skip: (page - 1) * limit,
             take: limit,
-            orderBy: { dueDate: "desc" },
+            orderBy: sort === "name"
+                ? [{ membership: { hod: { nameWithInitials: "asc" } } }, { dueDate: "desc" }]
+                : sort === "amount"
+                    ? [{ amountDue: "desc" }, { dueDate: "desc" }]
+                    : { dueDate: "desc" },
             include: {
                 membership: {
                     select: {
