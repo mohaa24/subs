@@ -4,6 +4,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, apiUrl, type DueType, type Zone } from "@/lib/api";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
@@ -420,6 +421,9 @@ export default function ReportsPage() {
             <FileText className="h-5 w-5 text-primary" />
             {t("reports.title")}
           </h1>
+          <Button asChild variant="outline">
+            <Link href="/reports/cash-movement">Cash Movement Report</Link>
+          </Button>
         </div>
 
         {error && (

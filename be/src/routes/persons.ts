@@ -38,19 +38,19 @@ const maxZoneCode = 9;
 
 const createSchema = z.object({
   organizationId: z.string().optional(),
-  title: z.enum(titles as unknown as [string, ...string[]]),
-  nameWithInitials: z.string().min(1),
-  fullName: z.string().min(1),
+  title: z.enum(titles as unknown as [string, ...string[]]).optional(),
+  nameWithInitials: z.string().optional(),
+  fullName: z.string().optional(),
   preferredName: z.string().optional(),
-  residentType: z.enum(residentTypes as unknown as [string, ...string[]]),
-  gender: z.string().min(1),
+  residentType: z.enum(residentTypes as unknown as [string, ...string[]]).optional(),
+  gender: z.string().optional(),
   identityType: z.enum(identityTypes as unknown as [string, ...string[]]).optional(),
   nicNumber: z.string().optional().nullable(),
   idNumber: z.string().optional().nullable(),
-  dateOfBirth: z.string().min(1),
+  dateOfBirth: z.string().optional(),
   bloodGroup: z.enum(bloodGroups as unknown as [string, ...string[]]).optional(),
-  maritalStatus: z.enum(maritalStatuses as unknown as [string, ...string[]]),
-  address: z.string().min(1),
+  maritalStatus: z.enum(maritalStatuses as unknown as [string, ...string[]]).optional(),
+  address: z.string().optional(),
   areaCode: z.number().int().min(1).max(maxZoneCode).optional().nullable(),
   mobileNumber: z.string().optional(),
   whatsAppNumber: z.string().optional(),
@@ -59,6 +59,7 @@ const createSchema = z.object({
   placeOfWork: z.string().optional(),
   highestQualificationType: z.enum(highestQualTypes).optional(),
   highestQualificationTitle: z.string().optional(),
+  schoolName: z.string().optional(),
   permanentDisability: z.enum(permanentDisabilityOptions).optional(),
   livingStatus: z.enum(livingStatuses as unknown as [string, ...string[]]).optional(),
   isMadarasaStudent: z.boolean().optional(),
@@ -150,10 +151,38 @@ personsRouter.post("/", async (req, res) => {
   if (req.auth!.role !== "super_user" && orgId !== req.auth!.organizationId) {
     return res.status(403).json({ error: "Forbidden" });
   }
+  const configuredFields = await prisma.formFieldConfig.findMany({
+    where: { organizationId: orgId, formType: "Person" },
+    select: { fieldName: true, visibility: true },
+  });
+  const configuredMap = new Map(configuredFields.map((field) => [field.fieldName, field.visibility]));
+  const defaultRequired = ["title", "nameWithInitials", "fullName", "gender", "dateOfBirth", "maritalStatus", "residentType", "address"];
+  const requiredFields = configuredFields.length
+    ? configuredFields.filter((field) => field.visibility === "Required").map((field) => field.fieldName)
+    : defaultRequired;
+  const birthDate = parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : null;
+  const age = birthDate && !Number.isNaN(birthDate.getTime())
+    ? Math.floor((Date.now() - birthDate.getTime()) / (365.2425 * 24 * 60 * 60 * 1000))
+    : null;
+  const inactiveConditionalFields = new Set<string>([
+    ...(!parsed.data.identityType || (age !== null && age < 16)
+      ? ["nicNumber", "idNumber"]
+      : parsed.data.identityType === "NIC" ? ["idNumber"] : ["nicNumber"]),
+    ...((age !== null && age < 16) ? ["occupation", "placeOfWork"] : []),
+  ]);
+  const missing = requiredFields.filter((field) => {
+    if (configuredMap.get(field) === "Hidden" || inactiveConditionalFields.has(field)) return false;
+    const value = (parsed.data as Record<string, unknown>)[field];
+    return value === undefined || value === null || (typeof value === "string" && !value.trim());
+  });
+  if (missing.length) return res.status(400).json({ error: `Required fields missing: ${missing.join(", ")}` });
   const { organizationId: _oid, dateOfBirth: dob, email, ...rest } = parsed.data;
+  const fallbackName = parsed.data.fullName?.trim() || parsed.data.nameWithInitials?.trim() || "Unnamed Person";
   const person = await prisma.person.create({
     data: {
       ...rest,
+      nameWithInitials: parsed.data.nameWithInitials?.trim() || fallbackName,
+      fullName: parsed.data.fullName?.trim() || fallbackName,
       organizationId: orgId,
       email: email === "" ? undefined : email,
       dateOfBirth: dob ? new Date(dob) : undefined,

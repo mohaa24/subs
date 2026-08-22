@@ -3046,3 +3046,157 @@ exports.accountingRouter.get("/reports/balance-sheet", asyncRoute(async (req, re
         liabilitiesAndEquityTotal: Number((liabilityTotal + equityTotal).toFixed(2)),
     });
 }));
+exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, res) => {
+    const orgId = getOrgId(req);
+    if (!orgId)
+        return res.status(400).json({ error: "Organization scope required" });
+    const from = startOfDay(dateFromQuery(req.query.fromDate, new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+    const to = endOfDay(dateFromQuery(req.query.toDate, new Date()));
+    if (from > to)
+        return res.status(400).json({ error: "From date must be on or before to date" });
+    const [organization, accounts] = await Promise.all([
+        prisma_js_1.prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+        prisma_js_1.prisma.accountingAccount.findMany({
+            where: { organizationId: orgId, accountType: "asset", assetSubtype: { in: ["cash", "bank"] } },
+            orderBy: [{ assetSubtype: "asc" }, { name: "asc" }],
+            select: { id: true, name: true, assetSubtype: true },
+        }),
+    ]);
+    const accountIds = accounts.map((account) => account.id);
+    const [openingLines, entries] = await Promise.all([
+        prisma_js_1.prisma.accountingJournalLine.groupBy({
+            by: ["accountId", "side"],
+            where: {
+                organizationId: orgId,
+                accountId: { in: accountIds },
+                journalEntry: { entryDate: { lt: from } },
+            },
+            _sum: { amount: true },
+        }),
+        prisma_js_1.prisma.accountingJournalEntry.findMany({
+            where: {
+                organizationId: orgId,
+                entryDate: { gte: from, lte: to },
+                lines: { some: { accountId: { in: accountIds } } },
+            },
+            orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
+            include: { lines: { include: { account: { select: { id: true, name: true, accountType: true, assetSubtype: true } } } } },
+        }),
+    ]);
+    const zeroAccountValues = () => Object.fromEntries(accounts.map((account) => [account.id, 0]));
+    const openingByAccount = zeroAccountValues();
+    for (const line of openingLines) {
+        const amount = Number(line._sum.amount ?? 0);
+        openingByAccount[line.accountId] += line.side === "debit" ? amount : -amount;
+    }
+    const receivedRows = new Map();
+    const paidRows = new Map();
+    const transferRows = [];
+    const movementByAccount = zeroAccountValues();
+    function movementGroup(referenceType, section) {
+        if (section === "transfer")
+            return "Internal Transfers";
+        if (section === "received") {
+            if (referenceType === "fund_collection")
+                return "Special Fund Collections";
+            if (referenceType === "receivable_collection")
+                return "Receivable Repayments";
+            if (referenceType === "payable_borrowing" || referenceType === "payable_recovery")
+                return "Other Money Received";
+            if (referenceType?.includes("reversal") || referenceType === "journal_entry")
+                return "Reversals";
+            return "Operating Income";
+        }
+        if (referenceType === "fund_expense")
+            return "Special Fund Expenses";
+        if (referenceType === "payable_repayment" || referenceType === "payable_payment")
+            return "Payable Repayments";
+        if (referenceType === "receivable_payment")
+            return "Receivable Advances";
+        if (referenceType?.includes("reversal") || referenceType === "journal_entry")
+            return "Reversals";
+        return "Operating Expenses";
+    }
+    for (const entry of entries) {
+        const cashLines = entry.lines.filter((line) => accountIds.includes(line.accountId));
+        const signedValues = zeroAccountValues();
+        for (const line of cashLines) {
+            const signed = (line.side === "debit" ? 1 : -1) * Number(line.amount);
+            signedValues[line.accountId] += signed;
+            movementByAccount[line.accountId] += signed;
+        }
+        const net = Object.values(signedValues).reduce((sum, amount) => sum + amount, 0);
+        const isTransfer = cashLines.length > 1 && Math.abs(net) < 0.005;
+        const section = isTransfer ? "transfer" : net >= 0 ? "received" : "paid";
+        const counterpartNames = [...new Set(entry.lines
+                .filter((line) => !accountIds.includes(line.accountId))
+                .map((line) => line.account.name))];
+        const description = counterpartNames.join(" / ") || entry.description;
+        const group = movementGroup(entry.referenceType, section);
+        if (section === "transfer") {
+            transferRows.push({
+                key: entry.id,
+                group,
+                description: entry.description,
+                total: 0,
+                accounts: signedValues,
+            });
+            continue;
+        }
+        const target = section === "received" ? receivedRows : paidRows;
+        const key = `${group}::${description}`;
+        const row = target.get(key) ?? { key, group, description, total: 0, accounts: zeroAccountValues() };
+        row.total += Math.abs(net);
+        for (const account of accounts)
+            row.accounts[account.id] += Math.abs(signedValues[account.id]);
+        target.set(key, row);
+    }
+    const normalizeRow = (row) => ({
+        ...row,
+        total: Number(row.total.toFixed(2)),
+        accounts: Object.fromEntries(Object.entries(row.accounts).map(([id, amount]) => [id, Number(amount.toFixed(2))])),
+    });
+    const received = [...receivedRows.values()].map(normalizeRow);
+    const paid = [...paidRows.values()].map(normalizeRow);
+    const transfers = transferRows.map(normalizeRow);
+    const receivedByAccount = zeroAccountValues();
+    const paidByAccount = zeroAccountValues();
+    const transferByAccount = zeroAccountValues();
+    for (const row of received)
+        for (const account of accounts)
+            receivedByAccount[account.id] += row.accounts[account.id];
+    for (const row of paid)
+        for (const account of accounts)
+            paidByAccount[account.id] += row.accounts[account.id];
+    for (const row of transfers)
+        for (const account of accounts)
+            transferByAccount[account.id] += row.accounts[account.id];
+    const closingByAccount = Object.fromEntries(accounts.map((account) => [
+        account.id,
+        Number((openingByAccount[account.id] + movementByAccount[account.id]).toFixed(2)),
+    ]));
+    const sumValues = (values) => Object.values(values).reduce((sum, amount) => sum + amount, 0);
+    const moneyReceived = received.reduce((sum, row) => sum + row.total, 0);
+    const moneyPaid = paid.reduce((sum, row) => sum + row.total, 0);
+    return res.json({
+        organizationName: organization?.name ?? "Organization",
+        fromDate: from.toISOString().slice(0, 10),
+        toDate: to.toISOString().slice(0, 10),
+        accounts,
+        summary: {
+            openingBalance: Number(sumValues(openingByAccount).toFixed(2)),
+            moneyReceived: Number(moneyReceived.toFixed(2)),
+            moneyPaid: Number(moneyPaid.toFixed(2)),
+            netCashMovement: Number((moneyReceived - moneyPaid).toFixed(2)),
+            closingBalance: Number(sumValues(closingByAccount).toFixed(2)),
+        },
+        openingByAccount,
+        receivedByAccount,
+        paidByAccount,
+        transferByAccount,
+        closingByAccount,
+        received,
+        paid,
+        transfers,
+    });
+}));

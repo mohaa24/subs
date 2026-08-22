@@ -302,6 +302,7 @@ function PersonsPageContent() {
       placeOfWork: p.placeOfWork ?? "",
       highestQualificationType: p.highestQualificationType ?? "",
       highestQualificationTitle: p.highestQualificationTitle ?? "",
+      schoolName: p.schoolName ?? "",
       permanentDisability: p.permanentDisability ?? "",
       livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
@@ -345,6 +346,7 @@ function PersonsPageContent() {
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
         highestQualificationTitle: data.highestQualificationTitle || undefined,
+        schoolName: data.schoolName || undefined,
         permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
@@ -421,6 +423,7 @@ function PersonsPageContent() {
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
         highestQualificationTitle: data.highestQualificationTitle || undefined,
+        schoolName: data.schoolName || undefined,
         permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
@@ -1273,6 +1276,7 @@ function PersonsPageContent() {
             <DialogTitle>Add New Person</DialogTitle>
           </DialogHeader>
           <PersonForm
+            organizationId={effectiveOrgId}
             zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={closeAddDialog}
@@ -1293,6 +1297,7 @@ function PersonsPageContent() {
           </DialogHeader>
           {editPerson?.initial && (
             <PersonForm
+              organizationId={effectiveOrgId}
               initial={editPerson.initial}
               zones={zones}
               onSubmit={handleEditPerson}

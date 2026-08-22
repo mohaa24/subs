@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { type Zone } from "@/lib/api";
+import { useFormVisibility } from "@/lib/form-visibility";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,7 @@ export interface PersonFormData {
   placeOfWork: string;
   highestQualificationType: string;
   highestQualificationTitle: string;
+  schoolName: string;
   permanentDisability: string;
   livingStatus: string;
   isMadarasaStudent: boolean;
@@ -99,21 +101,11 @@ const defaultPerson: PersonFormData = {
   placeOfWork: "",
   highestQualificationType: "",
   highestQualificationTitle: "",
+  schoolName: "",
   permanentDisability: "",
   livingStatus: "Active",
   isMadarasaStudent: false,
 };
-
-const REQUIRED_FIELDS: (keyof PersonFormData)[] = [
-  "title",
-  "nameWithInitials",
-  "fullName",
-  "gender",
-  "dateOfBirth",
-  "maritalStatus",
-  "residentType",
-  "address",
-];
 
 function Section({
   title,
@@ -145,6 +137,7 @@ export function PersonForm({
   onCancel,
   submitLabel = "Save",
   disabled = false,
+  organizationId,
 }: {
   initial?: Partial<PersonFormData>;
   zones?: Zone[];
@@ -152,7 +145,9 @@ export function PersonForm({
   onCancel?: () => void;
   submitLabel?: string;
   disabled?: boolean;
+  organizationId?: string | null;
 }) {
+  const { visible, required } = useFormVisibility("Person", organizationId);
   const [form, setForm] = useState<PersonFormData>(() => {
     const merged = { ...defaultPerson, ...initial };
     return {
@@ -200,7 +195,12 @@ export function PersonForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setValidationError(null);
-    const missing = REQUIRED_FIELDS.filter((f) => !form[f]?.toString().trim());
+    const inactiveConditionalFields = new Set<keyof PersonFormData>([
+      ...(!form.identityType || isUnder16 ? ["nicNumber", "idNumber"] as const : form.identityType === "NIC" ? ["idNumber"] as const : ["nicNumber"] as const),
+      ...(isUnder16 ? ["occupation", "placeOfWork"] as const : []),
+    ]);
+    const missing = (Object.keys(form) as (keyof PersonFormData)[])
+      .filter((field) => visible(field) && required(field) && !inactiveConditionalFields.has(field) && !form[field]?.toString().trim());
     if (missing.length > 0) {
       const labels: Record<string, string> = {
         title: "Title",
@@ -234,9 +234,11 @@ export function PersonForm({
       return;
     }
     onSubmit({
-      ...form,
-      mobileNumber: form.mobileNumber.trim(),
-      whatsAppNumber: form.whatsAppNumber.trim(),
+      ...Object.fromEntries(
+        Object.entries(form).map(([field, value]) => [field, visible(field) ? value : defaultPerson[field as keyof PersonFormData]])
+      ) as PersonFormData,
+      mobileNumber: visible("mobileNumber") ? form.mobileNumber.trim() : "",
+      whatsAppNumber: visible("whatsAppNumber") ? form.whatsAppNumber.trim() : "",
     });
   }
 
@@ -256,8 +258,8 @@ export function PersonForm({
       )}
 
       <Section title="Personal Information" variant="default">
-        <div className="space-y-2">
-          <Label>Title <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("title")} className="space-y-2">
+          <Label>Title {required("title") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.title || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, title: v }))}
@@ -274,29 +276,29 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Name with Initials <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("nameWithInitials")} className="space-y-2">
+          <Label>Name with Initials {required("nameWithInitials") && <span className="text-destructive">*</span>}</Label>
           <Input
             value={form.nameWithInitials}
             onChange={(e) =>
               setForm((f) => ({ ...f, nameWithInitials: onlyLettersAndSpaces(e.target.value) }))
             }
-            required
+            required={required("nameWithInitials")}
             placeholder="e.g. M.A. Rahman"
           />
         </div>
-        <div className="space-y-2">
-          <Label>Full Name <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("fullName")} className="space-y-2">
+          <Label>Full Name {required("fullName") && <span className="text-destructive">*</span>}</Label>
           <Input
             value={form.fullName}
             onChange={(e) =>
               setForm((f) => ({ ...f, fullName: onlyLettersAndSpaces(e.target.value) }))
             }
-            required
+            required={required("fullName")}
             placeholder="e.g. Mohamed Abdul Rahman"
           />
         </div>
-        <div className="space-y-2">
+        <div hidden={!visible("preferredName")} className="space-y-2">
           <Label>Preferred Name</Label>
           <Input
             value={form.preferredName}
@@ -306,8 +308,8 @@ export function PersonForm({
             placeholder="e.g. Rahman"
           />
         </div>
-        <div className="space-y-2">
-          <Label>Gender <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("gender")} className="space-y-2">
+          <Label>Gender {required("gender") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.gender || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, gender: v }))}
@@ -324,17 +326,18 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Date of Birth <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("dateOfBirth")} className="space-y-2">
+          <Label>Date of Birth {required("dateOfBirth") && <span className="text-destructive">*</span>}</Label>
           <Input
             type="date"
             value={form.dateOfBirth}
             onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))}
             max={today}
+            required={required("dateOfBirth")}
           />
         </div>
-        <div className="space-y-2">
-          <Label>Marital Status <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("maritalStatus")} className="space-y-2">
+          <Label>Marital Status {required("maritalStatus") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.maritalStatus || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, maritalStatus: v }))}
@@ -351,7 +354,7 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
+        <div hidden={!visible("bloodGroup")} className="space-y-2">
           <Label>Blood Group</Label>
           <Select
             value={form.bloodGroup || "not_set"}
@@ -375,8 +378,8 @@ export function PersonForm({
       </Section>
 
       <Section title="Residency & Address" variant="alt">
-        <div className="space-y-2 md:col-span-2">
-          <Label>Resident Type <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("residentType")} className="space-y-2 md:col-span-2">
+          <Label>Resident Type {required("residentType") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.residentType || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, residentType: v }))}
@@ -393,17 +396,17 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Main Address <span className="text-destructive">*</span></Label>
+        <div hidden={!visible("address")} className="space-y-2 md:col-span-2">
+          <Label>Main Address {required("address") && <span className="text-destructive">*</span>}</Label>
           <Input
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-            required
+            required={required("address")}
             placeholder="Street, city, postal code"
           />
         </div>
-        <div className="space-y-2">
-          <Label>Zone</Label>
+        <div hidden={!visible("areaCode")} className="space-y-2">
+          <Label>Zone {required("areaCode") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.areaCode || "unset"}
             onValueChange={(v) => setForm((f) => ({ ...f, areaCode: v === "unset" ? "" : v }))}
@@ -424,8 +427,8 @@ export function PersonForm({
       </Section>
 
       <Section title="Identity" variant="default">
-        <div className="space-y-2">
-          <Label>ID Type {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+        <div hidden={!visible("identityType")} className="space-y-2">
+          <Label>ID Type {required("identityType") && <span className="text-destructive">*</span>} {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
             value={form.identityType || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, identityType: v }))}
@@ -443,8 +446,8 @@ export function PersonForm({
           </Select>
         </div>
         {isNIC ? (
-          <div className="space-y-2">
-            <Label>NIC Number</Label>
+          <div hidden={!visible("nicNumber")} className="space-y-2">
+            <Label>NIC Number {required("nicNumber") && <span className="text-destructive">*</span>}</Label>
             <Input
               value={form.nicNumber}
               onChange={(e) =>
@@ -454,11 +457,12 @@ export function PersonForm({
               placeholder="e.g. 199012345678 or 123456789V"
               disabled={isUnder16}
               className={isUnder16 ? "opacity-60" : ""}
+              required={required("nicNumber") && !isUnder16}
             />
           </div>
         ) : form.identityType ? (
-          <div className="space-y-2">
-            <Label>ID Number</Label>
+          <div hidden={!visible("idNumber")} className="space-y-2">
+            <Label>ID Number {required("idNumber") && <span className="text-destructive">*</span>}</Label>
             <Input
               value={form.idNumber}
               onChange={(e) =>
@@ -467,14 +471,15 @@ export function PersonForm({
               placeholder="Passport or license number"
               disabled={isUnder16}
               className={isUnder16 ? "opacity-60" : ""}
+              required={required("idNumber") && !isUnder16}
             />
           </div>
         ) : null}
       </Section>
 
       <Section title="Contact" variant="alt">
-        <div className="space-y-2">
-          <Label>Mobile Number</Label>
+        <div hidden={!visible("mobileNumber")} className="space-y-2">
+          <Label>Mobile Number {required("mobileNumber") && <span className="text-destructive">*</span>}</Label>
           <div className="phone-field">
             <PhoneInput
               defaultCountry="lk"
@@ -483,15 +488,15 @@ export function PersonForm({
               onChange={(phone) =>
                 setForm((f) => ({ ...f, mobileNumber: phone }))
               }
-              inputProps={{ id: "mobileNumber", name: "mobileNumber" }}
+              inputProps={{ id: "mobileNumber", name: "mobileNumber", required: required("mobileNumber") }}
               placeholder="e.g. +94 77 123 4567"
               disabled={disabled}
             />
           </div>
          
         </div>
-        <div className="space-y-2">
-          <Label>WhatsApp Number</Label>
+        <div hidden={!visible("whatsAppNumber")} className="space-y-2">
+          <Label>WhatsApp Number {required("whatsAppNumber") && <span className="text-destructive">*</span>}</Label>
           <div className="phone-field">
             <PhoneInput
               defaultCountry="lk"
@@ -500,27 +505,28 @@ export function PersonForm({
               onChange={(phone) =>
                 setForm((f) => ({ ...f, whatsAppNumber: phone }))
               }
-              inputProps={{ id: "whatsAppNumber", name: "whatsAppNumber" }}
+              inputProps={{ id: "whatsAppNumber", name: "whatsAppNumber", required: required("whatsAppNumber") }}
               placeholder="e.g. +94 77 123 4567"
               disabled={disabled}
             />
           </div>
           
         </div>
-        <div className="space-y-2 md:col-span-2">
-          <Label>Email</Label>
+        <div hidden={!visible("email")} className="space-y-2 md:col-span-2">
+          <Label>Email {required("email") && <span className="text-destructive">*</span>}</Label>
           <Input
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             placeholder="e.g. name@example.com"
+            required={required("email")}
           />
         </div>
       </Section>
 
       <Section title="Employment Details" variant="default">
-        <div className="space-y-2">
-          <Label>Occupation {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+        <div hidden={!visible("occupation")} className="space-y-2">
+          <Label>Occupation {required("occupation") && <span className="text-destructive">*</span>} {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
             value={form.occupation || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, occupation: v }))}
@@ -537,8 +543,8 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Work Location {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
+        <div hidden={!visible("placeOfWork")} className="space-y-2">
+          <Label>Work Location {required("placeOfWork") && <span className="text-destructive">*</span>} {isUnder16 && <span className="text-muted-foreground text-xs">(under 16)</span>}</Label>
           <Select
             value={form.placeOfWork || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, placeOfWork: v }))}
@@ -558,8 +564,8 @@ export function PersonForm({
       </Section>
 
       <Section title="Education Details" variant="alt">
-        <div className="space-y-2">
-          <Label>Highest Qualification Type</Label>
+        <div hidden={!visible("highestQualificationType")} className="space-y-2">
+          <Label>Highest Qualification Type {required("highestQualificationType") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.highestQualificationType || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, highestQualificationType: v }))}
@@ -576,17 +582,27 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Highest Qualification Title</Label>
+        <div hidden={!visible("highestQualificationTitle")} className="space-y-2">
+          <Label>Highest Qualification Title {required("highestQualificationTitle") && <span className="text-destructive">*</span>}</Label>
           <Input
             value={form.highestQualificationTitle}
             onChange={(e) =>
               setForm((f) => ({ ...f, highestQualificationTitle: e.target.value }))
             }
             placeholder="e.g. BSc in Computer Science"
+            required={required("highestQualificationTitle")}
           />
         </div>
-        <div className="flex items-center space-x-2 md:col-span-2">
+        <div hidden={!visible("schoolName")} className="space-y-2 md:col-span-2">
+          <Label>School Name {required("schoolName") && <span className="text-destructive">*</span>}</Label>
+          <Input
+            value={form.schoolName}
+            onChange={(e) => setForm((f) => ({ ...f, schoolName: e.target.value }))}
+            required={required("schoolName")}
+            placeholder="School name"
+          />
+        </div>
+        <div hidden={!visible("isMadarasaStudent")} className="flex items-center space-x-2 md:col-span-2">
           <Checkbox
             id="madarasa"
             checked={form.isMadarasaStudent}
@@ -597,8 +613,8 @@ export function PersonForm({
       </Section>
 
       <Section title="Other Details" variant="default">
-        <div className="space-y-2">
-          <Label>Living Status</Label>
+        <div hidden={!visible("livingStatus")} className="space-y-2">
+          <Label>Living Status {required("livingStatus") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.livingStatus || "Active"}
             onValueChange={(v) => setForm((f) => ({ ...f, livingStatus: v }))}
@@ -615,8 +631,8 @@ export function PersonForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Permanent Disability</Label>
+        <div hidden={!visible("permanentDisability")} className="space-y-2">
+          <Label>Permanent Disability {required("permanentDisability") && <span className="text-destructive">*</span>}</Label>
           <Select
             value={form.permanentDisability || undefined}
             onValueChange={(v) => setForm((f) => ({ ...f, permanentDisability: v }))}

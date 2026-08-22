@@ -69,6 +69,7 @@ dashboardRouter.get("/activity", async (req, res) => {
       take: 500,
       select: {
         id: true, amount: true, paymentDate: true, receiptNumber: true, isReversed: true,
+        reversedAt: true, reversalReason: true,
         membership: { select: { membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
       },
     }),
@@ -100,13 +101,20 @@ dashboardRouter.get("/activity", async (req, res) => {
   ]);
 
   const items = [
-    ...payments.map((payment) => ({
+    ...payments.flatMap((payment) => [{
       id: `payment-${payment.id}`,
-      type: payment.isReversed ? "payment_reversal" : "payment",
-      title: payment.isReversed ? "Payment reversed" : "Member collection",
+      type: "payment",
+      title: "Member collection",
       description: `${payment.membership?.hod?.nameWithInitials ?? payment.membership?.hod?.fullName ?? payment.membership?.membershipNo ?? "Member"} • ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}`,
-      amount: Number(payment.amount), occurredAt: payment.paymentDate.toISOString(), tone: payment.isReversed ? "rose" : "emerald",
-    })),
+      amount: Number(payment.amount), occurredAt: payment.paymentDate.toISOString(), tone: "emerald",
+    }, ...(payment.isReversed && payment.reversedAt ? [{
+      id: `payment-reversal-${payment.id}`,
+      type: "payment_reversal",
+      title: "Payment reversed",
+      description: `Reversal of ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()} • ${payment.reversalReason ?? "No reason recorded"}`,
+      reversalReference: payment.receiptNumber ?? payment.id,
+      amount: Number(payment.amount), occurredAt: payment.reversedAt.toISOString(), tone: "rose",
+    }] : [])]),
     ...cashTransactions.flatMap((transaction) => [{
       id: `cash-${transaction.id}`,
       type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
@@ -118,7 +126,8 @@ dashboardRouter.get("/activity", async (req, res) => {
       id: `cash-reversal-${transaction.id}`,
       type: "cash_reversal",
       title: "Cash transaction reversed",
-      description: `${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      description: `Reversal of ${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      reversalReference: transaction.documentNumber ?? transaction.id,
       amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), tone: "rose",
     }] : [])]),
     ...fundTransactions.flatMap((transaction) => [{
@@ -132,7 +141,8 @@ dashboardRouter.get("/activity", async (req, res) => {
       id: `fund-reversal-${transaction.id}`,
       type: "fund_reversal",
       title: "Fund transaction reversed",
-      description: `${transaction.fundPot.name} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      description: `Reversal of ${transaction.receiptNumber ?? transaction.id.slice(-8).toUpperCase()} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      reversalReference: transaction.receiptNumber ?? transaction.id,
       amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), tone: "rose",
     }] : [])]),
     ...feedItems.map((item) => ({
@@ -496,16 +506,26 @@ dashboardRouter.get("/", async (req, res) => {
   ).size;
 
   const recentActivity = [
-    ...payments.slice(0, 8).map((payment) => ({
+    ...payments.slice(0, 8).flatMap((payment) => [{
       id: `payment-${payment.id}`,
-      type: payment.isReversed ? "payment_reversal" : "payment",
-      title: payment.isReversed ? "Payment reversed" : "Member collection",
+      type: "payment",
+      title: "Member collection",
       description: `${payment.membership?.hod?.nameWithInitials ?? payment.membership?.hod?.fullName ?? payment.membership?.membershipNo ?? "Member"} • ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()}`,
       amount: Number(payment.amount),
       occurredAt: payment.paymentDate.toISOString(),
       href: "/payments",
-      tone: payment.isReversed ? "rose" : "emerald",
-    })),
+      tone: "emerald",
+    }, ...(payment.isReversed && payment.reversedAt ? [{
+      id: `payment-reversal-${payment.id}`,
+      type: "payment_reversal",
+      title: "Payment reversed",
+      description: `Reversal of ${payment.receiptNumber ?? payment.id.slice(-8).toUpperCase()} • ${payment.reversalReason ?? "No reason recorded"}`,
+      reversalReference: payment.receiptNumber ?? payment.id,
+      amount: Number(payment.amount),
+      occurredAt: payment.reversedAt.toISOString(),
+      href: "/payments",
+      tone: "rose",
+    }] : [])]),
     ...cashTransactions.slice(0, 8).flatMap((transaction) => [{
       id: `cash-${transaction.id}`,
       type: transaction.flowType === "cash_in" ? "cash_in" : "cash_out",
@@ -519,7 +539,8 @@ dashboardRouter.get("/", async (req, res) => {
       id: `cash-reversal-${transaction.id}`,
       type: "cash_reversal",
       title: "Cash transaction reversed",
-      description: `${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      description: `Reversal of ${transaction.documentNumber ?? transaction.category.replace(/_/g, " ")} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      reversalReference: transaction.documentNumber ?? transaction.id,
       amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), href: transaction.flowType === "cash_in" ? "/cash-in" : "/cash-out", tone: "rose",
     }] : [])]),
     ...fundTransactions.slice(0, 8).flatMap((transaction) => [{
@@ -535,7 +556,8 @@ dashboardRouter.get("/", async (req, res) => {
       id: `fund-reversal-${transaction.id}`,
       type: "fund_reversal",
       title: "Fund transaction reversed",
-      description: `${transaction.fundPot.name} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      description: `Reversal of ${transaction.receiptNumber ?? transaction.id.slice(-8).toUpperCase()} • ${transaction.reversalReason ?? "No reason recorded"}`,
+      reversalReference: transaction.receiptNumber ?? transaction.id,
       amount: Number(transaction.amount), occurredAt: transaction.reversedAt.toISOString(), href: `/funds/${transaction.fundPot.id}`, tone: "rose",
     }] : [])]),
     ...recentFeedItems.map((item) => ({

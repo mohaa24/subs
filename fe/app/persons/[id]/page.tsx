@@ -141,6 +141,7 @@ export default function PersonDetailPage() {
       placeOfWork: p.placeOfWork ?? "",
       highestQualificationType: p.highestQualificationType ?? "",
       highestQualificationTitle: p.highestQualificationTitle ?? "",
+      schoolName: p.schoolName ?? "",
       permanentDisability: p.permanentDisability ?? "",
       livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
@@ -172,6 +173,7 @@ export default function PersonDetailPage() {
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
         highestQualificationTitle: data.highestQualificationTitle || undefined,
+        schoolName: data.schoolName || undefined,
         permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
@@ -584,6 +586,7 @@ export default function PersonDetailPage() {
           </DialogHeader>
           {person && (
             <PersonForm
+              organizationId={person.organizationId}
               initial={personToFormData(person)}
               zones={zones}
               onSubmit={handleEdit}

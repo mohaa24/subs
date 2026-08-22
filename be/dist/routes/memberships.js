@@ -62,7 +62,7 @@ const baseSchema = zod_1.z.object({
     spouseRelationToHOH: zod_1.z.enum(spouseRelations).optional().nullable(),
     dependentPersons: zod_1.z.array(dependentSchema).optional(),
     isZakathEligible: zod_1.z.boolean().optional().nullable(),
-    areaCode: zod_1.z.number().int().min(1).max(maxZoneCode),
+    areaCode: zod_1.z.number().int().min(1).max(maxZoneCode).optional().nullable(),
     land: zod_1.z.boolean().optional(),
     houseOwnership: zod_1.z.boolean().optional(),
     commercialProperties: zod_1.z.boolean().optional(),
@@ -391,6 +391,15 @@ exports.membershipsRouter.post("/", async (req, res) => {
     if (req.auth.role !== "super_user" && orgId !== req.auth.organizationId) {
         return res.status(403).json({ error: "Forbidden" });
     }
+    const fallbackZone = parsed.data.areaCode == null
+        ? await prisma_js_1.prisma.person.findUnique({ where: { id: parsed.data.hodPersonId }, select: { areaCode: true } })
+        : null;
+    const firstZone = parsed.data.areaCode == null && !fallbackZone?.areaCode
+        ? await prisma_js_1.prisma.zone.findFirst({ where: { organizationId: orgId, isActive: true }, orderBy: { code: "asc" }, select: { code: true } })
+        : null;
+    const effectiveAreaCode = parsed.data.areaCode ?? fallbackZone?.areaCode ?? firstZone?.code;
+    if (!effectiveAreaCode)
+        return res.status(400).json({ error: "A zone is required to generate the membership number" });
     const dependentPersons = parsed.data.dependentPersons ?? [];
     const spousePersonId = parsed.data.spousePersonId ?? null;
     const spouseRelationToHOH = spousePersonId ? "Wife" : null;
@@ -398,12 +407,12 @@ exports.membershipsRouter.post("/", async (req, res) => {
     try {
         validateNoRoleDuplicates(assignments);
         await ensurePeopleAssignable(orgId, assignments, null);
-        await ensureZoneExists(orgId, parsed.data.areaCode);
+        await ensureZoneExists(orgId, effectiveAreaCode);
     }
     catch (err) {
         return res.status(400).json({ error: err instanceof Error ? err.message : "Invalid household assignment" });
     }
-    const membershipNo = await nextMembershipNo(orgId, parsed.data.areaCode);
+    const membershipNo = await nextMembershipNo(orgId, effectiveAreaCode);
     const payload = {
         organizationId: orgId,
         membershipNo,
@@ -413,7 +422,7 @@ exports.membershipsRouter.post("/", async (req, res) => {
         hodPersonId: parsed.data.hodPersonId,
         spousePersonId,
         isZakathEligible: parsed.data.isZakathEligible ?? null,
-        areaCode: parsed.data.areaCode,
+        areaCode: effectiveAreaCode,
         land: parsed.data.land ?? false,
         houseOwnership: parsed.data.houseOwnership ?? false,
         commercialProperties: parsed.data.commercialProperties ?? false,
@@ -486,7 +495,7 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
     try {
         validateNoRoleDuplicates(assignments);
         await ensurePeopleAssignable(existing.organizationId, assignments, existing.id);
-        if (parsed.data.areaCode !== undefined) {
+        if (parsed.data.areaCode !== undefined && parsed.data.areaCode !== null) {
             await ensureZoneExists(existing.organizationId, parsed.data.areaCode);
         }
     }
@@ -502,6 +511,8 @@ exports.membershipsRouter.patch("/:id", async (req, res) => {
     delete data.organizationId;
     delete data.dependentPersons;
     delete data.spouseRelationToHOH;
+    if (data.areaCode === null)
+        delete data.areaCode;
     if (data.dateOfRegistration)
         data.dateOfRegistration = new Date(data.dateOfRegistration);
     if (data.membershipStatus !== undefined)

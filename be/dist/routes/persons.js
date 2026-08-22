@@ -36,19 +36,19 @@ const permanentDisabilityOptions = [
 const maxZoneCode = 9;
 const createSchema = zod_1.z.object({
     organizationId: zod_1.z.string().optional(),
-    title: zod_1.z.enum(titles),
-    nameWithInitials: zod_1.z.string().min(1),
-    fullName: zod_1.z.string().min(1),
+    title: zod_1.z.enum(titles).optional(),
+    nameWithInitials: zod_1.z.string().optional(),
+    fullName: zod_1.z.string().optional(),
     preferredName: zod_1.z.string().optional(),
-    residentType: zod_1.z.enum(residentTypes),
-    gender: zod_1.z.string().min(1),
+    residentType: zod_1.z.enum(residentTypes).optional(),
+    gender: zod_1.z.string().optional(),
     identityType: zod_1.z.enum(identityTypes).optional(),
     nicNumber: zod_1.z.string().optional().nullable(),
     idNumber: zod_1.z.string().optional().nullable(),
-    dateOfBirth: zod_1.z.string().min(1),
+    dateOfBirth: zod_1.z.string().optional(),
     bloodGroup: zod_1.z.enum(bloodGroups).optional(),
-    maritalStatus: zod_1.z.enum(maritalStatuses),
-    address: zod_1.z.string().min(1),
+    maritalStatus: zod_1.z.enum(maritalStatuses).optional(),
+    address: zod_1.z.string().optional(),
     areaCode: zod_1.z.number().int().min(1).max(maxZoneCode).optional().nullable(),
     mobileNumber: zod_1.z.string().optional(),
     whatsAppNumber: zod_1.z.string().optional(),
@@ -57,6 +57,7 @@ const createSchema = zod_1.z.object({
     placeOfWork: zod_1.z.string().optional(),
     highestQualificationType: zod_1.z.enum(highestQualTypes).optional(),
     highestQualificationTitle: zod_1.z.string().optional(),
+    schoolName: zod_1.z.string().optional(),
     permanentDisability: zod_1.z.enum(permanentDisabilityOptions).optional(),
     livingStatus: zod_1.z.enum(livingStatuses).optional(),
     isMadarasaStudent: zod_1.z.boolean().optional(),
@@ -152,10 +153,40 @@ exports.personsRouter.post("/", async (req, res) => {
     if (req.auth.role !== "super_user" && orgId !== req.auth.organizationId) {
         return res.status(403).json({ error: "Forbidden" });
     }
+    const configuredFields = await prisma_js_1.prisma.formFieldConfig.findMany({
+        where: { organizationId: orgId, formType: "Person" },
+        select: { fieldName: true, visibility: true },
+    });
+    const configuredMap = new Map(configuredFields.map((field) => [field.fieldName, field.visibility]));
+    const defaultRequired = ["title", "nameWithInitials", "fullName", "gender", "dateOfBirth", "maritalStatus", "residentType", "address"];
+    const requiredFields = configuredFields.length
+        ? configuredFields.filter((field) => field.visibility === "Required").map((field) => field.fieldName)
+        : defaultRequired;
+    const birthDate = parsed.data.dateOfBirth ? new Date(parsed.data.dateOfBirth) : null;
+    const age = birthDate && !Number.isNaN(birthDate.getTime())
+        ? Math.floor((Date.now() - birthDate.getTime()) / (365.2425 * 24 * 60 * 60 * 1000))
+        : null;
+    const inactiveConditionalFields = new Set([
+        ...(!parsed.data.identityType || (age !== null && age < 16)
+            ? ["nicNumber", "idNumber"]
+            : parsed.data.identityType === "NIC" ? ["idNumber"] : ["nicNumber"]),
+        ...((age !== null && age < 16) ? ["occupation", "placeOfWork"] : []),
+    ]);
+    const missing = requiredFields.filter((field) => {
+        if (configuredMap.get(field) === "Hidden" || inactiveConditionalFields.has(field))
+            return false;
+        const value = parsed.data[field];
+        return value === undefined || value === null || (typeof value === "string" && !value.trim());
+    });
+    if (missing.length)
+        return res.status(400).json({ error: `Required fields missing: ${missing.join(", ")}` });
     const { organizationId: _oid, dateOfBirth: dob, email, ...rest } = parsed.data;
+    const fallbackName = parsed.data.fullName?.trim() || parsed.data.nameWithInitials?.trim() || "Unnamed Person";
     const person = await prisma_js_1.prisma.person.create({
         data: {
             ...rest,
+            nameWithInitials: parsed.data.nameWithInitials?.trim() || fallbackName,
+            fullName: parsed.data.fullName?.trim() || fallbackName,
             organizationId: orgId,
             email: email === "" ? undefined : email,
             dateOfBirth: dob ? new Date(dob) : undefined,

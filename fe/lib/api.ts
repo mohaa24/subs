@@ -164,6 +164,7 @@ export interface Person {
   placeOfWork?: string | null;
   highestQualificationType?: string | null;
   highestQualificationTitle?: string | null;
+  schoolName?: string | null;
   permanentDisability?: string | null;
   relationToHOH?: RelationToHOH | null;
   livingStatus?: LivingStatus | null;
@@ -719,6 +720,7 @@ export interface DashboardStats {
     type: string;
     title: string;
     description: string;
+    reversalReference?: string;
     amount?: number | null;
     occurredAt: string;
     href?: string | null;

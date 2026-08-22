@@ -19,6 +19,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { Settings, Save } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
+import { configuredVisibility, type FieldVisibility } from "@/lib/form-visibility";
 
 const PERSON_FIELDS = [
   "title", "nameWithInitials", "fullName", "preferredName", "residentType", "gender",
@@ -36,7 +37,7 @@ const MEMBERSHIP_FIELDS = [
 ];
 
 type FormType = "Person" | "Membership";
-type Visibility = "Required" | "Optional" | "Hidden";
+type Visibility = FieldVisibility;
 
 function buildFieldMap(configs: FormFieldConfig[]): Record<string, Visibility> {
   const map: Record<string, Visibility> = {};
@@ -132,7 +133,7 @@ export default function FormConfigPage() {
         formType,
         fields: fields.map((f, i) => ({
           fieldName: f,
-          visibility: fieldMap[f] ?? "Optional",
+          visibility: configuredVisibility(fieldMap, formType, f),
           displayOrder: i,
         })),
       };
@@ -217,7 +218,7 @@ export default function FormConfigPage() {
                             <td className="py-2 pr-4">{formatFieldName(f)}</td>
                             <td className="py-2">
                               <Select
-                                value={personFields[f] ?? "Optional"}
+                                value={configuredVisibility(personFields, "Person", f)}
                                 onValueChange={(v: Visibility) =>
                                   setPersonFields((prev) => ({ ...prev, [f]: v }))
                                 }
@@ -259,7 +260,7 @@ export default function FormConfigPage() {
                             <td className="py-2 pr-4">{formatFieldName(f)}</td>
                             <td className="py-2">
                               <Select
-                                value={membershipFields[f] ?? "Optional"}
+                                value={configuredVisibility(membershipFields, "Membership", f)}
                                 onValueChange={(v: Visibility) =>
                                   setMembershipFields((prev) => ({ ...prev, [f]: v }))
                                 }

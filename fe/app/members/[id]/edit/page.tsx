@@ -29,6 +29,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { CHILD_RELATION_OPTIONS, OTHER_DEPENDENT_RELATION_OPTIONS } from "@/lib/constants";
 import { toast } from "@/hooks/use-toast";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
+import { useFormVisibility } from "@/lib/form-visibility";
 
 const PAYMENT_PERIODS = ["Monthly", "Quarterly", "Annually"] as const;
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
@@ -93,6 +94,7 @@ export default function EditMembershipPage() {
   const [zones, setZones] = useState<Zone[]>([]);
 
   const orgId = membership?.organizationId ?? user?.organizationId ?? null;
+  const membershipFields = useFormVisibility("Membership", orgId);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -207,6 +209,7 @@ export default function EditMembershipPage() {
         placeOfWork: data.placeOfWork || undefined,
         highestQualificationType: data.highestQualificationType || undefined,
         highestQualificationTitle: data.highestQualificationTitle || undefined,
+        schoolName: data.schoolName || undefined,
         permanentDisability: data.permanentDisability || undefined,
         livingStatus: data.livingStatus || undefined,
         isMadarasaStudent: data.isMadarasaStudent,
@@ -268,6 +271,7 @@ export default function EditMembershipPage() {
       placeOfWork: p.placeOfWork ?? "",
       highestQualificationType: p.highestQualificationType ?? "",
       highestQualificationTitle: p.highestQualificationTitle ?? "",
+      schoolName: p.schoolName ?? "",
       permanentDisability: p.permanentDisability ?? "",
       livingStatus: p.livingStatus ?? "Active",
       isMadarasaStudent: p.isMadarasaStudent ?? false,
@@ -360,7 +364,7 @@ export default function EditMembershipPage() {
       });
       return;
     }
-    if (!areaCode) {
+    if (membershipFields.required("areaCode") && !areaCode) {
       const msg = "Zone is required.";
       setError(msg);
       toast({
@@ -400,7 +404,7 @@ export default function EditMembershipPage() {
           totalContribution: computedTotal,
           disability,
           isZakathEligible,
-          areaCode: Number(areaCode),
+          areaCode: membershipFields.visible("areaCode") && areaCode ? Number(areaCode) : null,
         }),
       });
       toast({
@@ -448,7 +452,7 @@ export default function EditMembershipPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Membership Details</CardTitle>
-                <button
+                <button hidden={!membershipFields.visible("membershipStatus")}
                   type="button"
                   onClick={() => setMembershipStatus(isActive ? "Inactive" : "Active")}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${isActive ? "bg-green-500" : "bg-gray-300"}`}
@@ -459,7 +463,7 @@ export default function EditMembershipPage() {
                   <span className="sr-only">Toggle status</span>
                 </button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p hidden={!membershipFields.visible("membershipStatus")} className="text-xs text-muted-foreground mt-1">
                 Status: <span className={isActive ? "text-green-600 font-medium" : "text-red-500 font-medium"}>{membershipStatus}</span>
               </p>
             </CardHeader>
@@ -712,8 +716,8 @@ export default function EditMembershipPage() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Membership Type</Label>
+                <div hidden={!membershipFields.visible("membershipType")} className="space-y-2">
+                  <Label>Membership Type {membershipFields.required("membershipType") && <span className="text-destructive">*</span>}</Label>
                   <Select value={membershipType} onValueChange={setMembershipType}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -723,8 +727,8 @@ export default function EditMembershipPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Payment Period</Label>
+                <div hidden={!membershipFields.visible("paymentPeriod")} className="space-y-2">
+                  <Label>Payment Period {membershipFields.required("paymentPeriod") && <span className="text-destructive">*</span>}</Label>
                   <Select
                     value={paymentPeriod}
                     onValueChange={(v: "Monthly" | "Quarterly" | "Annually") => setPaymentPeriod(v)}
@@ -747,20 +751,20 @@ export default function EditMembershipPage() {
                 <div className="rounded-md border overflow-hidden divide-y text-sm">
                   {(
                     [
-                      ["Land", land, setLand],
-                      ["House Ownership", houseOwnership, setHouseOwnership],
-                      ["Commercial Properties", commercialProperties, setCommercialProperties],
-                      ["Toilet Facility", toiletFacility, setToiletFacility],
-                      ["Vehicle Ownership", vehicleOwnership, setVehicleOwnership],
-                      ["Water Accessibility", waterAccessibility, setWaterAccessibility],
-                      ["Electricity", electricity, setElectricity],
-                    ] as [string, boolean, (v: boolean) => void][]
-                  ).map(([label, val, set]) => (
+                      ["land", "Land", land, setLand],
+                      ["houseOwnership", "House Ownership", houseOwnership, setHouseOwnership],
+                      ["commercialProperties", "Commercial Properties", commercialProperties, setCommercialProperties],
+                      ["toiletFacility", "Toilet Facility", toiletFacility, setToiletFacility],
+                      ["vehicleOwnership", "Vehicle Ownership", vehicleOwnership, setVehicleOwnership],
+                      ["waterAccessibility", "Water Accessibility", waterAccessibility, setWaterAccessibility],
+                      ["electricity", "Electricity", electricity, setElectricity],
+                    ] as [string, string, boolean, (v: boolean) => void][]
+                  ).filter(([field]) => membershipFields.visible(field)).map(([field, label, val, set]) => (
                     <label
-                      key={label}
+                      key={field}
                       className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
                     >
-                      <span>{label}</span>
+                      <span>{label}{membershipFields.required(field) && <span className="text-destructive"> *</span>}</span>
                       <Checkbox checked={val} onCheckedChange={(c) => set(!!c)} />
                     </label>
                   ))}
@@ -773,7 +777,7 @@ export default function EditMembershipPage() {
               <div className="space-y-2">
                 <Label className="font-semibold">Contributions</Label>
                 <div className="rounded-md border overflow-hidden divide-y text-sm">
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <div hidden={!membershipFields.visible("membershipFee")} className="flex items-center justify-between px-4 py-3">
                     <span className="text-muted-foreground">Membership Fee</span>
                     <Input
                       type="number"
@@ -782,9 +786,10 @@ export default function EditMembershipPage() {
                       value={membershipFee}
                       onChange={(e) => setMembershipFee(e.target.value)}
                       className="w-36 text-right h-8"
+                      required={membershipFields.required("membershipFee")}
                     />
                   </div>
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <div hidden={!membershipFields.visible("additionalVoluntaryContributions")} className="flex items-center justify-between px-4 py-3">
                     <span className="text-muted-foreground">Additional Voluntary Contributions</span>
                     <Input
                       type="number"
@@ -795,7 +800,7 @@ export default function EditMembershipPage() {
                       className="w-36 text-right h-8"
                     />
                   </div>
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <div hidden={!membershipFields.visible("membershipFeeDiscount")} className="flex items-center justify-between px-4 py-3">
                     <span className="text-muted-foreground">Discount</span>
                     <Input
                       type="number"
@@ -806,7 +811,7 @@ export default function EditMembershipPage() {
                       className="w-36 text-right h-8"
                     />
                   </div>
-                  <div className="flex items-center justify-between px-4 py-3 bg-muted/40">
+                  <div hidden={!membershipFields.visible("totalContribution")} className="flex items-center justify-between px-4 py-3 bg-muted/40">
                     <span className="font-semibold">Total</span>
                     <span className="text-base font-semibold tabular-nums">{computedTotal.toFixed(2)}</span>
                   </div>
@@ -816,7 +821,7 @@ export default function EditMembershipPage() {
               <hr className="border-border" />
 
               {/* Disability */}
-              <div className="space-y-2">
+              <div hidden={!membershipFields.visible("disability")} className="space-y-2">
                 <Label>Disability in Household</Label>
                 <Select
                   value={disability ? "yes" : "no"}
@@ -833,7 +838,7 @@ export default function EditMembershipPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div hidden={!membershipFields.visible("isZakathEligible")} className="space-y-2">
                   <Label>Zakath Eligible</Label>
                   <Select
                     value={isZakathEligible === null ? "unset" : isZakathEligible ? "yes" : "no"}
@@ -851,8 +856,8 @@ export default function EditMembershipPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>Zone <span className="text-destructive">*</span></Label>
+                <div hidden={!membershipFields.visible("areaCode")} className="space-y-2">
+                  <Label>Zone {membershipFields.required("areaCode") && <span className="text-destructive">*</span>}</Label>
                   <Select
                     value={areaCode || undefined}
                     onValueChange={setAreaCode}
@@ -905,6 +910,7 @@ export default function EditMembershipPage() {
             </DialogTitle>
           </DialogHeader>
           <PersonForm
+            organizationId={orgId}
             zones={zones}
             onSubmit={handleCreatePerson}
             onCancel={() => setAddPersonOpen(null)}
@@ -921,6 +927,7 @@ export default function EditMembershipPage() {
           </DialogHeader>
           {editPerson?.initial && (
             <PersonForm
+              organizationId={orgId}
               initial={editPerson.initial}
               zones={zones}
               onSubmit={handleEditPerson}
