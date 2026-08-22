@@ -906,7 +906,7 @@ async function payableDetail(tx, organizationId, accountId, from, toEnd) {
                 transactionDate: { gte: from, lte: toEnd },
             },
             include: {
-                cashBankAccount: { select: { id: true, name: true } },
+                cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
                 counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
                 createdBy: { select: { email: true } },
                 reversedBy: { select: { email: true } },
@@ -1012,7 +1012,7 @@ async function receivableDetail(tx, organizationId, accountId, from, toEnd) {
                 transactionDate: { gte: from, lte: toEnd },
             },
             include: {
-                cashBankAccount: { select: { id: true, name: true } },
+                cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
                 counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
                 createdBy: { select: { email: true } },
                 reversedBy: { select: { email: true } },
@@ -1230,7 +1230,7 @@ async function loadCashAccountDetail(req, res, flowType) {
         tx.cashTransaction.findMany({
             where: historyWhere,
             include: {
-                cashBankAccount: { select: { id: true, name: true } },
+                cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
                 counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
                 createdBy: { select: { email: true } },
                 reversedBy: { select: { email: true } },

@@ -403,7 +403,7 @@ export interface CashTransaction {
   reversalReason?: string | null;
   reversalDocumentNumber?: string | null;
   createdAt: string;
-  cashBankAccount?: Pick<AccountingAccount, "id" | "name">;
+  cashBankAccount?: Pick<AccountingAccount, "id" | "name" | "assetSubtype">;
   counterpartyMembership?: {
     id: string;
     membershipNo: string;

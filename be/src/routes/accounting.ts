@@ -1056,7 +1056,7 @@ async function payableDetail(tx: Prisma.TransactionClient, organizationId: strin
         transactionDate: { gte: from, lte: toEnd },
       },
       include: {
-        cashBankAccount: { select: { id: true, name: true } },
+        cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
         counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
         createdBy: { select: { email: true } },
         reversedBy: { select: { email: true } },
@@ -1175,7 +1175,7 @@ async function receivableDetail(tx: Prisma.TransactionClient, organizationId: st
         transactionDate: { gte: from, lte: toEnd },
       },
       include: {
-        cashBankAccount: { select: { id: true, name: true } },
+        cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
         counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
         createdBy: { select: { email: true } },
         reversedBy: { select: { email: true } },
@@ -1426,7 +1426,7 @@ async function loadCashAccountDetail(req: Request, res: Response, flowType: Cash
     tx.cashTransaction.findMany({
       where: historyWhere,
       include: {
-        cashBankAccount: { select: { id: true, name: true } },
+        cashBankAccount: { select: { id: true, name: true, assetSubtype: true } },
         counterpartyMembership: { select: { id: true, membershipNo: true, hod: { select: { fullName: true, nameWithInitials: true } } } },
         createdBy: { select: { email: true } },
         reversedBy: { select: { email: true } },

@@ -46,15 +46,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth-context";
 import {
   api,
+  apiAssetUrl,
   type AccountingAccount,
   type CashAccountDetail,
   type CashFlowAccountRow,
   type CashFlowOverview,
   type CashTransaction,
   type CashTransactionCategory,
+  type CashTransactionReceipt,
 } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { toast } from "@/hooks/use-toast";
+import {
+  PaymentReceiptDialog,
+  type PaymentReceiptData,
+} from "@/components/payment-receipt-dialog";
 
 type CashFlowSlug = "cash-in" | "cash-out";
 type CashPeriod = "this_month" | "this_year" | "all_time" | "custom";
@@ -123,6 +129,32 @@ function dateLabel(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+function dateTimeLabel(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function transactionDateKey(value: string) {
+  return new Date(value).toLocaleDateString("en-CA", { timeZone: "Asia/Colombo" });
+}
+
+function transactionGroupLabel(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 function flowConfig(flow: CashFlowSlug) {
@@ -213,6 +245,43 @@ function defaultForm(cashBankAccountId = "") {
   };
 }
 
+function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData {
+  return {
+    paymentKind: "fund",
+    organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
+    membershipNo: receipt.accountName,
+    membershipId: "",
+    memberName: receipt.counterpartyName || receipt.accountName,
+    paymentId: receipt.transactionId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.transactionDate,
+    paymentMethod: receipt.paymentMethod || "Cash/Bank",
+    paidAmount: receipt.amount,
+    appliedToDue: 0,
+    overpaymentToCredit: 0,
+    remainingAfter: 0,
+    outstandingAfterPayment: 0,
+    creditBalanceAfterPayment: 0,
+    note: receipt.reversalReason || receipt.description || receipt.reference || null,
+    collectedBy: receipt.collectedBy || undefined,
+    memberQrValue: "",
+    receiptTitle: receipt.receiptTitle,
+    primaryLabel: "Account",
+    nameLabel: receipt.counterpartyLabel,
+    amountLabel: receipt.amountLabel,
+    showBalanceAfterPayment: false,
+    extraRows: [
+      receipt.originalReceiptNumber
+        ? { label: "Original Receipt", value: receipt.originalReceiptNumber }
+        : null,
+      receipt.reference ? { label: "Reference", value: receipt.reference } : null,
+      receipt.counterpartyPhone ? { label: "Phone", value: receipt.counterpartyPhone } : null,
+      receipt.reversalReason ? { label: "Reversal Reason", value: receipt.reversalReason } : null,
+    ].filter(Boolean) as Array<{ label: string; value: string }>,
+  };
+}
+
 export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; accountId?: string }) {
   const config = flowConfig(flow);
   const { user, loading } = useAuth();
@@ -232,6 +301,8 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
   const [submitting, setSubmitting] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
   const [memberOptions, setMemberOptions] = useState<MemberLookup[]>([]);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<PaymentReceiptData | null>(null);
   const Icon = config.icon;
 
   const cashBankAccounts = useMemo(
@@ -406,6 +477,25 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     }
   }
 
+  async function openCashReceipt(transactionId: string) {
+    try {
+      const receipt = await api<CashTransactionReceipt>(
+        `/accounting/cash-transactions/${transactionId}/receipt`
+      );
+      setReceiptData(toCashReceiptData(receipt));
+      setReceiptOpen(true);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Receipt could not be loaded",
+        description:
+          err instanceof Error
+            ? err.message
+            : "The transaction was saved, but the receipt could not be opened.",
+      });
+    }
+  }
+
   if (loading || !user) return null;
 
   const selectedAction = selected ? actionLabel(flow, selected.category, selected.sectionKey) : config.actionLabel;
@@ -478,6 +568,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
               category ?? (isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_repayment" : flow === "cash-in" ? "operating_income" : "operating_expense")
             )}
             onReverse={handleReverse}
+            onReceipt={openCashReceipt}
           />
         ) : (
           <>
@@ -663,6 +754,11 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
           </form>
         </DialogContent>
       </Dialog>
+      <PaymentReceiptDialog
+        open={receiptOpen}
+        onOpenChange={setReceiptOpen}
+        receipt={receiptData}
+      />
     </div>
   );
 }
@@ -679,6 +775,7 @@ function AccountDetailView({
   loadingData,
   onRecord,
   onReverse,
+  onReceipt,
 }: {
   flow: CashFlowSlug;
   config: ReturnType<typeof flowConfig>;
@@ -687,6 +784,7 @@ function AccountDetailView({
   loadingData: boolean;
   onRecord: (category?: CashTransactionCategory) => void;
   onReverse: (transaction: CashTransaction) => void;
+  onReceipt: (transactionId: string) => void;
 }) {
   const isReceivable = isReceivableSubtype(detail.account.assetSubtype);
   const isPayable = isPayableSubtype(detail.account.assetSubtype);
@@ -833,7 +931,7 @@ function AccountDetailView({
           </Card>
         </div>
       ) : (
-        <CashHistoryCard
+        <CashStatementHistoryCard
           title={historyTitle}
           action={
             isPayable ? (
@@ -849,10 +947,12 @@ function AccountDetailView({
             )
           }
           flow={flow}
+          accountName={detail.account.name}
           rows={detail.history}
           loadingData={loadingData}
           canManage={canManage}
           onReverse={onReverse}
+          onReceipt={onReceipt}
         />
       )}
     </div>
@@ -933,6 +1033,241 @@ function PayableHistoryDetail({ tx }: { tx: CashTransaction }) {
       <DetailMini label="Reversed by" value={tx.reversedBy?.email ?? "-"} />
       <DetailMini label="Reversed on" value={dateLabel(tx.reversedAt)} />
       <DetailMini label="Linked reversal receipt" value={tx.reversalDocumentNumber ?? "-"} />
+    </div>
+  );
+}
+
+function CashStatementHistoryCard({
+  title,
+  action,
+  flow,
+  accountName,
+  rows,
+  loadingData,
+  canManage,
+  onReverse,
+  onReceipt,
+}: {
+  title: string;
+  action: ReactNode;
+  flow: CashFlowSlug;
+  accountName: string;
+  rows: CashTransaction[];
+  loadingData: boolean;
+  canManage: boolean;
+  onReverse: (transaction: CashTransaction) => void;
+  onReceipt: (transactionId: string) => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const groups = useMemo(() => {
+    const grouped = new Map<string, CashTransaction[]>();
+    rows.forEach((transaction) => {
+      const key = transactionDateKey(transaction.transactionDate);
+      grouped.set(key, [...(grouped.get(key) ?? []), transaction]);
+    });
+    return Array.from(grouped, ([date, transactions]) => ({ date, transactions }));
+  }, [rows]);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardTitle className="text-base">{title}</CardTitle>
+        {action}
+      </CardHeader>
+      <CardContent>
+        {loadingData ? <div className="h-24 animate-pulse rounded-md bg-muted" /> : null}
+        {!loadingData && rows.length === 0 ? (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No transactions recorded yet.</p>
+        ) : null}
+        {!loadingData && rows.length > 0 ? (
+          <div className="space-y-4">
+            {groups.map((group) => (
+              <section key={group.date} className="overflow-hidden rounded-lg border bg-card">
+                <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-2.5">
+                  <h3 className="text-sm font-semibold text-slate-700">{transactionGroupLabel(group.date)}</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {group.transactions.length} {group.transactions.length === 1 ? "transaction" : "transactions"}
+                  </span>
+                </div>
+
+                <div className="divide-y md:hidden">
+                  {group.transactions.map((transaction) => {
+                    const expanded = expandedId === transaction.id;
+                    const reversed = Boolean(transaction.reversedAt);
+                    return (
+                      <div key={transaction.id}>
+                        <button
+                          type="button"
+                          className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left"
+                          onClick={() => setExpandedId(expanded ? null : transaction.id)}
+                          aria-expanded={expanded}
+                        >
+                          <TransactionStatusIcon reversed={reversed} flow={flow} />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{accountName}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {flow === "cash-in" ? "Received From" : "Paid To"}: {transaction.counterpartyName || "—"}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-right">
+                              <div className={`text-sm font-bold ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                                {formatRs(transaction.amount)}
+                              </div>
+                              <TransactionStatusBadge reversed={reversed} />
+                            </div>
+                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                          </div>
+                        </button>
+                        {expanded ? (
+                          <CashStatementExpanded
+                            transaction={transaction}
+                            canManage={canManage}
+                            onReceipt={onReceipt}
+                            onReverse={onReverse}
+                            mobile
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden overflow-x-auto md:block">
+                  <div className="min-w-[1000px]">
+                    <div className="grid grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                      <div>Transaction</div>
+                      <div>Account Details</div>
+                      <div>Receipt No.</div>
+                      <div>Payment Method</div>
+                      <div className="text-right">Amount (LKR)</div>
+                      <div className="text-center">Status</div>
+                      <div />
+                    </div>
+                    <div className="divide-y">
+                      {group.transactions.map((transaction) => {
+                        const expanded = expandedId === transaction.id;
+                        const reversed = Boolean(transaction.reversedAt);
+                        return (
+                          <div key={transaction.id}>
+                            <button
+                              type="button"
+                              className="grid w-full grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center px-3 py-3 text-left transition-colors hover:bg-muted/30"
+                              onClick={() => setExpandedId(expanded ? null : transaction.id)}
+                              aria-expanded={expanded}
+                            >
+                              <TransactionStatusIcon reversed={reversed} flow={flow} />
+                              <div className="min-w-0 pr-4">
+                                <div className="truncate text-sm font-semibold">{accountName}</div>
+                                <div className="truncate text-xs text-muted-foreground">
+                                  {flow === "cash-in" ? "Received From" : "Paid To"}: {transaction.counterpartyName || "—"}
+                                </div>
+                              </div>
+                              <div className="truncate font-mono text-xs font-semibold text-primary">{transaction.documentNumber || "—"}</div>
+                              <TransactionPaymentMethod transaction={transaction} />
+                              <div className={`text-right text-sm font-bold ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                                {formatRs(transaction.amount)}
+                              </div>
+                              <div className="text-center"><TransactionStatusBadge reversed={reversed} /></div>
+                              <ChevronDown className={`mx-auto h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                            </button>
+                            {expanded ? (
+                              <CashStatementExpanded
+                                transaction={transaction}
+                                canManage={canManage}
+                                onReceipt={onReceipt}
+                                onReverse={onReverse}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TransactionStatusIcon({ reversed, flow }: { reversed: boolean; flow: CashFlowSlug }) {
+  if (reversed) {
+    return <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-600"><Undo2 className="h-4 w-4" /></span>;
+  }
+  return (
+    <span className={`flex h-9 w-9 items-center justify-center rounded-full ${flow === "cash-in" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+      {flow === "cash-in" ? <BanknoteArrowDown className="h-4 w-4" /> : <BanknoteArrowUp className="h-4 w-4" />}
+    </span>
+  );
+}
+
+function TransactionStatusBadge({ reversed }: { reversed: boolean }) {
+  return (
+    <span className={`inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase ${reversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+      {reversed ? "Reversed" : "Paid"}
+    </span>
+  );
+}
+
+function TransactionPaymentMethod({ transaction }: { transaction: CashTransaction }) {
+  const bank = transaction.cashBankAccount?.assetSubtype === "bank";
+  const MethodIcon = bank ? Landmark : Banknote;
+  return (
+    <div className="flex min-w-0 items-center gap-2 pr-3 text-xs">
+      <MethodIcon className="h-4 w-4 shrink-0 text-slate-500" />
+      <span className="truncate">{transaction.cashBankAccount?.name || transaction.paymentMethod || "—"}</span>
+    </div>
+  );
+}
+
+function CashStatementExpanded({
+  transaction,
+  canManage,
+  onReceipt,
+  onReverse,
+  mobile = false,
+}: {
+  transaction: CashTransaction;
+  canManage: boolean;
+  onReceipt: (transactionId: string) => void;
+  onReverse: (transaction: CashTransaction) => void;
+  mobile?: boolean;
+}) {
+  return (
+    <div className="mx-3 mb-3 overflow-hidden rounded-md border-l-2 border-primary/60 bg-muted/20">
+      <div className={`grid gap-4 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center"}`}>
+        {mobile ? (
+          <>
+            <DetailMini label="Receipt No." value={transaction.documentNumber || "—"} />
+            <div><div className="text-xs text-muted-foreground">Payment Method</div><TransactionPaymentMethod transaction={transaction} /></div>
+          </>
+        ) : null}
+        <DetailMini label="Entered By" value={transaction.createdBy?.email || "—"} />
+        <DetailMini label="Date Entered" value={dateTimeLabel(transaction.createdAt)} />
+        <DetailMini label="Reference" value={transaction.reference || "—"} />
+        <div className={`flex flex-wrap gap-2 ${mobile ? "" : "justify-end"}`}>
+          <Button size="sm" variant="outline" onClick={() => onReceipt(transaction.id)}>
+            <ReceiptText className="mr-2 h-4 w-4" />Receipt
+          </Button>
+          {!transaction.reversedAt && canManage ? (
+            <Button size="sm" variant="dangerOutline" onClick={() => onReverse(transaction)}>
+              <Undo2 className="mr-2 h-4 w-4" />Reverse
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {transaction.reversedAt ? (
+        <div className={`grid gap-4 border-t border-red-200 bg-red-50/60 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]"}`}>
+          <DetailMini label="Reversed By" value={transaction.reversedBy?.email || "—"} />
+          <DetailMini label="Reversed Date" value={dateTimeLabel(transaction.reversedAt)} />
+          <DetailMini label="Reversed Reason" value={transaction.reversalReason || "—"} />
+          <div />
+        </div>
+      ) : null}
     </div>
   );
 }
