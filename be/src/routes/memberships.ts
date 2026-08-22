@@ -287,6 +287,7 @@ membershipsRouter.get("/", async (req, res) => {
   const disability = (req.query.disability as string)?.trim() || "";
   const registeredFrom = (req.query.registeredFrom as string)?.trim() || "";
   const registeredTo = (req.query.registeredTo as string)?.trim() || "";
+  const sort = (req.query.sort as string)?.trim() || "recent";
   const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
   const where: any = {};
@@ -334,7 +335,13 @@ membershipsRouter.get("/", async (req, res) => {
       where,
       skip: (page - 1) * limit,
       take: limit,
-      orderBy: { dateOfRegistration: "desc" },
+      orderBy: sort === "name_asc"
+        ? { hod: { nameWithInitials: "asc" } }
+        : sort === "name_desc"
+          ? { hod: { nameWithInitials: "desc" } }
+          : sort === "oldest"
+            ? { dateOfRegistration: "asc" }
+            : { dateOfRegistration: "desc" },
       include: {
         hod: { select: { id: true, nameWithInitials: true, fullName: true, nicNumber: true, relationToHOH: true } },
         spouse: { select: { id: true, nameWithInitials: true, fullName: true, relationToHOH: true } },

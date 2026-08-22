@@ -20,9 +20,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal, UserPlus } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal, UserPlus, RefreshCw, UserRound } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -94,7 +95,9 @@ function MembersContent() {
   const [qInput, setQInput] = useState(searchParams.get("q") || "");
   const [appliedQ, setAppliedQ] = useState(searchParams.get("q") || "");
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
-  const limit = 10;
+  const [limit, setLimit] = useState(parseInt(searchParams.get("limit") || "10", 10));
+  const [sort, setSort] = useState(searchParams.get("sort") || "recent");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [showArchived, setShowArchived] = useState(searchParams.get("includeArchived") === "true");
   const [filters, setFilters] = useState<MembershipFilters>(() => filtersFromSearchParams(searchParams));
   const [appliedFilters, setAppliedFilters] = useState<MembershipFilters>(() => filtersFromSearchParams(searchParams));
@@ -144,10 +147,14 @@ function MembersContent() {
     nextPage: number,
     nextQ = appliedQ,
     nextFilters = appliedFilters,
-    nextShowArchived = showArchived
+    nextShowArchived = showArchived,
+    nextSort = sort,
+    nextLimit = limit
   ) {
     const params = new URLSearchParams();
     params.set("page", String(nextPage));
+    params.set("limit", String(nextLimit));
+    if (nextSort !== "recent") params.set("sort", nextSort);
     if (nextQ) params.set("q", nextQ);
     if (nextShowArchived) params.set("includeArchived", "true");
     if (nextFilters.membershipType) params.set("membershipType", nextFilters.membershipType);
@@ -164,6 +171,7 @@ function MembersContent() {
   useEffect(() => {
     if (!user) return;
     const params: Record<string, string> = { page: String(page), limit: String(limit) };
+    params.sort = sort;
     if (appliedQ) params.q = appliedQ;
     if (showArchived) params.includeArchived = "true";
     if (user.role === "super_user" && user.organizationId) params.organizationId = user.organizationId;
@@ -196,6 +204,9 @@ function MembersContent() {
     appliedFilters.disability,
     appliedFilters.registeredFrom,
     appliedFilters.registeredTo,
+    limit,
+    sort,
+    refreshKey,
   ]);
 
   useEffect(() => {
@@ -232,15 +243,16 @@ function MembersContent() {
           <DropdownMenuItem asChild>
             <Link href={`/members/${membership.id}`} className="flex items-center gap-2">
               <Eye className="h-4 w-4" />
-              <span>View</span>
+              <span>View Member</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href={`/members/${membership.id}/edit`} className="flex items-center gap-2">
               <Pencil className="h-4 w-4" />
-              <span>Edit</span>
+              <span>Edit Member</span>
             </Link>
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => handleToggleArchive(membership)}
             className={
@@ -252,12 +264,12 @@ function MembersContent() {
             {archived ? (
               <>
                 <ArchiveRestore className="mr-2 h-4 w-4" />
-                <span>Restore</span>
+                <span>Restore Member</span>
               </>
             ) : (
               <>
                 <Archive className="mr-2 h-4 w-4" />
-                <span>Archive</span>
+                <span>Archive Member</span>
               </>
             )}
           </DropdownMenuItem>
@@ -298,6 +310,14 @@ function MembersContent() {
     router.push(`/members?${buildQueryString(1, qInput, appliedFilters, showArchived)}`);
   }
 
+  function applyQuickFilter(key: "membershipType" | "membershipStatus" | "areaCode", value: string) {
+    const nextFilters = { ...appliedFilters, [key]: value === "__all__" ? "" : value };
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    setPage(1);
+    router.push(`/members?${buildQueryString(1, appliedQ, nextFilters, showArchived)}`);
+  }
+
   function handleClearFilters() {
     const cleared = emptyFilters();
     setQInput("");
@@ -308,7 +328,7 @@ function MembersContent() {
     setDraftShowArchived(false);
     setFilterOpen(false);
     setPage(1);
-    router.push("/members?page=1");
+    router.push(`/members?${buildQueryString(1, "", cleared, false)}`);
   }
 
   function applyAdvancedFilters() {
@@ -320,7 +340,14 @@ function MembersContent() {
   }
 
   function clearAdvancedFilters() {
-    const cleared = emptyFilters();
+    const cleared = {
+      ...appliedFilters,
+      paymentPeriod: "",
+      isZakathEligible: "",
+      disability: "",
+      registeredFrom: "",
+      registeredTo: "",
+    };
     setFilters(cleared);
     setAppliedFilters(cleared);
     setShowArchived(false);
@@ -372,6 +399,23 @@ function MembersContent() {
     membership.areaCode !== undefined && membership.areaCode !== null
       ? zoneLabel(String(membership.areaCode))
       : null;
+  const memberLocation = (membership: Membership) => {
+    if (membership.areaCode === undefined || membership.areaCode === null) return "Location not set";
+    return zones.find((zone) => zone.code === Number(membership.areaCode))?.name ?? "Location not set";
+  };
+  const memberInitials = (membership: Membership) => {
+    const words = memberDisplayName(membership)
+      .replace(/[^A-Za-z\s]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (words.length === 0) return "M";
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
+  };
+  const registeredDateLabel = (value?: string | null) => value
+    ? new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : "—";
   const appliedPills: AppliedFilterPill[] = [];
   if (appliedQ) appliedPills.push({ key: "q", label: `Search: ${appliedQ}` });
   if (appliedFilters.membershipType) {
@@ -409,13 +453,23 @@ function MembersContent() {
     appliedPills.push({ key: "includeArchived", label: "Archived included" });
   }
   const appliedFilterCount = appliedPills.length;
+  const advancedFilterCount = [
+    appliedFilters.paymentPeriod,
+    appliedFilters.isZakathEligible,
+    appliedFilters.disability,
+    appliedFilters.registeredFrom,
+    appliedFilters.registeredTo,
+    showArchived ? "true" : "",
+  ].filter(Boolean).length;
+  const resultFrom = total === 0 ? 0 : (page - 1) * limit + 1;
+  const resultTo = Math.min(page * limit, total);
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="p-6 max-w-4xl mx-auto">
+      <main className="mx-auto max-w-7xl p-4 md:p-6">
         <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("membership") }, { label: "Members" }]} />
 
         <div className="flex items-center justify-between mb-5">
@@ -428,35 +482,85 @@ function MembersContent() {
           </Link>
         </div>
 
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-2 md:hidden">
             <CardTitle className="text-sm font-medium">Search Memberships</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-4 md:p-5">
             <form onSubmit={handleSearch} className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Input
-                  placeholder="Search by membership no or head of household..."
-                  value={qInput}
-                  onChange={(e) => setQInput(e.target.value)}
-                  className="sm:max-w-sm"
-                />
-                <Button type="submit" variant="secondary">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by member, membership ID, or name..."
+                    value={qInput}
+                    onChange={(e) => setQInput(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Button type="submit" variant="secondary" className="md:hidden">
                   <Search className="h-4 w-4 mr-1" />
                   Search
                 </Button>
+                <div className="hidden w-36 md:block">
+                  <Select value={appliedFilters.membershipType || "__all__"} onValueChange={(value) => applyQuickFilter("membershipType", value)}>
+                    <SelectTrigger><SelectValue placeholder="All types" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All types</SelectItem>
+                      {MEMBERSHIP_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-40 md:block">
+                  <Select value={appliedFilters.areaCode || "__all__"} onValueChange={(value) => applyQuickFilter("areaCode", value)}>
+                    <SelectTrigger><SelectValue placeholder="All zones" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All zones</SelectItem>
+                      {zones.filter((zone) => zone.code >= 1 && zone.code <= 9).map((zone) => (
+                        <SelectItem key={zone.id} value={String(zone.code)}>{zone.code} - {zone.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-32 md:block">
+                  <Select value={appliedFilters.membershipStatus || "__all__"} onValueChange={(value) => applyQuickFilter("membershipStatus", value)}>
+                    <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All statuses</SelectItem>
+                      {MEMBERSHIP_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-48 md:block">
+                  <Select
+                    value={sort}
+                    onValueChange={(value) => {
+                      setSort(value);
+                      setPage(1);
+                      router.push(`/members?${buildQueryString(1, appliedQ, appliedFilters, showArchived, value)}`);
+                    }}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="recent">Recently Registered</SelectItem>
+                      <SelectItem value="name_asc">Name A–Z</SelectItem>
+                      <SelectItem value="name_desc">Name Z–A</SelectItem>
+                      <SelectItem value="oldest">Oldest Registered</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="relative" ref={filterRef}>
                   <Button
                     type="button"
-                    variant={appliedFilterCount > 0 ? "default" : "outline"}
+                    variant={advancedFilterCount > 0 ? "default" : "outline"}
                     className="gap-1.5"
                     onClick={() => setFilterOpen((open) => !open)}
                   >
                     <Filter className="h-4 w-4" />
                     Filters
-                    {appliedFilterCount > 0 && (
+                    {advancedFilterCount > 0 && (
                       <span className="rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
-                        {appliedFilterCount}
+                        {advancedFilterCount}
                       </span>
                     )}
                   </Button>
@@ -483,7 +587,7 @@ function MembersContent() {
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Membership Type</p>
                           <Select
                             value={filters.membershipType || "__all__"}
@@ -505,7 +609,7 @@ function MembersContent() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Membership Status</p>
                           <Select
                             value={filters.membershipStatus || "__all__"}
@@ -549,7 +653,7 @@ function MembersContent() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Zone</p>
                           <Select
                             value={filters.areaCode || "__all__"}
@@ -656,8 +760,8 @@ function MembersContent() {
 
                       <div className="mt-4 flex items-center justify-between gap-2">
                         <p className="text-xs text-muted-foreground">
-                          {appliedFilterCount > 0
-                            ? `${appliedFilterCount} filter${appliedFilterCount === 1 ? "" : "s"} applied`
+                          {advancedFilterCount > 0
+                            ? `${advancedFilterCount} filter${advancedFilterCount === 1 ? "" : "s"} applied`
                             : "No filters applied yet"}
                         </p>
                         <div className="flex gap-2">
@@ -695,6 +799,16 @@ function MembersContent() {
                 ))}
               </div>
             )}
+
+            <div className="hidden items-center justify-between border-t border-slate-200 pt-4 md:flex">
+              <span className="text-sm font-medium text-slate-700">
+                {total} {total === 1 ? "Member" : "Members"}
+              </span>
+              <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}>
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
 
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
@@ -763,74 +877,77 @@ function MembersContent() {
                     </div>
                   ))}
                 </div>
-                <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[640px]">
-                    <thead className="bg-muted/50">
+                <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+                  <table className="min-w-[900px] w-full text-sm">
+                    <thead className="bg-slate-50/80">
                       <tr>
-                        <th className="text-left p-3 font-medium">Member</th>
-                        <th className="text-left p-3 font-medium">Full Name</th>
-                        <th className="text-left p-3 font-medium">Type</th>
-                        <th className="text-left p-3 font-medium">Status</th>
-                        <th className="text-left p-3 font-medium">Registered</th>
-                        <th></th>
+                        <th className="w-[31%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Member</th>
+                        <th className="w-[25%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Full Name</th>
+                        <th className="w-[14%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Type</th>
+                        <th className="w-[12%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th className="w-[13%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Registered</th>
+                        <th className="w-[5%] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-200">
                       {items.map((m) => (
                         <tr
                           key={m.id}
-                          className="border-t cursor-pointer transition-colors hover:bg-muted/30"
+                          className="cursor-pointer transition-colors hover:bg-slate-50/70"
                           onClick={() => openMembershipDetails(m.id)}
                         >
-                          <td className="p-3">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className={`${(m as any).isArchived ? "line-through opacity-60" : ""}`}>
-                                  {memberDisplayName(m)}
-                                </span>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-emerald-600">
+                                {memberInitials(m)}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={`truncate font-semibold text-slate-900 ${(m as any).isArchived ? "opacity-60" : ""}`}>
+                                    {memberDisplayName(m)}
+                                  </span>
                                 {(m as any).isArchived && (
-                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
+                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-medium text-amber-700">Archived</span>
                                 )}
+                                </div>
+                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                  {membershipIdOnly(m.membershipNo) ? `ID: ${membershipIdOnly(m.membershipNo)} · ` : ""}{memberLocation(m)}
+                                </p>
                               </div>
-                              {memberZone(m) && (
-                                <p className="text-xs text-muted-foreground">
-                                  Zone: {memberZone(m)}
-                                </p>
-                              )}
-                              {membershipIdOnly(m.membershipNo) && (
-                                <p className="text-xs text-muted-foreground">
-                                  ID: {membershipIdOnly(m.membershipNo)}
-                                </p>
-                              )}
                             </div>
                           </td>
-                          <td className="p-3">
+                          <td className="px-4 py-3 text-slate-700">
                             {memberFullName(m)}
                           </td>
-                          <td className="p-3">{m.membershipType}</td>
-                          <td className="p-3">
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-2 text-xs text-slate-700">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500">
+                                <UserRound className="h-3.5 w-3.5" />
+                              </span>
+                              {m.membershipType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
                             <span
-                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium ${
                                 m.membershipStatus === "Active"
                                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                   : "border-red-200 bg-red-50 text-red-700"
                               }`}
                             >
                               <span
-                                className={`h-2 w-2 rounded-full ${
+                                className={`h-1.5 w-1.5 rounded-full ${
                                   m.membershipStatus === "Active" ? "bg-emerald-500" : "bg-red-500"
                                 }`}
                               />
                               {m.membershipStatus}
                             </span>
                           </td>
-                          <td className="p-3">
-                            {m.dateOfRegistration
-                              ? new Date(m.dateOfRegistration).toLocaleDateString()
-                              : ""}
+                          <td className="px-4 py-3 text-xs text-slate-700">
+                            {registeredDateLabel(m.dateOfRegistration)}
                           </td>
-                          <td className="p-3">
-                            <div onClick={(e) => e.stopPropagation()}>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex" onClick={(e) => e.stopPropagation()}>
                               <MembershipActions membership={m} />
                             </div>
                           </td>
@@ -839,14 +956,33 @@ function MembersContent() {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>
-                    {total} result{total !== 1 ? "s" : ""}
-                  </span>
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                  <span>Showing {resultFrom}–{resultTo} of {total}</span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="hidden items-center gap-2 md:flex">
+                      <span className="text-xs">Rows per page</span>
+                      <Select
+                        value={String(limit)}
+                        onValueChange={(value) => {
+                          const nextLimit = Number(value);
+                          setLimit(nextLimit);
+                          setPage(1);
+                          router.push(`/members?${buildQueryString(1, appliedQ, appliedFilters, showArchived, sort, nextLimit)}`);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span className="min-w-[90px] text-center text-xs">Page {page} of {totalPages}</span>
                     <Button
                       variant="outline"
-                      size="sm"
+                      size="icon"
+                      className="h-8 w-8"
                       disabled={page <= 1}
                       onClick={() => {
                         const nextPage = Math.max(1, page - 1);
@@ -856,12 +992,10 @@ function MembersContent() {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <span>
-                      Page {page} of {totalPages}
-                    </span>
                     <Button
                       variant="outline"
-                      size="sm"
+                      size="icon"
+                      className="h-8 w-8"
                       disabled={page >= totalPages}
                       onClick={() => {
                         const nextPage = Math.min(totalPages, page + 1);
