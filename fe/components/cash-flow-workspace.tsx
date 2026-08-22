@@ -514,7 +514,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     <div className="min-h-screen bg-background relative">
       <AbstractBg />
       <Header />
-      <main className="relative z-10 p-6 max-w-7xl mx-auto space-y-6">
+      <main className="relative z-10 mx-auto max-w-7xl space-y-6 px-3 py-4 sm:p-6">
         <Breadcrumb items={[
           { label: "Dashboard", href: dashboardFlowHref(config.dashboardFlow) },
           { label: config.title, href: `/${flow}` },
@@ -1077,12 +1077,12 @@ function CashStatementHistoryCard({
   }, [rows]);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+    <Card className="border-0 shadow-none md:border md:shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 px-0 md:px-6">
         <CardTitle className="text-base">{title}</CardTitle>
         {action}
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0 md:p-6 md:pt-0">
         {loadingData ? <div className="h-24 animate-pulse rounded-md bg-muted" /> : null}
         {!loadingData && rows.length === 0 ? (
           <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No transactions recorded yet.</p>
