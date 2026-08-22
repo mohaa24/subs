@@ -328,6 +328,8 @@ membershipsRouter.get("/", async (req, res) => {
       { membershipNo: { contains: q, mode: "insensitive" } },
       { hod: { fullName: { contains: q, mode: "insensitive" } } },
       { hod: { nameWithInitials: { contains: q, mode: "insensitive" } } },
+      { hod: { mobileNumber: { contains: q, mode: "insensitive" } } },
+      { hod: { whatsAppNumber: { contains: q, mode: "insensitive" } } },
     ];
   }
   const [items, total] = await Promise.all([
