@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal, UserPlus, RefreshCw, UserRound } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, Filter, X, MoreHorizontal, UserPlus, UserRound } from "lucide-react";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { toast } from "@/hooks/use-toast";
@@ -97,7 +97,6 @@ function MembersContent() {
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
   const [limit, setLimit] = useState(parseInt(searchParams.get("limit") || "10", 10));
   const [sort, setSort] = useState(searchParams.get("sort") || "recent");
-  const [refreshKey, setRefreshKey] = useState(0);
   const [showArchived, setShowArchived] = useState(searchParams.get("includeArchived") === "true");
   const [filters, setFilters] = useState<MembershipFilters>(() => filtersFromSearchParams(searchParams));
   const [appliedFilters, setAppliedFilters] = useState<MembershipFilters>(() => filtersFromSearchParams(searchParams));
@@ -206,7 +205,6 @@ function MembersContent() {
     appliedFilters.registeredTo,
     limit,
     sort,
-    refreshKey,
   ]);
 
   useEffect(() => {
@@ -799,16 +797,6 @@ function MembersContent() {
                 ))}
               </div>
             )}
-
-            <div className="hidden items-center justify-between border-t border-slate-200 pt-4 md:flex">
-              <span className="text-sm font-medium text-slate-700">
-                {total} {total === 1 ? "Member" : "Members"}
-              </span>
-              <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground" disabled={loading} onClick={() => setRefreshKey((key) => key + 1)}>
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
-            </div>
 
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
