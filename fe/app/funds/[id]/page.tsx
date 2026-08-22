@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowLeftRight, Banknote, BanknoteArrowDown, BanknoteArrowUp, Landmark, ReceiptText, Undo2, X } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Banknote, BanknoteArrowDown, BanknoteArrowUp, CalendarDays, ChevronDown, Landmark, ReceiptText, RotateCcw, Undo2, X } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -81,6 +81,29 @@ function dateLabel(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+function transactionGroupLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function dateTimeLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatFundPeriod(fund?: FundPot | null) {
@@ -361,7 +384,7 @@ export default function FundDetailPage() {
     <div className="min-h-screen bg-background relative">
       <AbstractBg />
       <Header />
-      <main className="relative z-10 p-6 max-w-7xl mx-auto space-y-6">
+      <main className="relative z-10 mx-auto max-w-7xl space-y-6 px-3 py-4 sm:p-6">
         <Breadcrumb
           items={[
             { label: "Dashboard", href: dashboardFlowHref(fundMode ?? "funds") },
@@ -430,15 +453,15 @@ export default function FundDetailPage() {
           <SummaryCard icon={Banknote} title="Remaining Balance" value={fund?.summary?.activeRemaining ?? 0} intent="credit" />
         </div>
 
-        <Card>
-          <CardHeader>
+        <Card className="border-0 shadow-none md:border md:shadow-sm">
+          <CardHeader className="px-0 md:px-6">
             <CardTitle className="flex items-center gap-2 text-base">
               <Landmark className="h-5 w-5 text-muted-foreground" />
               Fund Activity
               {fundClosed ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">Closed</span> : null}
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-3">
+          <CardContent className="grid gap-4 p-0 md:p-6 md:pt-0 lg:grid-cols-3">
             <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
             <FundActivityTable title="Expenses" rows={expenses} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
             {transfers.length > 0 ? <FundActivityTable title="Transfers" rows={transfers} /> : null}
@@ -689,10 +712,132 @@ function FundActivityTable({
 }) {
   const showReceiptColumn = Boolean(onReceiptClick);
   const showActionColumn = Boolean(onReverse);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const groups = useMemo(() => {
+    const grouped = new Map<string, FundTransaction[]>();
+    rows.forEach((row) => {
+      const key = row.transactionDate.slice(0, 10);
+      grouped.set(key, [...(grouped.get(key) ?? []), row]);
+    });
+    return Array.from(grouped, ([date, transactions]) => ({ date, transactions }));
+  }, [rows]);
+
+  const rowIntent = (row: FundTransaction) => {
+    if (row.reversedAt) return "reversed";
+    if (row.transactionType === "collection" || row.transactionType === "opening") return "cash-in";
+    if (row.transactionType === "expense") return "cash-out";
+    return "transfer";
+  };
+
   return (
-    <div className="rounded-lg border">
-      <div className="border-b bg-muted/40 px-3 py-2 font-medium">{title}</div>
-      <div className="max-h-80 overflow-auto">
+    <div className="space-y-2 md:rounded-lg md:border md:space-y-0">
+      <div className="font-semibold text-slate-800 md:border-b md:bg-muted/40 md:px-3 md:py-2 md:font-medium">{title}</div>
+
+      <div className="space-y-3 md:hidden">
+        {groups.map((group) => (
+          <section key={group.date} className="overflow-hidden rounded-lg border bg-card">
+            <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2.5 text-[11px]">
+              <h3 className="flex min-w-0 items-center gap-2 font-semibold text-slate-700">
+                <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                <span className="truncate">{transactionGroupLabel(group.date)}</span>
+              </h3>
+              <span className="shrink-0 text-muted-foreground">
+                {group.transactions.length} {group.transactions.length === 1 ? "transaction" : "transactions"}
+              </span>
+            </div>
+            <div className="divide-y">
+              {group.transactions.map((row) => {
+                const expanded = expandedId === row.id;
+                const intent = rowIntent(row);
+                const details = row.description || row.paidByName || txLabel(row.transactionType);
+                return (
+                  <div key={row.id}>
+                    <button
+                      type="button"
+                      className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left"
+                      onClick={() => setExpandedId(expanded ? null : row.id)}
+                      aria-expanded={expanded}
+                    >
+                      <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm ${
+                        intent === "reversed"
+                          ? "bg-red-500"
+                          : intent === "cash-in"
+                            ? "bg-emerald-600"
+                            : intent === "cash-out" ? "bg-blue-600" : "bg-violet-600"
+                      }`}>
+                        {intent === "reversed" ? (
+                          <RotateCcw className="h-4 w-4" />
+                        ) : intent === "cash-in" ? (
+                          <BanknoteArrowDown className="h-4 w-4" />
+                        ) : intent === "cash-out" ? (
+                          <BanknoteArrowUp className="h-4 w-4" />
+                        ) : (
+                          <ArrowLeftRight className="h-4 w-4" />
+                        )}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{details}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {row.assetAccount?.name || txLabel(row.transactionType)}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="text-right">
+                          <span className={`block whitespace-nowrap text-sm font-semibold tabular-nums ${
+                            intent === "reversed"
+                              ? "text-red-600"
+                              : intent === "cash-in"
+                                ? "text-emerald-700"
+                                : intent === "cash-out" ? "text-blue-700" : "text-violet-700"
+                          }`}>
+                            {formatRs(row.amount)}
+                          </span>
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-semibold ${
+                            row.reversedAt ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+                          }`}>
+                            {row.reversedAt ? "Reversed" : "Posted"}
+                          </span>
+                        </span>
+                        <ChevronDown className={`h-4 w-4 text-primary transition-transform ${expanded ? "rotate-180" : ""}`} />
+                      </span>
+                    </button>
+
+                    {expanded ? (
+                      <div className={`mx-3 mb-3 overflow-hidden rounded-md border-l-2 ${row.reversedAt ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
+                        <div className="divide-y px-3">
+                          <FundActivityDetail label="Transaction" value={txLabel(row.transactionType)} />
+                          <FundActivityDetail label="Payment Method" value={row.assetAccount?.name || "—"} />
+                          <FundActivityDetail label="Date Entered" value={dateTimeLabel(row.createdAt)} />
+                          <FundActivityDetail label="Receipt No." value={row.receiptNumber || "—"} />
+                          <FundActivityDetail label="Reference / Notes" value={row.memo || "—"} />
+                          {row.reversedAt ? <FundActivityDetail label="Reversal Reason" value={row.reversalReason || "—"} /> : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2 border-t px-3 py-3">
+                          {row.transactionType === "collection" && row.receiptNumber && onReceiptClick ? (
+                            <Button type="button" size="sm" variant="neutralOutline" onClick={() => onReceiptClick(row.id)}>
+                              <ReceiptText className="mr-2 h-4 w-4" />Receipt
+                            </Button>
+                          ) : null}
+                          {!row.reversedAt && (row.transactionType === "collection" || row.transactionType === "expense") && onReverse ? (
+                            <Button type="button" size="sm" variant="dangerOutline" onClick={() => onReverse(row)}>
+                              <Undo2 className="mr-2 h-4 w-4" />Reverse
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+        {rows.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">No records yet.</p>
+        ) : null}
+      </div>
+
+      <div className="hidden max-h-80 overflow-auto md:block">
         <table className="w-full text-sm">
           <thead className="bg-background">
             <tr>
@@ -755,6 +900,15 @@ function FundActivityTable({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function FundActivityDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 py-2.5 text-xs">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="break-words text-right font-medium text-slate-800">{value}</span>
     </div>
   );
 }
