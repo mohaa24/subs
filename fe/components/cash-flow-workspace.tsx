@@ -1121,7 +1121,7 @@ function CashStatementHistoryCard({
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                              <div className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <TransactionStatusBadge reversed={reversed} />
@@ -1175,7 +1175,7 @@ function CashStatementHistoryCard({
                               </div>
                               <div className="truncate font-mono text-xs text-foreground">{transaction.documentNumber || "—"}</div>
                               <TransactionPaymentMethod transaction={transaction} />
-                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <div className="text-center"><TransactionStatusBadge reversed={reversed} /></div>
@@ -1273,7 +1273,7 @@ function CashStatementExpanded({
 }) {
   return (
     <div className={`mx-3 mb-3 overflow-hidden rounded-md border-l-2 ${transaction.reversedAt ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
-      <div className={`grid gap-4 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center"}`}>
+      <div className={`grid gap-4 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px] items-center"}`}>
         {mobile ? (
           <>
             <CashHistoryDetail icon={ReceiptText} label="Receipt No." value={transaction.documentNumber || "—"} />
@@ -1295,7 +1295,7 @@ function CashStatementExpanded({
         </div>
       </div>
       {transaction.reversedAt ? (
-        <div className={`grid gap-4 border-t border-red-100 bg-red-50/60 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]"}`}>
+        <div className={`grid gap-4 border-t border-red-100 bg-red-50/60 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px]"}`}>
           <CashHistoryDetail icon={UserRoundCheck} label="Reversed By" value={transaction.reversedBy?.email || "—"} />
           <CashHistoryDetail icon={CalendarDays} label="Reversed Date" value={dateTimeLabel(transaction.reversedAt)} />
           <CashHistoryDetail icon={Pencil} label="Reversed Reason" value={transaction.reversalReason || "—"} />
