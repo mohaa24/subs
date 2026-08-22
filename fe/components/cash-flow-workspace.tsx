@@ -1122,7 +1122,7 @@ function CashStatementHistoryCard({
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className={`text-sm font-semibold tabular-nums ${reversed ? `text-red-600 ${flow === "cash-out" ? "line-through" : ""}` : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
+                              <div className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <TransactionStatusBadge reversed={reversed} />
@@ -1176,7 +1176,7 @@ function CashStatementHistoryCard({
                               </div>
                               <div className="truncate font-mono text-xs text-foreground">{transaction.documentNumber || "—"}</div>
                               <TransactionPaymentMethod transaction={transaction} />
-                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? `text-red-600 ${flow === "cash-out" ? "line-through" : ""}` : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
+                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <div className="text-center"><TransactionStatusBadge reversed={reversed} /></div>
