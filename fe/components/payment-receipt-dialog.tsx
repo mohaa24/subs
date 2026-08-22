@@ -460,14 +460,6 @@ function formatTwoColumnLines(label: string, value: string, width = POS_COLUMNS,
   });
 }
 
-function formatCenteredLines(value: string, width = POS_COLUMNS): string[] {
-  return wrapText(value.trim(), Math.max(width - 4, 1)).map((line) => {
-    const totalPadding = Math.max(width - line.length, 0);
-    const leftPadding = Math.floor(totalPadding / 2);
-    return `${" ".repeat(leftPadding)}${line}`;
-  });
-}
-
 async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
   const image = await new Promise<HTMLImageElement>((resolveImage, rejectImage) => {
     const img = new Image();
@@ -523,14 +515,14 @@ async function encodePosReceipt(
       console.warn("Receipt logo could not be printed; falling back to text header.", error);
     }
   }
-  encoder.align("left");
+  encoder.align("center");
   encoder.bold(true).size(1, 2);
-  for (const line of formatCenteredLines(receipt.organizationName.toUpperCase())) {
+  for (const line of wrapText(receipt.organizationName.toUpperCase(), POS_COLUMNS - 4)) {
     encoder.line(line);
   }
   encoder.size(1, 1);
   encoder.bold(false);
-  for (const line of formatCenteredLines(receiptTitle(receipt))) {
+  for (const line of wrapText(receiptTitle(receipt), POS_COLUMNS - 4)) {
     encoder.line(line);
   }
   encoder.rule();
