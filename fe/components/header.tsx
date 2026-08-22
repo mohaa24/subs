@@ -137,6 +137,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Form Settings", href: "/settings/form-config", actionKey: "nav-form-settings" },
       { label: "Zones", href: "/settings/zones", actionKey: "nav-zones" },
       { label: "Due Types", href: "/settings/due-types", actionKey: "nav-due-types" },
+      { label: "SMS Settings", href: "/settings/messages", actionKey: "nav-sms-settings" },
       { label: "Audit Log", href: "/audit-log" },
     ],
   },

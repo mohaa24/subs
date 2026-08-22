@@ -1139,7 +1139,14 @@ paymentsRouter.post("/", async (req, res) => {
         id: true,
         organizationId: true,
         membershipNo: true,
-        hod: { select: { whatsAppNumber: true } },
+        hod: {
+          select: {
+            whatsAppNumber: true,
+            mobileNumber: true,
+            nameWithInitials: true,
+            fullName: true,
+          },
+        },
       },
     });
     if (!membership) return res.status(404).json({ error: "Membership not found" });
@@ -1214,24 +1221,28 @@ paymentsRouter.post("/", async (req, res) => {
           });
 
           const snapshot = await loadReceiptBalanceSnapshot(tx, membership.id);
-          return tx.payment.update({
+          const updatedPayment = await tx.payment.update({
             where: { id: createdPayment.id },
             data: {
               outstandingAfterPayment: snapshot.outstandingAfterPayment,
               creditBalanceAfterPayment: snapshot.creditBalanceAfterPayment,
             },
           });
+          const recipientPhone = membership.hod?.mobileNumber || membership.hod?.whatsAppNumber;
+          if (recipientPhone) {
+            await queuePaymentReceived(tx, {
+              organizationId: membership.organizationId,
+              recipientPhone,
+              membershipNo: membership.membershipNo,
+              memberName:
+                membership.hod.nameWithInitials || membership.hod.fullName || "Member",
+              amount: paymentAmount.toFixed(2),
+              receiptNumber,
+            });
+          }
+          return updatedPayment;
         }, CREDIT_SWEEP_TRANSACTION_OPTIONS)
       );
-
-      if (membership.hod?.whatsAppNumber) {
-        queuePaymentReceived(
-          membership.organizationId,
-          membership.hod.whatsAppNumber,
-          membership.membershipNo,
-          paymentAmount.toString()
-        ).catch(() => {});
-      }
 
       return res.status(201).json(payment);
     } catch (error) {
@@ -1330,28 +1341,45 @@ paymentsRouter.post("/", async (req, res) => {
       }
 
       const snapshot = await loadReceiptBalanceSnapshot(tx, due.membershipId);
-      return tx.payment.update({
+      const updatedPayment = await tx.payment.update({
         where: { id: createdPayment.id },
         data: {
           outstandingAfterPayment: snapshot.outstandingAfterPayment,
           creditBalanceAfterPayment: snapshot.creditBalanceAfterPayment,
         },
       });
+      const messageMembership = await tx.membership.findUnique({
+        where: { id: due.membershipId },
+        select: {
+          membershipNo: true,
+          hod: {
+            select: {
+              whatsAppNumber: true,
+              mobileNumber: true,
+              nameWithInitials: true,
+              fullName: true,
+            },
+          },
+        },
+      });
+      const recipientPhone =
+        messageMembership?.hod?.mobileNumber || messageMembership?.hod?.whatsAppNumber;
+      if (messageMembership?.hod && recipientPhone) {
+        await queuePaymentReceived(tx, {
+          organizationId: due.organizationId,
+          recipientPhone,
+          membershipNo: messageMembership.membershipNo,
+          memberName:
+            messageMembership.hod.nameWithInitials ||
+            messageMembership.hod.fullName ||
+            "Member",
+          amount: paymentAmount.toFixed(2),
+          receiptNumber,
+        });
+      }
+      return updatedPayment;
     }, CREDIT_SWEEP_TRANSACTION_OPTIONS)
   );
-
-  const membership = await prisma.membership.findUnique({
-    where: { id: due.membershipId },
-    select: { membershipNo: true, hod: { select: { whatsAppNumber: true } } },
-  });
-  if (membership?.hod?.whatsAppNumber) {
-    queuePaymentReceived(
-      due.organizationId,
-      membership.hod.whatsAppNumber,
-      membership.membershipNo,
-      paymentAmount.toString()
-    ).catch(() => {});
-  }
 
   return res.status(201).json(payment);
 });

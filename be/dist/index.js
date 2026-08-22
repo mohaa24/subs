@@ -33,6 +33,7 @@ const audit_logs_js_1 = require("./routes/audit-logs.js");
 const public_membership_export_js_1 = require("./routes/public-membership-export.js");
 const qz_js_1 = require("./routes/qz.js");
 const cron_js_1 = require("./lib/cron.js");
+const message_worker_js_1 = require("./lib/message-worker.js");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 4000;
 const uploadsDir = process.env.UPLOADS_DIR || (0, path_1.resolve)(process.cwd(), "uploads");
@@ -73,4 +74,5 @@ app.use("/", activity_feed_js_1.activityFeedRouter);
 app.listen(PORT, () => {
     console.log(`BE running on http://localhost:${PORT}`);
     (0, cron_js_1.startCronJobs)();
+    (0, message_worker_js_1.startMessageWorker)();
 });

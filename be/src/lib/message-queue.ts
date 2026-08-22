@@ -1,5 +1,14 @@
-import { MessageEventType } from "@prisma/client";
+import { MessageEventType, Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
+import {
+  getTemplateDefinition,
+  queueTemplatedMessage,
+} from "./message-templates.js";
+
+type MessageWriter = Pick<
+  Prisma.TransactionClient,
+  "messageQueue" | "messageTemplate" | "organization"
+>;
 
 export async function queueMessage(
   organizationId: string,
@@ -8,6 +17,8 @@ export async function queueMessage(
   messageBody: string
 ) {
   if (!recipientPhone || !recipientPhone.trim()) return null;
+  const definition = getTemplateDefinition(eventType);
+  if (!definition?.available) return null;
   return prisma.messageQueue.create({
     data: { organizationId, recipientPhone, eventType, messageBody },
   });
@@ -18,28 +29,46 @@ export async function queuePaymentDueGenerated(
   recipientPhone: string,
   membershipNo: string,
   period: string,
-  amount: string
+  amount: string,
+  memberName = "Member",
+  dueType = "membership"
 ) {
-  return queueMessage(
+  return queueTemplatedMessage(prisma as unknown as MessageWriter, {
     organizationId,
     recipientPhone,
-    MessageEventType.DUE_GENERATED,
-    `Payment due generated for membership ${membershipNo}. Period: ${period}, Amount: ${amount}`
-  );
+    eventType: MessageEventType.DUE_GENERATED,
+    variables: {
+      membership_no: membershipNo,
+      member_name: memberName,
+      due_type: dueType,
+      period,
+      amount,
+    },
+  });
 }
 
 export async function queuePaymentReceived(
-  organizationId: string,
-  recipientPhone: string,
-  membershipNo: string,
-  amount: string
+  tx: MessageWriter,
+  input: {
+    organizationId: string;
+    recipientPhone: string;
+    membershipNo: string;
+    memberName: string;
+    amount: string;
+    receiptNumber: string;
+  }
 ) {
-  return queueMessage(
-    organizationId,
-    recipientPhone,
-    MessageEventType.PAYMENT_RECEIVED,
-    `Payment of ${amount} received for membership ${membershipNo}. Thank you!`
-  );
+  return queueTemplatedMessage(tx, {
+    organizationId: input.organizationId,
+    recipientPhone: input.recipientPhone,
+    eventType: MessageEventType.PAYMENT_RECEIVED,
+    variables: {
+      membership_no: input.membershipNo,
+      member_name: input.memberName,
+      amount: input.amount,
+      receipt_number: input.receiptNumber,
+    },
+  });
 }
 
 export async function queuePaymentOverdue(

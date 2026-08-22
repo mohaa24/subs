@@ -29,6 +29,7 @@ import { auditLogsRouter } from "./routes/audit-logs.js";
 import { publicMembershipExportRouter } from "./routes/public-membership-export.js";
 import { qzRouter } from "./routes/qz.js";
 import { startCronJobs } from "./lib/cron.js";
+import { startMessageWorker } from "./lib/message-worker.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -75,4 +76,5 @@ app.use("/", activityFeedRouter);
 app.listen(PORT, () => {
   console.log(`BE running on http://localhost:${PORT}`);
   startCronJobs();
+  startMessageWorker();
 });

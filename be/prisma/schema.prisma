@@ -42,6 +42,8 @@ model Organization {
   announcementGroups AnnouncementGroup[]
   announcements      Announcement[]
   messageQueue       MessageQueue[]
+  messageSettings    MessageSettings?
+  messageTemplates   MessageTemplate[]
   distributions      Distribution[]
   zones              Zone[]
   activityFeedItems  ActivityFeedItem[]
@@ -1011,7 +1013,9 @@ enum MessageEventType {
 
 enum MessageStatus {
   pending
+  submitted
   sent
+  delivered
   failed
 }
 
@@ -1024,8 +1028,48 @@ model MessageQueue {
   status         MessageStatus    @default(pending)
   createdAt      DateTime         @default(now())
   sentAt         DateTime?
+  deliveredAt    DateTime?
+  providerMessageId String?
+  providerStatus String?
+  attemptCount   Int              @default(0)
+  lastAttemptAt  DateTime?
+  nextAttemptAt  DateTime?        @default(now())
+  lastError      String?          @db.Text
+  smsCount       Int?
+  cost           Decimal?         @db.Decimal(12, 4)
+  deliveryEnabled Boolean         @default(true)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryEnabled, status, nextAttemptAt])
+  @@index([providerMessageId])
+}
+
+model MessageSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  monthlyQuota   Int      @default(100)
+  updatedByUserId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model MessageTemplate {
+  id              String           @id @default(cuid())
+  organizationId  String
+  eventType       MessageEventType
+  enabled         Boolean          @default(false)
+  body            String           @db.Text
+  updatedByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, eventType])
+  @@index([organizationId, enabled])
 }
 
 // ─── Distribution ────────────────────────────────────────────────

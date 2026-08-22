@@ -39,7 +39,14 @@ export async function generateMonthlyDues() {
     where: { membershipStatus: "Active" },
     include: {
       organization: true,
-      hod: { select: { whatsAppNumber: true } },
+      hod: {
+        select: {
+          whatsAppNumber: true,
+          mobileNumber: true,
+          nameWithInitials: true,
+          fullName: true,
+        },
+      },
     },
   });
 
@@ -85,13 +92,16 @@ export async function generateMonthlyDues() {
     created++;
     autoAppliedCredit = autoAppliedCredit.add(applied);
 
-    if (m.hod?.whatsAppNumber) {
+    const recipientPhone = m.hod?.mobileNumber || m.hod?.whatsAppNumber;
+    if (m.hod && recipientPhone) {
       await queuePaymentDueGenerated(
         m.organizationId,
-        m.hod.whatsAppNumber,
+        recipientPhone,
         m.membershipNo,
         period,
-        m.totalContribution.toString()
+        m.totalContribution.toFixed(2),
+        m.hod.nameWithInitials || m.hod.fullName || "Member",
+        "membership"
       );
     }
   }

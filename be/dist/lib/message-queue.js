@@ -8,18 +8,43 @@ exports.queueLateFeeApplied = queueLateFeeApplied;
 exports.queueOrgBillingDue = queueOrgBillingDue;
 const client_1 = require("@prisma/client");
 const prisma_js_1 = require("./prisma.js");
+const message_templates_js_1 = require("./message-templates.js");
 async function queueMessage(organizationId, recipientPhone, eventType, messageBody) {
     if (!recipientPhone || !recipientPhone.trim())
+        return null;
+    const definition = (0, message_templates_js_1.getTemplateDefinition)(eventType);
+    if (!definition?.available)
         return null;
     return prisma_js_1.prisma.messageQueue.create({
         data: { organizationId, recipientPhone, eventType, messageBody },
     });
 }
-async function queuePaymentDueGenerated(organizationId, recipientPhone, membershipNo, period, amount) {
-    return queueMessage(organizationId, recipientPhone, client_1.MessageEventType.DUE_GENERATED, `Payment due generated for membership ${membershipNo}. Period: ${period}, Amount: ${amount}`);
+async function queuePaymentDueGenerated(organizationId, recipientPhone, membershipNo, period, amount, memberName = "Member", dueType = "membership") {
+    return (0, message_templates_js_1.queueTemplatedMessage)(prisma_js_1.prisma, {
+        organizationId,
+        recipientPhone,
+        eventType: client_1.MessageEventType.DUE_GENERATED,
+        variables: {
+            membership_no: membershipNo,
+            member_name: memberName,
+            due_type: dueType,
+            period,
+            amount,
+        },
+    });
 }
-async function queuePaymentReceived(organizationId, recipientPhone, membershipNo, amount) {
-    return queueMessage(organizationId, recipientPhone, client_1.MessageEventType.PAYMENT_RECEIVED, `Payment of ${amount} received for membership ${membershipNo}. Thank you!`);
+async function queuePaymentReceived(tx, input) {
+    return (0, message_templates_js_1.queueTemplatedMessage)(tx, {
+        organizationId: input.organizationId,
+        recipientPhone: input.recipientPhone,
+        eventType: client_1.MessageEventType.PAYMENT_RECEIVED,
+        variables: {
+            membership_no: input.membershipNo,
+            member_name: input.memberName,
+            amount: input.amount,
+            receipt_number: input.receiptNumber,
+        },
+    });
 }
 async function queuePaymentOverdue(organizationId, recipientPhone, membershipNo, period) {
     return queueMessage(organizationId, recipientPhone, client_1.MessageEventType.PAYMENT_OVERDUE, `Payment for membership ${membershipNo} (period: ${period}) is overdue. Please make payment soon.`);

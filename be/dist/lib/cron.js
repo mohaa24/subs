@@ -34,7 +34,14 @@ async function generateMonthlyDues() {
         where: { membershipStatus: "Active" },
         include: {
             organization: true,
-            hod: { select: { whatsAppNumber: true } },
+            hod: {
+                select: {
+                    whatsAppNumber: true,
+                    mobileNumber: true,
+                    nameWithInitials: true,
+                    fullName: true,
+                },
+            },
         },
     });
     let created = 0;
@@ -75,8 +82,9 @@ async function generateMonthlyDues() {
         }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
         created++;
         autoAppliedCredit = autoAppliedCredit.add(applied);
-        if (m.hod?.whatsAppNumber) {
-            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, m.hod.whatsAppNumber, m.membershipNo, period, m.totalContribution.toString());
+        const recipientPhone = m.hod?.mobileNumber || m.hod?.whatsAppNumber;
+        if (m.hod && recipientPhone) {
+            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, recipientPhone, m.membershipNo, period, m.totalContribution.toFixed(2), m.hod.nameWithInitials || m.hod.fullName || "Member", "membership");
         }
     }
     console.log(`[Cron] Dues generated: ${created}, skipped: ${skipped}, auto-applied credit: ${autoAppliedCredit.toString()}`);

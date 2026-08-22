@@ -81,24 +81,24 @@ const statusColors: Record<string, string> = {
   overdue: "bg-red-100 text-red-800",
 };
 
-const dueStatusTones: Record<DueStatus, { text: string; badge: string; progress: string }> = {
+const dueStatusTones: Record<DueStatus, { amount: string; badge: string; progress: string }> = {
   paid: {
-    text: "text-emerald-700",
+    amount: "text-emerald-700",
     badge: "bg-emerald-100 text-emerald-700",
     progress: "bg-emerald-500",
   },
   partial: {
-    text: "text-amber-700",
+    amount: "text-amber-600",
     badge: "bg-amber-100 text-amber-700",
     progress: "bg-amber-500",
   },
   pending: {
-    text: "text-amber-700",
+    amount: "text-amber-600",
     badge: "bg-amber-100 text-amber-700",
     progress: "bg-amber-500",
   },
   overdue: {
-    text: "text-red-700",
+    amount: "text-red-700",
     badge: "bg-red-100 text-red-700",
     progress: "bg-red-500",
   },
@@ -844,7 +844,7 @@ export default function PaymentsPage() {
 
                           <div className="min-w-0 border-r pr-4">
                             <p className="text-[10px] font-medium text-muted-foreground">Due Type</p>
-                            <p className={`mt-1 truncate text-xs font-semibold ${tone.text}`} title={dueType}>{dueType}</p>
+                            <p className="mt-1 truncate text-xs font-semibold text-foreground" title={dueType}>{dueType}</p>
                           </div>
 
                           <div className="min-w-0">
@@ -862,7 +862,7 @@ export default function PaymentsPage() {
 
                           <div>
                             <p className="text-[10px] font-medium text-muted-foreground">Remaining</p>
-                            <p className={`mt-1 text-lg font-bold tabular-nums ${tone.text}`}>Rs.{remaining.toFixed(2)}</p>
+                            <p className={`mt-1 text-lg font-bold tabular-nums ${tone.amount}`}>Rs.{remaining.toFixed(2)}</p>
                           </div>
 
                           <div className="flex items-center justify-end gap-2">
