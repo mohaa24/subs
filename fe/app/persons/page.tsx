@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X, UserRoundPlus, UserRound } from "lucide-react";
+import { Search, ChevronDown, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X, UserRoundPlus, UserRound, Phone } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,19 +88,6 @@ function formatResidentType(value: string | null | undefined): string {
   return found?.label ?? value;
 }
 
-function getAge(value: string | null | undefined): string {
-  if (!value) return "—";
-  const dob = new Date(value);
-  if (Number.isNaN(dob.getTime())) return "—";
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age -= 1;
-  }
-  return age >= 0 ? String(age) : "—";
-}
-
 function PersonsPageContent() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -111,8 +98,9 @@ function PersonsPageContent() {
   const [qInput, setQInput] = useState(searchParams.get("q") || "");
   const [appliedQ, setAppliedQ] = useState(searchParams.get("q") || "");
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
-  const limit = 10;
+  const [limit, setLimit] = useState(parseInt(searchParams.get("limit") || "10", 10));
   const [sort, setSort] = useState(searchParams.get("sort") || "recent");
+  const [expandedPersonId, setExpandedPersonId] = useState<string | null>(null);
 
   const [orgs, setOrgs] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
@@ -150,10 +138,12 @@ function PersonsPageContent() {
     nextQ = appliedQ,
     nextFilters = appliedFilters,
     nextShowArchived = showArchived,
-    nextSort = sort
+    nextSort = sort,
+    nextLimit = limit
   ) {
     const params = new URLSearchParams();
     params.set("page", String(nextPage));
+    params.set("limit", String(nextLimit));
     if (nextSort !== "recent") params.set("sort", nextSort);
     if (nextQ) params.set("q", nextQ);
     if (nextShowArchived) params.set("includeArchived", "true");
@@ -250,6 +240,7 @@ function PersonsPageContent() {
     appliedFilters.isMadarasaStudent,
     appliedFilters.hasMembership,
     sort,
+    limit,
   ]);
 
   useEffect(() => {
@@ -635,6 +626,14 @@ function PersonsPageContent() {
   ].filter(Boolean).length;
   const resultFrom = total === 0 ? 0 : (page - 1) * limit + 1;
   const resultTo = Math.min(page * limit, total);
+  const paginationItems: Array<number | "start-ellipsis" | "end-ellipsis"> =
+    totalPages <= 5
+      ? Array.from({ length: totalPages }, (_, index) => index + 1)
+      : page <= 3
+        ? [1, 2, 3, "end-ellipsis", totalPages]
+        : page >= totalPages - 2
+          ? [1, "start-ellipsis", totalPages - 2, totalPages - 1, totalPages]
+          : [1, "start-ellipsis", page, "end-ellipsis", totalPages];
   const isSuperUser = user?.role === "super_user";
 
   const personInitials = (person: Person) => {
@@ -988,53 +987,99 @@ function PersonsPageContent() {
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : (
               <>
-                <div className="space-y-3 md:hidden">
-                  {items.map((p) => (
-                    <div
-                      key={p.id}
-                      className="rounded-md border p-3 bg-card cursor-pointer transition-colors hover:bg-muted/30"
-                      onClick={() => openPersonDetails(p.id)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Link
-                            href={`/persons/${p.id}`}
-                            className="font-medium text-primary hover:underline break-words"
-                          >
-                            {p.fullName}
-                          </Link>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {p.nameWithInitials}
-                          </p>
-                        </div>
-                        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <PersonActions person={p} />
-                        </div>
+                <div className="space-y-2.5 md:hidden">
+                  {items.map((p) => {
+                    const expanded = expandedPersonId === p.id;
+                    const archived = Boolean((p as any).isArchived);
+                    return (
+                      <div key={p.id} className="overflow-hidden rounded-xl border border-slate-200 bg-card shadow-sm">
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedPersonId(expanded ? null : p.id)}
+                          className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 text-left"
+                        >
+                          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-emerald-600">
+                            {personInitials(p)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-900">
+                              {p.nameWithInitials || p.preferredName || p.fullName}
+                            </span>
+                            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+                              <span className="shrink-0">{personIdentity(p)}</span>
+                              <span className="h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                              <span className="truncate">{personLocation(p)}</span>
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-medium ${
+                              (p.livingStatus ?? "Active") === "Active"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : p.livingStatus === "Deceased"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-slate-200 bg-slate-100 text-slate-600"
+                            }`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${
+                                (p.livingStatus ?? "Active") === "Active"
+                                  ? "bg-emerald-500"
+                                  : p.livingStatus === "Deceased" ? "bg-red-500" : "bg-slate-400"
+                              }`} />
+                              {statusLabel(p.livingStatus)}
+                            </span>
+                            <ChevronDown className={`h-4 w-4 text-slate-600 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                          </span>
+                        </button>
+
+                        {expanded ? (
+                          <div className="mx-3 mb-3 border-t border-slate-100 pt-2">
+                            <div className="divide-y divide-slate-200 rounded-lg bg-slate-50/70 px-3">
+                              <div className="flex items-center gap-3 py-2.5">
+                                <UserRound className="h-4 w-4 shrink-0 text-slate-500" />
+                                <div className="min-w-0">
+                                  <p className="text-[10px] text-muted-foreground">Full Name</p>
+                                  <p className="truncate text-xs font-medium text-slate-800">{p.fullName || "—"}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 py-2.5">
+                                <UserRound className="h-4 w-4 shrink-0 text-slate-500" />
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Resident Type</p>
+                                  <p className="text-xs font-medium text-slate-800">{formatResidentType(p.residentType)}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 py-2.5">
+                                <Phone className="h-4 w-4 shrink-0 text-slate-500" />
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground">Mobile</p>
+                                  <p className="text-xs font-medium text-slate-800">{p.mobileNumber ?? "—"}</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={archived ? "outline" : "dangerOutline"}
+                                onClick={() => handleToggleArchive(p)}
+                              >
+                                {archived ? <ArchiveRestore className="mr-2 h-3.5 w-3.5" /> : <Archive className="mr-2 h-3.5 w-3.5" />}
+                                {archived ? "Restore" : "Archive"}
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" onClick={() => openEdit(p)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />Edit
+                              </Button>
+                              <Button asChild type="button" size="sm" variant="neutralOutline" className="col-span-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
+                                <Link href={`/persons/${p.id}`}>
+                                  <Eye className="mr-2 h-3.5 w-3.5" />View Profile
+                                </Link>
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                        <div>
-                          <p className="text-muted-foreground">Preferred Name</p>
-                          <p className="font-medium">{p.preferredName ?? "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Age</p>
-                          <p className="font-medium">{getAge(p.dateOfBirth)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Resident Type</p>
-                          <p className="font-medium">{formatResidentType(p.residentType)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Mobile</p>
-                          <p className="font-medium">{p.mobileNumber ?? "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Status</p>
-                          <p className="font-medium">{p.livingStatus ?? "Active"}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
                   <table className="w-full min-w-[1000px] text-sm">
@@ -1111,12 +1156,33 @@ function PersonsPageContent() {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-muted-foreground">
-                  <span>Showing {resultFrom}–{resultTo} of {total} results</span>
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs md:text-sm">Showing {resultFrom}–{resultTo} of {total} results</span>
+                    <div className="md:hidden">
+                      <Select
+                        value={String(limit)}
+                        onValueChange={(value) => {
+                          const nextLimit = Number(value);
+                          setLimit(nextLimit);
+                          setPage(1);
+                          router.push(`/persons?${buildQueryString(1, appliedQ, appliedFilters, showArchived, sort, nextLimit)}`);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10 per page</SelectItem>
+                          <SelectItem value="25">25 per page</SelectItem>
+                          <SelectItem value="50">50 per page</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="hidden items-center gap-2 md:flex">
                     <Button
                       variant="outline"
-                      size="sm"
+                      size="icon"
+                      className="h-8 w-8"
                       disabled={page <= 1}
                       onClick={() => {
                         const nextPage = Math.max(1, page - 1);
@@ -1131,7 +1197,54 @@ function PersonsPageContent() {
                     </span>
                     <Button
                       variant="outline"
-                      size="sm"
+                      size="icon"
+                      className="h-8 w-8"
+                      disabled={page >= totalPages}
+                      onClick={() => {
+                        const nextPage = Math.min(totalPages, page + 1);
+                        setPage(nextPage);
+                        router.push(`/persons?${buildQueryString(nextPage)}`);
+                      }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 md:hidden">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      disabled={page <= 1}
+                      onClick={() => {
+                        const nextPage = Math.max(1, page - 1);
+                        setPage(nextPage);
+                        router.push(`/persons?${buildQueryString(nextPage)}`);
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    {paginationItems.map((item) =>
+                      typeof item === "number" ? (
+                        <Button
+                          key={item}
+                          variant={page === item ? "default" : "outline"}
+                          size="icon"
+                          className="h-8 w-8 text-xs"
+                          onClick={() => {
+                            setPage(item);
+                            router.push(`/persons?${buildQueryString(item)}`);
+                          }}
+                        >
+                          {item}
+                        </Button>
+                      ) : (
+                        <span key={item} className="px-0.5 text-xs">…</span>
+                      )
+                    )}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
                       disabled={page >= totalPages}
                       onClick={() => {
                         const nextPage = Math.min(totalPages, page + 1);
