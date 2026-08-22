@@ -26,9 +26,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X, UserRoundPlus } from "lucide-react";
+import { Search, ChevronLeft, ChevronRight, Eye, Pencil, Archive, ArchiveRestore, AlertTriangle, MoreHorizontal, Filter, X, UserRoundPlus, UserRound } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,6 +112,7 @@ function PersonsPageContent() {
   const [appliedQ, setAppliedQ] = useState(searchParams.get("q") || "");
   const [page, setPage] = useState(parseInt(searchParams.get("page") || "1", 10));
   const limit = 10;
+  const [sort, setSort] = useState(searchParams.get("sort") || "recent");
 
   const [orgs, setOrgs] = useState<{ id: string; name: string; slug: string }[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
@@ -147,10 +149,12 @@ function PersonsPageContent() {
     nextPage: number,
     nextQ = appliedQ,
     nextFilters = appliedFilters,
-    nextShowArchived = showArchived
+    nextShowArchived = showArchived,
+    nextSort = sort
   ) {
     const params = new URLSearchParams();
     params.set("page", String(nextPage));
+    if (nextSort !== "recent") params.set("sort", nextSort);
     if (nextQ) params.set("q", nextQ);
     if (nextShowArchived) params.set("includeArchived", "true");
     if (nextFilters.residentType) params.set("residentType", nextFilters.residentType);
@@ -214,6 +218,7 @@ function PersonsPageContent() {
       page: String(page),
       limit: String(limit),
       organizationId: effectiveOrgId!,
+      sort,
     };
     if (appliedQ) params.q = appliedQ;
     if (showArchived) params.includeArchived = "true";
@@ -244,6 +249,7 @@ function PersonsPageContent() {
     appliedFilters.areaCode,
     appliedFilters.isMadarasaStudent,
     appliedFilters.hasMembership,
+    sort,
   ]);
 
   useEffect(() => {
@@ -263,6 +269,14 @@ function PersonsPageContent() {
     setAppliedQ(qInput);
     setPage(1);
     router.push(`/persons?${buildQueryString(1, qInput, appliedFilters, showArchived)}`);
+  }
+
+  function applyQuickFilter(key: "residentType" | "livingStatus" | "areaCode", value: string) {
+    const nextFilters = { ...appliedFilters, [key]: value === "__all__" ? "" : value };
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    setPage(1);
+    router.push(`/persons?${buildQueryString(1, appliedQ, nextFilters, showArchived)}`);
   }
 
   function closeAddDialog() {
@@ -354,6 +368,7 @@ function PersonsPageContent() {
         page: "1",
         limit: String(limit),
         organizationId: effectiveOrgId,
+        sort,
       };
       if (appliedQ) params.q = appliedQ;
       if (appliedFilters.residentType) params.residentType = appliedFilters.residentType;
@@ -543,13 +558,14 @@ function PersonsPageContent() {
           <DropdownMenuItem asChild>
             <Link href={`/persons/${person.id}`} className="flex items-center gap-2">
               <Eye className="h-4 w-4" />
-              <span>View</span>
+              <span>View Person</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => openEdit(person)}>
             <Pencil className="mr-2 h-4 w-4" />
-            <span>Edit</span>
+            <span>Edit Person</span>
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => handleToggleArchive(person)}
             className={
@@ -566,7 +582,7 @@ function PersonsPageContent() {
             ) : (
               <>
                 <Archive className="mr-2 h-4 w-4" />
-                <span>Archive</span>
+                <span>Archive Person</span>
               </>
             )}
           </DropdownMenuItem>
@@ -612,7 +628,27 @@ function PersonsPageContent() {
 
   const totalPages = Math.ceil(total / limit) || 1;
   const appliedFilterCount = appliedPills.length;
+  const advancedFilterCount = [
+    appliedFilters.isMadarasaStudent,
+    appliedFilters.hasMembership,
+    showArchived ? "true" : "",
+  ].filter(Boolean).length;
+  const resultFrom = total === 0 ? 0 : (page - 1) * limit + 1;
+  const resultTo = Math.min(page * limit, total);
   const isSuperUser = user?.role === "super_user";
+
+  const personInitials = (person: Person) => {
+    const source = person.nameWithInitials || person.preferredName || person.fullName;
+    const parts = source.replace(/\./g, " ").split(/\s+/).filter(Boolean);
+    return parts.slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "—";
+  };
+  const personIdentity = (person: Person) => person.nicNumber || person.idNumber || "No ID";
+  const personLocation = (person: Person) => {
+    if (!person.areaCode) return "Location not set";
+    return zones.find((zone) => zone.code === person.areaCode)?.name ?? "Location not set";
+  };
+  const statusLabel = (status: string | null | undefined) =>
+    status === "PermanentlyRelocated" ? "Relocated" : status || "Active";
 
   if (authLoading || !user) {
     return (
@@ -625,7 +661,7 @@ function PersonsPageContent() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="p-6 max-w-5xl mx-auto">
+      <main className="mx-auto max-w-[1400px] p-4 md:p-6">
         <Breadcrumb
           items={[{ label: "Dashboard", href: dashboardFlowHref("person") }, { label: "Manage People" }]}
         />
@@ -667,36 +703,91 @@ function PersonsPageContent() {
         </div>
 
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 md:hidden">
             <CardTitle className="text-sm font-medium">
               Search People
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <form onSubmit={handleSearch} className="space-y-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Input
-                  placeholder="Search by name, NIC, email, mobile..."
-                  value={qInput}
-                  onChange={(e) => setQInput(e.target.value)}
-                  className="sm:max-w-sm"
-                />
-                <Button type="submit" variant="secondary">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <div className="relative min-w-[220px] flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 hidden h-4 w-4 -translate-y-1/2 text-muted-foreground md:block" />
+                  <Input
+                    placeholder="Search by name, NIC, email, mobile..."
+                    value={qInput}
+                    onChange={(e) => setQInput(e.target.value)}
+                    className="md:pl-9"
+                  />
+                </div>
+                <Button type="submit" variant="secondary" className="md:hidden">
                   <Search className="h-4 w-4 mr-1" />
                   Search
                 </Button>
+                <div className="hidden w-44 md:block">
+                  <Select value={appliedFilters.residentType || "__all__"} onValueChange={(value) => applyQuickFilter("residentType", value)}>
+                    <SelectTrigger><SelectValue placeholder="Resident Type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All resident types</SelectItem>
+                      {RESIDENT_TYPES.map((type) => <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-40 md:block">
+                  <Select value={appliedFilters.areaCode || "__all__"} onValueChange={(value) => applyQuickFilter("areaCode", value)}>
+                    <SelectTrigger><SelectValue placeholder="Zone" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All zones</SelectItem>
+                      {zones.filter((zone) => zone.code >= 1 && zone.code <= 9).map((zone) => (
+                        <SelectItem key={zone.id} value={String(zone.code)}>{zone.code} - {zone.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-36 md:block">
+                  <Select value={appliedFilters.livingStatus || "__all__"} onValueChange={(value) => applyQuickFilter("livingStatus", value)}>
+                    <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All statuses</SelectItem>
+                      {LIVING_STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden w-44 md:block">
+                  <Select
+                    value={sort}
+                    onValueChange={(value) => {
+                      setSort(value);
+                      setPage(1);
+                      router.push(`/persons?${buildQueryString(1, appliedQ, appliedFilters, showArchived, value)}`);
+                    }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Sort By" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="recent">Recently Registered</SelectItem>
+                      <SelectItem value="name_asc">Name A–Z</SelectItem>
+                      <SelectItem value="name_desc">Name Z–A</SelectItem>
+                      <SelectItem value="oldest">Oldest Registered</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="relative" ref={filterRef}>
                   <Button
                     type="button"
                     variant={appliedFilterCount > 0 ? "default" : "outline"}
-                    className="gap-1.5"
+                    className="w-full gap-1.5 md:w-auto"
                     onClick={() => setFilterOpen((open) => !open)}
                   >
                     <Filter className="h-4 w-4" />
                     Filters
                     {appliedFilterCount > 0 && (
-                      <span className="rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
+                      <span className="rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground md:hidden">
                         {appliedFilterCount}
+                      </span>
+                    )}
+                    {advancedFilterCount > 0 && (
+                      <span className="hidden rounded-full bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground md:inline-flex">
+                        {advancedFilterCount}
                       </span>
                     )}
                   </Button>
@@ -723,7 +814,7 @@ function PersonsPageContent() {
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Resident Type</p>
                           <Select
                             value={filters.residentType || "__all__"}
@@ -745,7 +836,7 @@ function PersonsPageContent() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Living Status</p>
                           <Select
                             value={filters.livingStatus || "__all__"}
@@ -767,7 +858,7 @@ function PersonsPageContent() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 md:hidden">
                           <p className="text-xs font-medium text-muted-foreground">Zone</p>
                           <Select
                             value={filters.areaCode || "__all__"}
@@ -945,51 +1036,73 @@ function PersonsPageContent() {
                     </div>
                   ))}
                 </div>
-                <div className="hidden md:block rounded-md border overflow-x-auto">
-                  <table className="w-full text-sm min-w-[640px]">
-                    <thead className="bg-muted/50">
+                <div className="hidden overflow-x-auto rounded-lg border border-slate-200 md:block">
+                  <table className="w-full min-w-[1000px] text-sm">
+                    <thead className="bg-slate-50/80">
                       <tr>
-                        <th className="text-left p-3 font-medium">Name</th>
-                        <th className="text-left p-3 font-medium">Preferred Name</th>
-                        <th className="text-left p-3 font-medium">Age</th>
-                        <th className="text-left p-3 font-medium">Resident Type</th>
-                        <th className="text-left p-3 font-medium">Mobile</th>
-                        <th className="text-left p-3 font-medium">Status</th>
-                        <th></th>
+                        <th className="w-[28%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Person Details</th>
+                        <th className="w-[24%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Full Name</th>
+                        <th className="w-[18%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Resident Type</th>
+                        <th className="w-[14%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Mobile</th>
+                        <th className="w-[11%] px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                        <th className="w-[5%] px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">Actions</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-200">
                       {items.map((p) => (
                         <tr
                           key={p.id}
-                          className="border-t cursor-pointer transition-colors hover:bg-muted/30"
+                          className="cursor-pointer transition-colors hover:bg-slate-50/70"
                           onClick={() => openPersonDetails(p.id)}
                         >
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <Link
-                                href={`/persons/${p.id}`}
-                                className={`font-medium text-primary hover:underline ${(p as any).isArchived ? "line-through opacity-60" : ""}`}
-                              >
-                                {p.fullName}
-                              </Link>
-                              {(p as any).isArchived && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">Archived</span>
-                              )}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-emerald-600">
+                                {personInitials(p)}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={`truncate font-semibold text-slate-900 ${(p as any).isArchived ? "opacity-60" : ""}`}>
+                                    {p.nameWithInitials || p.preferredName || p.fullName}
+                                  </span>
+                                  {(p as any).isArchived && (
+                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-medium text-amber-700">Archived</span>
+                                  )}
+                                </div>
+                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                                  {personIdentity(p)} <span className="px-1 text-emerald-500">•</span> {personLocation(p)}
+                                </p>
+                              </div>
                             </div>
-                            <span className="text-muted-foreground text-xs ml-0">
-                              ({p.nameWithInitials})
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{p.fullName || "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-2 text-xs text-slate-700">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500">
+                                <UserRound className="h-3.5 w-3.5" />
+                              </span>
+                              {formatResidentType(p.residentType)}
                             </span>
                           </td>
-                          <td className="p-3">{p.preferredName ?? "—"}</td>
-                          <td className="p-3">{getAge(p.dateOfBirth)}</td>
-                          <td className="p-3">
-                            {formatResidentType(p.residentType)}
+                          <td className="px-4 py-3 text-xs text-slate-700">{p.mobileNumber ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium ${
+                              (p.livingStatus ?? "Active") === "Active"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : p.livingStatus === "Deceased"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-slate-200 bg-slate-100 text-slate-600"
+                            }`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${
+                                (p.livingStatus ?? "Active") === "Active"
+                                  ? "bg-emerald-500"
+                                  : p.livingStatus === "Deceased" ? "bg-red-500" : "bg-slate-400"
+                              }`} />
+                              {statusLabel(p.livingStatus)}
+                            </span>
                           </td>
-                          <td className="p-3">{p.mobileNumber ?? "—"}</td>
-                          <td className="p-3">{p.livingStatus ?? "Active"}</td>
-                          <td className="p-3">
-                            <div onClick={(e) => e.stopPropagation()}>
+                          <td className="px-4 py-3 text-center">
+                            <div className="inline-flex" onClick={(e) => e.stopPropagation()}>
                               <PersonActions person={p} />
                             </div>
                           </td>
@@ -998,10 +1111,8 @@ function PersonsPageContent() {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>
-                    {total} result{total !== 1 ? "s" : ""}
-                  </span>
+                <div className="flex items-center justify-between border-t border-slate-200 pt-4 text-sm text-muted-foreground">
+                  <span>Showing {resultFrom}–{resultTo} of {total} results</span>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"

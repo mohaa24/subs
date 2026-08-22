@@ -79,6 +79,7 @@ exports.personsRouter.get("/", async (req, res) => {
     const areaCode = Number.parseInt(String(req.query.areaCode ?? ""), 10);
     const isMadarasaStudent = req.query.isMadarasaStudent?.trim() || "";
     const hasMembership = req.query.hasMembership?.trim() || "";
+    const sort = req.query.sort?.trim() || "recent";
     const where = {};
     if (orgId)
         where.organizationId = orgId;
@@ -110,12 +111,19 @@ exports.personsRouter.get("/", async (req, res) => {
             { mobileNumber: { contains: q, mode: "insensitive" } },
         ];
     }
+    const orderBy = sort === "name_asc"
+        ? { nameWithInitials: "asc" }
+        : sort === "name_desc"
+            ? { nameWithInitials: "desc" }
+            : sort === "oldest"
+                ? { createdAt: "asc" }
+                : { createdAt: "desc" };
     const [items, total] = await Promise.all([
         prisma_js_1.prisma.person.findMany({
             where,
             skip: (page - 1) * limit,
             take: limit,
-            orderBy: { fullName: "asc" },
+            orderBy,
         }),
         prisma_js_1.prisma.person.count({ where }),
     ]);
