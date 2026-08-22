@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDownToLine,
   ArrowDownCircle,
   ArrowLeft,
   ArrowUpCircle,
@@ -13,14 +14,20 @@ import {
   BanknoteArrowUp,
   BetweenHorizontalStart,
   Calendar1,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   Landmark,
+  Bookmark,
+  Pencil,
   ReceiptText,
+  RotateCcw,
   Search,
   SquareMenu,
   Undo2,
+  UserRoundCheck,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -1083,8 +1090,11 @@ function CashStatementHistoryCard({
           <div className="space-y-4">
             {groups.map((group) => (
               <section key={group.date} className="overflow-hidden rounded-lg border bg-card">
-                <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-2.5">
-                  <h3 className="text-sm font-semibold text-slate-700">{transactionGroupLabel(group.date)}</h3>
+                <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-2.5 text-xs">
+                  <h3 className="flex items-center gap-2 font-semibold text-slate-700">
+                    <CalendarDays className="h-4 w-4 text-slate-500" />
+                    {transactionGroupLabel(group.date)}
+                  </h3>
                   <span className="text-xs text-muted-foreground">
                     {group.transactions.length} {group.transactions.length === 1 ? "transaction" : "transactions"}
                   </span>
@@ -1111,12 +1121,12 @@ function CashStatementHistoryCard({
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className={`text-sm font-bold ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
-                                {formatRs(transaction.amount)}
+                              <div className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                                {cashStatementAmountLabel(transaction)}
                               </div>
                               <TransactionStatusBadge reversed={reversed} />
                             </div>
-                            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                            <ChevronDown className={`h-4 w-4 text-primary transition-transform ${expanded ? "rotate-180" : ""}`} />
                           </div>
                         </button>
                         {expanded ? (
@@ -1135,7 +1145,7 @@ function CashStatementHistoryCard({
 
                 <div className="hidden overflow-x-auto md:block">
                   <div className="min-w-[1000px]">
-                    <div className="grid grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center border-b bg-muted/20 px-3 py-2 text-[11px] font-medium text-muted-foreground">
+                    <div className="grid grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center gap-3 border-b bg-muted/20 px-4 py-2 text-[10px] font-medium text-muted-foreground">
                       <div>Transaction</div>
                       <div>Account Details</div>
                       <div>Receipt No.</div>
@@ -1152,7 +1162,7 @@ function CashStatementHistoryCard({
                           <div key={transaction.id}>
                             <button
                               type="button"
-                              className="grid w-full grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center px-3 py-3 text-left transition-colors hover:bg-muted/30"
+                              className="grid w-full grid-cols-[64px_minmax(210px,1.5fr)_145px_minmax(170px,1fr)_155px_105px_40px] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20"
                               onClick={() => setExpandedId(expanded ? null : transaction.id)}
                               aria-expanded={expanded}
                             >
@@ -1163,13 +1173,15 @@ function CashStatementHistoryCard({
                                   {flow === "cash-in" ? "Received From" : "Paid To"}: {transaction.counterpartyName || "—"}
                                 </div>
                               </div>
-                              <div className="truncate font-mono text-xs font-semibold text-primary">{transaction.documentNumber || "—"}</div>
+                              <div className="truncate font-mono text-xs text-foreground">{transaction.documentNumber || "—"}</div>
                               <TransactionPaymentMethod transaction={transaction} />
-                              <div className={`text-right text-sm font-bold ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
-                                {formatRs(transaction.amount)}
+                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600 line-through" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                                {cashStatementAmountLabel(transaction)}
                               </div>
                               <div className="text-center"><TransactionStatusBadge reversed={reversed} /></div>
-                              <ChevronDown className={`mx-auto h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                              <span className="flex h-8 w-8 items-center justify-center justify-self-end rounded-md text-primary transition hover:bg-primary/10">
+                                <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                              </span>
                             </button>
                             {expanded ? (
                               <CashStatementExpanded
@@ -1196,18 +1208,18 @@ function CashStatementHistoryCard({
 
 function TransactionStatusIcon({ reversed, flow }: { reversed: boolean; flow: CashFlowSlug }) {
   if (reversed) {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-100 text-red-600"><Undo2 className="h-4 w-4" /></span>;
+    return <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow-sm"><RotateCcw className="h-4 w-4" /></span>;
   }
   return (
-    <span className={`flex h-9 w-9 items-center justify-center rounded-full ${flow === "cash-in" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-      {flow === "cash-in" ? <BanknoteArrowDown className="h-4 w-4" /> : <BanknoteArrowUp className="h-4 w-4" />}
+    <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm ${flow === "cash-in" ? "bg-emerald-600" : "bg-red-600"}`}>
+      {flow === "cash-in" ? <ArrowDownToLine className="h-4 w-4" /> : <BanknoteArrowUp className="h-4 w-4" />}
     </span>
   );
 }
 
 function TransactionStatusBadge({ reversed }: { reversed: boolean }) {
   return (
-    <span className={`inline-flex rounded-md px-2 py-1 text-[10px] font-semibold uppercase ${reversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold ${reversed ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
       {reversed ? "Reversed" : "Paid"}
     </span>
   );
@@ -1220,6 +1232,28 @@ function TransactionPaymentMethod({ transaction }: { transaction: CashTransactio
     <div className="flex min-w-0 items-center gap-2 pr-3 text-xs">
       <MethodIcon className="h-4 w-4 shrink-0 text-slate-500" />
       <span className="truncate">{transaction.cashBankAccount?.name || transaction.paymentMethod || "—"}</span>
+    </div>
+  );
+}
+
+function cashStatementAmountLabel(transaction: CashTransaction) {
+  const amount = new Intl.NumberFormat("en-LK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(transaction.amount));
+  return `${transaction.reversedAt ? "-" : ""}LKR ${amount}`;
+}
+
+function CashHistoryDetail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] text-muted-foreground">{label}</span>
+        <span className="block break-words font-medium text-foreground">{value}</span>
+      </span>
     </div>
   );
 }
@@ -1238,19 +1272,19 @@ function CashStatementExpanded({
   mobile?: boolean;
 }) {
   return (
-    <div className="mx-3 mb-3 overflow-hidden rounded-md border-l-2 border-primary/60 bg-muted/20">
+    <div className={`mx-3 mb-3 overflow-hidden rounded-md border-l-2 ${transaction.reversedAt ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
       <div className={`grid gap-4 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center"}`}>
         {mobile ? (
           <>
-            <DetailMini label="Receipt No." value={transaction.documentNumber || "—"} />
+            <CashHistoryDetail icon={ReceiptText} label="Receipt No." value={transaction.documentNumber || "—"} />
             <div><div className="text-xs text-muted-foreground">Payment Method</div><TransactionPaymentMethod transaction={transaction} /></div>
           </>
         ) : null}
-        <DetailMini label="Entered By" value={transaction.createdBy?.email || "—"} />
-        <DetailMini label="Date Entered" value={dateTimeLabel(transaction.createdAt)} />
-        <DetailMini label="Reference" value={transaction.reference || "—"} />
+        <CashHistoryDetail icon={UserRoundCheck} label="Entered By" value={transaction.createdBy?.email || "—"} />
+        <CashHistoryDetail icon={CalendarDays} label="Date Entered" value={dateTimeLabel(transaction.createdAt)} />
+        <CashHistoryDetail icon={Bookmark} label="Reference" value={transaction.reference || "—"} />
         <div className={`flex flex-wrap gap-2 ${mobile ? "" : "justify-end"}`}>
-          <Button size="sm" variant="outline" onClick={() => onReceipt(transaction.id)}>
+          <Button size="sm" variant="neutralOutline" onClick={() => onReceipt(transaction.id)}>
             <ReceiptText className="mr-2 h-4 w-4" />Receipt
           </Button>
           {!transaction.reversedAt && canManage ? (
@@ -1261,10 +1295,10 @@ function CashStatementExpanded({
         </div>
       </div>
       {transaction.reversedAt ? (
-        <div className={`grid gap-4 border-t border-red-200 bg-red-50/60 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]"}`}>
-          <DetailMini label="Reversed By" value={transaction.reversedBy?.email || "—"} />
-          <DetailMini label="Reversed Date" value={dateTimeLabel(transaction.reversedAt)} />
-          <DetailMini label="Reversed Reason" value={transaction.reversalReason || "—"} />
+        <div className={`grid gap-4 border-t border-red-100 bg-red-50/60 p-4 ${mobile ? "grid-cols-1" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]"}`}>
+          <CashHistoryDetail icon={UserRoundCheck} label="Reversed By" value={transaction.reversedBy?.email || "—"} />
+          <CashHistoryDetail icon={CalendarDays} label="Reversed Date" value={dateTimeLabel(transaction.reversedAt)} />
+          <CashHistoryDetail icon={Pencil} label="Reversed Reason" value={transaction.reversalReason || "—"} />
           <div />
         </div>
       ) : null}
