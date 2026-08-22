@@ -381,7 +381,7 @@ exports.paymentsRouter.post("/generate-dues", async (req, res) => {
         ? new Date(req.body.period + "-01")
         : new Date(now.getFullYear(), now.getMonth(), 1);
     const period = periodString(targetDate);
-    const where = { membershipStatus: "Active" };
+    const where = { membershipStatus: "Active", isArchived: false };
     if (orgId)
         where.organizationId = orgId;
     const memberships = await prisma_js_1.prisma.membership.findMany({ where });
@@ -1070,6 +1070,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
                         memberName: membership.hod.nameWithInitials || membership.hod.fullName || "Member",
                         amount: paymentAmount.toFixed(2),
                         receiptNumber,
+                        outstandingAmount: snapshot.outstandingAfterPayment.toFixed(2),
                     });
                 }
                 return updatedPayment;
@@ -1196,6 +1197,7 @@ exports.paymentsRouter.post("/", async (req, res) => {
                     "Member",
                 amount: paymentAmount.toFixed(2),
                 receiptNumber,
+                outstandingAmount: snapshot.outstandingAfterPayment.toFixed(2),
             });
         }
         return updatedPayment;
@@ -1251,6 +1253,94 @@ exports.paymentsRouter.get("/receipt/:paymentId", async (req, res) => {
         return res.status(403).json({ error: "Forbidden" });
     }
     return res.json(receipt);
+});
+exports.paymentsRouter.post("/receipt/:paymentId/sms", async (req, res) => {
+    if (req.auth.role !== "admin" && req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Administrator access required" });
+    }
+    const [receipt, payment] = await Promise.all([
+        buildReceiptForPayment(req.params.paymentId),
+        prisma_js_1.prisma.payment.findUnique({
+            where: { id: req.params.paymentId },
+            select: {
+                reversedAt: true,
+                organizationId: true,
+                membership: {
+                    select: {
+                        hod: { select: { mobileNumber: true, whatsAppNumber: true } },
+                    },
+                },
+            },
+        }),
+    ]);
+    if (!receipt || !payment)
+        return res.status(404).json({ error: "Payment not found" });
+    if (payment.reversedAt)
+        return res.status(409).json({ error: "A reversed payment receipt cannot be sent" });
+    if (req.auth.organizationId &&
+        payment.organizationId !== req.auth.organizationId &&
+        req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const recipientPhone = payment.membership.hod.mobileNumber || payment.membership.hod.whatsAppNumber;
+    if (!recipientPhone)
+        return res.status(400).json({ error: "The member does not have a mobile or WhatsApp number" });
+    const queued = await prisma_js_1.prisma.$transaction((tx) => (0, message_queue_js_1.queuePaymentReceived)(tx, {
+        organizationId: payment.organizationId,
+        recipientPhone,
+        membershipNo: receipt.membershipNo,
+        memberName: receipt.memberName || "Member",
+        amount: receipt.paidAmount.toFixed(2),
+        receiptNumber: receipt.receiptNumber,
+        outstandingAmount: receipt.outstandingAfterPayment.toFixed(2),
+    }));
+    if (!queued)
+        return res.status(409).json({ error: "Payment receipt SMS is disabled in SMS Settings" });
+    return res.status(202).json({ queued: true, messageId: queued.id });
+});
+exports.paymentsRouter.post("/reminder/:membershipId", async (req, res) => {
+    if (req.auth.role !== "admin" && req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Administrator access required" });
+    }
+    const membership = await prisma_js_1.prisma.membership.findUnique({
+        where: { id: req.params.membershipId },
+        select: {
+            id: true,
+            organizationId: true,
+            membershipNo: true,
+            hod: {
+                select: {
+                    nameWithInitials: true,
+                    fullName: true,
+                    mobileNumber: true,
+                    whatsAppNumber: true,
+                },
+            },
+        },
+    });
+    if (!membership)
+        return res.status(404).json({ error: "Membership not found" });
+    if (req.auth.organizationId &&
+        membership.organizationId !== req.auth.organizationId &&
+        req.auth.role !== "super_user") {
+        return res.status(403).json({ error: "Forbidden" });
+    }
+    const recipientPhone = membership.hod.mobileNumber || membership.hod.whatsAppNumber;
+    if (!recipientPhone)
+        return res.status(400).json({ error: "The member does not have a mobile or WhatsApp number" });
+    const queued = await prisma_js_1.prisma.$transaction(async (tx) => {
+        const snapshot = await loadReceiptBalanceSnapshot(tx, membership.id);
+        return (0, message_queue_js_1.queuePaymentReminder)(tx, {
+            organizationId: membership.organizationId,
+            recipientPhone,
+            membershipNo: membership.membershipNo,
+            memberName: membership.hod.nameWithInitials || membership.hod.fullName || "Member",
+            outstandingAmount: snapshot.outstandingAfterPayment.toFixed(2),
+        });
+    });
+    if (!queued)
+        return res.status(409).json({ error: "Payment Reminder SMS is disabled in SMS Settings" });
+    return res.status(202).json({ queued: true, messageId: queued.id });
 });
 // Transaction history for a membership
 exports.paymentsRouter.get("/history/:membershipId", async (req, res) => {

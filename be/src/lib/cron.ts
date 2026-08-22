@@ -36,7 +36,7 @@ export async function generateMonthlyDues() {
   console.log(`[Cron] Generating dues for period ${period}`);
 
   const memberships = await prisma.membership.findMany({
-    where: { membershipStatus: "Active" },
+    where: { membershipStatus: "Active", isArchived: false },
     include: {
       organization: true,
       hod: {

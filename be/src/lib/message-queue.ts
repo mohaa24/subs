@@ -10,6 +10,13 @@ type MessageWriter = Pick<
   "messageQueue" | "messageTemplate" | "organization"
 >;
 
+export function membershipIdOnly(membershipNo: string) {
+  const numericSuffix = membershipNo.trim().match(/(\d+)$/)?.[1];
+  if (numericSuffix) return numericSuffix;
+  const parts = membershipNo.split("-").filter(Boolean);
+  return parts.at(-1) ?? membershipNo;
+}
+
 export async function queueMessage(
   organizationId: string,
   recipientPhone: string,
@@ -38,7 +45,7 @@ export async function queuePaymentDueGenerated(
     recipientPhone,
     eventType: MessageEventType.DUE_GENERATED,
     variables: {
-      membership_no: membershipNo,
+      membership_no: membershipIdOnly(membershipNo),
       member_name: memberName,
       due_type: dueType,
       period,
@@ -56,6 +63,7 @@ export async function queuePaymentReceived(
     memberName: string;
     amount: string;
     receiptNumber: string;
+    outstandingAmount: string;
   }
 ) {
   return queueTemplatedMessage(tx, {
@@ -63,10 +71,33 @@ export async function queuePaymentReceived(
     recipientPhone: input.recipientPhone,
     eventType: MessageEventType.PAYMENT_RECEIVED,
     variables: {
-      membership_no: input.membershipNo,
+      membership_no: membershipIdOnly(input.membershipNo),
       member_name: input.memberName,
       amount: input.amount,
       receipt_number: input.receiptNumber,
+      total_outstanding_due: input.outstandingAmount,
+    },
+  });
+}
+
+export async function queuePaymentReminder(
+  tx: MessageWriter,
+  input: {
+    organizationId: string;
+    recipientPhone: string;
+    membershipNo: string;
+    memberName: string;
+    outstandingAmount: string;
+  }
+) {
+  return queueTemplatedMessage(tx, {
+    organizationId: input.organizationId,
+    recipientPhone: input.recipientPhone,
+    eventType: MessageEventType.PAYMENT_REMINDER,
+    variables: {
+      membership_no: membershipIdOnly(input.membershipNo),
+      member_name: input.memberName,
+      outstanding_amount: input.outstandingAmount,
     },
   });
 }

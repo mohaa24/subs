@@ -594,7 +594,11 @@ function cashAccountWhere(flowType, category) {
         return { accountType: "asset", assetSubtype: { in: receivableSubtypes } };
     }
     if (flowType === "cash_out" && categories.includes("operating_expense")) {
-        return { accountType: "expense", assetSubtype: "operating_expense" };
+        return {
+            accountType: "expense",
+            assetSubtype: "operating_expense",
+            OR: [{ systemKey: null }, { systemKey: { not: accounting_js_1.BAD_DEBT_EXPENSE_KEY } }],
+        };
     }
     return {
         accountType: "liability",
@@ -807,6 +811,7 @@ function payableAccountWhere(status, search, type) {
     return {
         accountType: "liability",
         assetSubtype: type === "loan_payable" || type === "service_payable" ? type : { in: payableSubtypes },
+        AND: [{ OR: [{ systemKey: null }, { systemKey: { not: "liability_member_credit" } }] }],
         ...(status === "closed"
             ? { OR: [{ isActive: false }, { closedAt: { not: null } }] }
             : status === "all"

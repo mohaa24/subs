@@ -463,6 +463,9 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
       });
       if (accountId) await loadDetail();
       else await loadOverview();
+      if (flow === "cash-in" && selected.category === "operating_income") {
+        await openCashReceipt(transaction.id);
+      }
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to record transaction", description: err instanceof Error ? err.message : "Unable to save" });
     } finally {
@@ -630,13 +633,14 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                       return (
                         <div
                           key={row.id}
-                          role={isReceivableCard || isPayableCard ? "button" : undefined}
-                          tabIndex={isReceivableCard || isPayableCard ? 0 : undefined}
-                          onClick={isReceivableCard || isPayableCard ? () => router.push(detailHref) : undefined}
-                          onKeyDown={isReceivableCard || isPayableCard ? (event) => {
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => router.push(detailHref)}
+                          onKeyDown={(event) => {
+                            if (event.currentTarget !== event.target) return;
                             if (event.key === "Enter" || event.key === " ") router.push(detailHref);
-                          } : undefined}
-                          className={`grid gap-3 rounded-md border bg-card p-3 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center ${isReceivableCard || isPayableCard ? "cursor-pointer transition hover:bg-muted/40" : ""}`}
+                          }}
+                          className="grid cursor-pointer gap-3 rounded-md border bg-card p-3 transition hover:bg-muted/40 md:grid-cols-[1.5fr_1fr_1fr_auto_auto] md:items-center"
                         >
                           <div>
                             <div className="font-medium text-foreground">{row.name}</div>
@@ -656,7 +660,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
                           </div>
                           <div className="flex items-center gap-2 md:justify-end">
                             {isFund ? (
-                              <Button size="sm" variant={flow === "cash-in" ? "cashIn" : "cashOut"} onClick={() => openFundRecord(row, section.key)} disabled={!canManage}>
+                              <Button size="sm" variant={flow === "cash-in" ? "cashIn" : "cashOut"} onClick={(event) => { event.stopPropagation(); openFundRecord(row, section.key); }} disabled={!canManage}>
                                 {flow === "cash-in" ? <Banknote className="mr-2 h-4 w-4" /> : <BanknoteArrowUp className="mr-2 h-4 w-4" />}
                                 {buttonLabel(flow, section.key)}
                               </Button>

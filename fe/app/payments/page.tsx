@@ -47,6 +47,7 @@ import {
   LockKeyhole,
   Landmark,
   ListFilter,
+  MessageSquareText,
   Pencil,
   QrCode,
   ReceiptText,
@@ -173,6 +174,7 @@ export default function PaymentsPage() {
   const historyLimit = 20;
   const [historySearchQ, setHistorySearchQ] = useState("");
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+  const [sendingSmsPaymentId, setSendingSmsPaymentId] = useState<string | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState("");
@@ -294,6 +296,22 @@ export default function PaymentsPage() {
         title: "Failed to load receipt",
         description: msg,
       });
+    }
+  }
+
+  async function sendReceiptSms(paymentId: string) {
+    setSendingSmsPaymentId(paymentId);
+    try {
+      await api(`/payments/receipt/${paymentId}/sms`, { method: "POST" });
+      toast({ title: "SMS queued", description: "The payment receipt SMS has been queued for delivery." });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "SMS could not be sent",
+        description: err instanceof Error ? err.message : "Unable to queue the payment receipt SMS.",
+      });
+    } finally {
+      setSendingSmsPaymentId(null);
     }
   }
 
@@ -1009,10 +1027,15 @@ export default function PaymentsPage() {
                                     </div>
                                   ) : null}
 
-                                  <div className={`mt-2 grid gap-2 ${canManage && !reversed ? "grid-cols-2" : "grid-cols-1"}`}>
+                                  <div className={`mt-2 grid gap-2 ${canManage && !reversed ? "grid-cols-3" : "grid-cols-1"}`}>
                                     <Button size="sm" variant="neutralOutline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" onClick={() => openReceiptForPayment(payment.id)}>
                                       <ReceiptText className="mr-2 h-3.5 w-3.5" />Receipt
                                     </Button>
+                                    {canManage && !reversed ? (
+                                      <Button size="sm" variant="neutralOutline" onClick={() => sendReceiptSms(payment.id)} disabled={sendingSmsPaymentId === payment.id}>
+                                        <MessageSquareText className="mr-2 h-3.5 w-3.5" />SMS
+                                      </Button>
+                                    ) : null}
                                     {canManage && !reversed ? (
                                       <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(payment); setReverseReason(""); }}>
                                         <RotateCcw className="mr-2 h-3.5 w-3.5" />Reverse
@@ -1106,7 +1129,7 @@ export default function PaymentsPage() {
 
                               {expanded ? (
                                 <div className={`mx-3 mb-3 rounded-md border-l-2 px-4 py-3 ${reversed ? "border-red-400 bg-red-50/30" : "border-emerald-500 bg-emerald-50/25"}`}>
-                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px] items-center gap-5">
+                                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center gap-5">
                                     <PaymentHistoryDetail icon={UserRound} label="Full Name" value={paymentMemberFullName(payment)} />
                                     <PaymentHistoryDetail icon={UserRoundCheck} label="Collected By" value={payment.collectedBy?.email ?? "—"} />
                                     <PaymentHistoryDetail icon={CalendarDays} label="Payment Period" value={paymentPeriodLabel(payment)} />
@@ -1114,6 +1137,11 @@ export default function PaymentsPage() {
                                       <Button size="sm" variant="neutralOutline" onClick={() => openReceiptForPayment(payment.id)}>
                                         <ReceiptText className="mr-2 h-3.5 w-3.5" />Receipt
                                       </Button>
+                                      {canManage && !reversed ? (
+                                        <Button size="sm" variant="neutralOutline" onClick={() => sendReceiptSms(payment.id)} disabled={sendingSmsPaymentId === payment.id}>
+                                          <MessageSquareText className="mr-2 h-3.5 w-3.5" />SMS
+                                        </Button>
+                                      ) : null}
                                       {canManage && !reversed ? (
                                         <Button size="sm" variant="dangerOutline" onClick={() => { setReverseTarget(payment); setReverseReason(""); }}>
                                           <RotateCcw className="mr-2 h-3.5 w-3.5" />Reverse
@@ -1125,7 +1153,7 @@ export default function PaymentsPage() {
                                   {reversed ? (
                                     <div className="mt-3 border-t border-red-100 pt-3">
                                       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-red-600">Reversal Details</p>
-                                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_100px] items-center gap-5">
+                                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-center gap-5">
                                         <PaymentHistoryDetail icon={UserRoundCheck} label="Reversed By" value={payment.reversedBy?.email ?? "—"} />
                                         <PaymentHistoryDetail icon={Pencil} label="Reason" value={payment.reversalReason ?? "—"} />
                                         <PaymentHistoryDetail icon={CalendarDays} label="Reversed On" value={detailDateLabel(payment.reversedAt, true)} />

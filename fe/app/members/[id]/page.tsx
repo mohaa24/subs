@@ -334,6 +334,7 @@ export default function MembershipDetailPage() {
   const [manualDueTypeId, setManualDueTypeId] = useState("");
   const [manualDueSubmitting, setManualDueSubmitting] = useState(false);
   const [applyCreditDueId, setApplyCreditDueId] = useState<string | null>(null);
+  const [sendingReminder, setSendingReminder] = useState(false);
   const [depositAccounts, setDepositAccounts] = useState<AccountingAccount[]>([]);
   const printRef = useRef<HTMLDivElement>(null);
   let visibleRunningBalance = 0;
@@ -515,6 +516,22 @@ export default function MembershipDetailPage() {
 
   const canManage = user?.role === "admin" || user?.role === "super_user";
   const canRecordCreditPayment = !!membership;
+
+  async function sendPaymentReminder() {
+    setSendingReminder(true);
+    try {
+      await api(`/payments/reminder/${id}`, { method: "POST" });
+      toast({ title: "SMS reminder queued", description: "The member's payment reminder has been queued for delivery." });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "SMS reminder could not be sent",
+        description: err instanceof Error ? err.message : "Unable to queue the payment reminder.",
+      });
+    } finally {
+      setSendingReminder(false);
+    }
+  }
 
   async function handleReversePayment() {
     if (!reverseTarget || !reverseReason.trim()) return;
@@ -1484,6 +1501,12 @@ export default function MembershipDetailPage() {
                       <Button size="sm" variant="cashIn" className="gap-1.5" onClick={openCreditPaymentDialog}>
                         <Banknote className="h-4 w-4" />
                         Receive
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button size="sm" variant="neutralOutline" className="gap-1.5" onClick={sendPaymentReminder} disabled={sendingReminder}>
+                        <MessageSquareText className="h-4 w-4" />
+                        SMS Reminder
                       </Button>
                     )}
                     {canManage && (

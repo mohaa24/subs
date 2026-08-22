@@ -30,6 +30,22 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
       "amount",
       "membership_no",
       "receipt_number",
+      "total_outstanding_due",
+      "organization_name",
+    ],
+  },
+  {
+    eventType: MessageEventType.PAYMENT_REMINDER,
+    label: "Payment Reminder",
+    description: "Sent manually from a member's payment record.",
+    available: true,
+    defaultEnabled: true,
+    defaultBody:
+      "Dear {{member_name}}, your total outstanding due is Rs. {{outstanding_amount}}. Member ID: {{membership_no}}. Please make payment. - {{organization_name}}",
+    allowedVariables: [
+      "member_name",
+      "outstanding_amount",
+      "membership_no",
       "organization_name",
     ],
   },
