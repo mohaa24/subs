@@ -9,6 +9,7 @@ import {
   ArrowDownCircle,
   ArrowLeft,
   ArrowUpCircle,
+  ArrowUpFromLine,
   Banknote,
   BanknoteArrowDown,
   BanknoteArrowUp,
@@ -1121,7 +1122,7 @@ function CashStatementHistoryCard({
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className={`text-sm font-semibold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                              <div className={`text-sm font-semibold tabular-nums ${reversed ? `text-red-600 ${flow === "cash-out" ? "line-through" : ""}` : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <TransactionStatusBadge reversed={reversed} />
@@ -1175,7 +1176,7 @@ function CashStatementHistoryCard({
                               </div>
                               <div className="truncate font-mono text-xs text-foreground">{transaction.documentNumber || "—"}</div>
                               <TransactionPaymentMethod transaction={transaction} />
-                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? "text-red-600" : flow === "cash-in" ? "text-emerald-700" : "text-red-700"}`}>
+                              <div className={`text-right text-sm font-bold tabular-nums ${reversed ? `text-red-600 ${flow === "cash-out" ? "line-through" : ""}` : flow === "cash-in" ? "text-emerald-700" : "text-blue-700"}`}>
                                 {cashStatementAmountLabel(transaction)}
                               </div>
                               <div className="text-center"><TransactionStatusBadge reversed={reversed} /></div>
@@ -1211,8 +1212,8 @@ function TransactionStatusIcon({ reversed, flow }: { reversed: boolean; flow: Ca
     return <span className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow-sm"><RotateCcw className="h-4 w-4" /></span>;
   }
   return (
-    <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm ${flow === "cash-in" ? "bg-emerald-600" : "bg-red-600"}`}>
-      {flow === "cash-in" ? <ArrowDownToLine className="h-4 w-4" /> : <BanknoteArrowUp className="h-4 w-4" />}
+    <span className={`flex h-9 w-9 items-center justify-center rounded-full text-white shadow-sm ${flow === "cash-in" ? "bg-emerald-600" : "bg-blue-600"}`}>
+      {flow === "cash-in" ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowUpFromLine className="h-4 w-4" />}
     </span>
   );
 }
