@@ -53,7 +53,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
   {
     eventType: MessageEventType.PAYMENT_OVERDUE,
     label: "Payment overdue",
-    description: "Planned; delivery is disabled until the overdue workflow is reviewed.",
+    description: "",
     available: false,
     defaultEnabled: false,
     defaultBody: "Payment for membership {{membership_no}} is overdue.",
@@ -62,7 +62,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
   {
     eventType: MessageEventType.LATE_FEE_APPLIED,
     label: "Late fee applied",
-    description: "Planned; delivery is currently disabled.",
+    description: "",
     available: false,
     defaultEnabled: false,
     defaultBody: "A late fee has been applied to membership {{membership_no}}.",
@@ -71,7 +71,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
   {
     eventType: MessageEventType.ORG_BILLING_DUE,
     label: "Organization billing due",
-    description: "Planned; delivery is currently disabled.",
+    description: "",
     available: false,
     defaultEnabled: false,
     defaultBody: "Organization billing is due for {{period}}.",
@@ -80,7 +80,7 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
   {
     eventType: MessageEventType.ANNOUNCEMENT,
     label: "Announcements",
-    description: "Planned; delivery is currently disabled.",
+    description: "",
     available: false,
     defaultEnabled: false,
     defaultBody: "{{message}}",

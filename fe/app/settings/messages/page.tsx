@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Gauge, MessageSquare, Save } from "lucide-react";
+import { Eye, Gauge, MessageSquare, Pencil, Save } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
@@ -12,6 +12,13 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -51,6 +58,7 @@ export default function MessageSettingsPage() {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [selectedTemplateType, setSelectedTemplateType] = useState<string | null>(null);
 
   const isSuperUser = user?.role === "super_user";
   const effectiveOrgId = isSuperUser ? selectedOrgId : user?.organizationId ?? "";
@@ -109,6 +117,11 @@ export default function MessageSettingsPage() {
     if (!settings?.usage.monthlyQuota) return settings?.usage.used ? 100 : 0;
     return Math.min(100, Math.round((settings.usage.used / settings.usage.monthlyQuota) * 100));
   }, [settings]);
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.eventType === selectedTemplateType) ?? null,
+    [selectedTemplateType, templates]
+  );
 
   function updateTemplate(eventType: string, patch: Partial<MessageTemplate>) {
     setTemplates((items) =>
@@ -239,14 +252,9 @@ export default function MessageSettingsPage() {
                     onChange={(event) => setMonthlyQuota(Math.max(0, Number(event.target.value) || 0))}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Usage period: {settings.usage.period}. Only provider-accepted segments count as used.
+                    Usage period: {settings.usage.period}
                   </p>
                 </div>
-                {!isSuperUser && (
-                  <p className="mt-4 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-                    Quota and templates are managed by the super user.
-                  </p>
-                )}
               </CardContent>
             </Card>
 
@@ -257,46 +265,110 @@ export default function MessageSettingsPage() {
                   The rendered message is saved with each queued SMS, so later template changes do not alter message history.
                 </p>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent>
+                <div className="overflow-hidden rounded-lg border">
                 {templates.map((template) => (
-                  <div key={template.eventType} className="rounded-lg border p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="font-medium text-foreground">{template.label}</p>
-                        <p className="mt-0.5 text-sm text-muted-foreground">{template.description}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {!template.available && (
-                          <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">Pending</span>
-                        )}
+                  <div
+                    key={template.eventType}
+                    className="flex flex-col gap-3 border-b px-4 py-3 last:border-b-0 sm:flex-row sm:items-center"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground">{template.label}</p>
+                      {template.description && (
+                        <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                          {template.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {template.enabled ? "Enabled" : "Disabled"}
+                        </span>
                         <Checkbox
                           aria-label={`Enable ${template.label}`}
                           checked={template.enabled}
                           disabled={!isSuperUser || !template.available}
-                          onCheckedChange={(checked) => updateTemplate(template.eventType, { enabled: checked === true })}
+                          onCheckedChange={(checked) =>
+                            updateTemplate(template.eventType, { enabled: checked === true })
+                          }
                         />
                       </div>
-                    </div>
-                    <Textarea
-                      className="mt-3 min-h-24"
-                      value={template.body}
-                      disabled={!isSuperUser || !template.available}
-                      onChange={(event) => updateTemplate(template.eventType, { body: event.target.value })}
-                    />
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {template.allowedVariables.map((variable) => (
-                        <code key={variable} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                          {`{{${variable}}}`}
-                        </code>
-                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="min-w-20 gap-1.5"
+                        onClick={() => setSelectedTemplateType(template.eventType)}
+                      >
+                        {isSuperUser && template.available ? (
+                          <Pencil className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
+                        {isSuperUser && template.available ? "Edit" : "View"}
+                      </Button>
                     </div>
                   </div>
                 ))}
+                </div>
               </CardContent>
             </Card>
           </div>
         )}
       </main>
+
+      <Dialog
+        open={Boolean(selectedTemplate)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTemplateType(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          {selectedTemplate && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{selectedTemplate.label}</DialogTitle>
+                {selectedTemplate.description && (
+                  <DialogDescription>{selectedTemplate.description}</DialogDescription>
+                )}
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="message-template-body">Message template</Label>
+                <Textarea
+                  id="message-template-body"
+                  className="min-h-36"
+                  value={selectedTemplate.body}
+                  disabled={!isSuperUser || !selectedTemplate.available}
+                  onChange={(event) =>
+                    updateTemplate(selectedTemplate.eventType, { body: event.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Available placeholders
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedTemplate.allowedVariables.map((variable) => (
+                    <code
+                      key={variable}
+                      className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                    >
+                      {`{{${variable}}}`}
+                    </code>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button type="button" onClick={() => setSelectedTemplateType(null)}>
+                  Done
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
