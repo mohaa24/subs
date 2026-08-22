@@ -708,7 +708,7 @@ function PersonsPageContent() {
               Search People
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 md:pt-5">
             <form onSubmit={handleSearch} className="space-y-4">
               <div className="flex flex-col gap-2 md:flex-row md:items-center">
                 <div className="relative min-w-[220px] flex-1">
