@@ -102,6 +102,15 @@ const sectionCategories: Record<string, CashTransactionCategory | null> = {
   project_fund_expense: null,
 };
 
+const reversalReasons = [
+  "Incorrect Amount",
+  "Incorrect Account",
+  "Duplicate Entry",
+  "Incorrect Payment Method",
+  "Entered By Mistake",
+  "Other",
+] as const;
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -311,12 +320,21 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
   const [memberOptions, setMemberOptions] = useState<MemberLookup[]>([]);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [receiptData, setReceiptData] = useState<PaymentReceiptData | null>(null);
+  const [reverseTarget, setReverseTarget] = useState<CashTransaction | null>(null);
+  const [reverseReason, setReverseReason] = useState<string>(reversalReasons[0]);
   const Icon = config.icon;
 
   const cashBankAccounts = useMemo(
     () => accounts.filter((account) => account.accountType === "asset" && isCashBankSubtype(account.assetSubtype) && account.isActive),
     [accounts],
   );
+
+  function defaultCashBankAccountId(source = cashBankAccounts) {
+    return source.find((account) => account.systemKey === "asset_cash_on_hand")?.id
+      ?? source.find((account) => account.name.trim().toLowerCase() === "cash on hand")?.id
+      ?? source[0]?.id
+      ?? "";
+  }
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -356,8 +374,8 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     try {
       const data = await api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } });
       setAccounts(data);
-      const firstCashBank = data.find((account) => account.accountType === "asset" && isCashBankSubtype(account.assetSubtype) && account.isActive);
-      setForm((v) => ({ ...v, cashBankAccountId: v.cashBankAccountId || firstCashBank?.id || "" }));
+      const activeCashBank = data.filter((account) => account.accountType === "asset" && isCashBankSubtype(account.assetSubtype) && account.isActive);
+      setForm((v) => ({ ...v, cashBankAccountId: v.cashBankAccountId || defaultCashBankAccountId(activeCashBank) }));
     } catch {
       setAccounts([]);
     }
@@ -404,14 +422,14 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
 
   function openRecord(row: CashFlowAccountRow, category: CashTransactionCategory, sectionKey?: string) {
     setSelected({ row, category, sectionKey });
-    setForm(defaultForm(cashBankAccounts[0]?.id || ""));
+    setForm(defaultForm(defaultCashBankAccountId()));
     setMemberQuery("");
     setMemberOptions([]);
   }
 
   function openFundRecord(row: CashFlowAccountRow, sectionKey?: string) {
     setSelected({ row, category: null, sectionKey });
-    setForm(defaultForm(cashBankAccounts[0]?.id || ""));
+    setForm(defaultForm(defaultCashBankAccountId()));
     setMemberQuery("");
     setMemberOptions([]);
   }
@@ -473,18 +491,27 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     }
   }
 
-  async function handleReverse(transaction: CashTransaction) {
-    const reason = window.prompt("Reason for reversal");
-    if (!reason?.trim()) return;
+  function openReverse(transaction: CashTransaction) {
+    setReverseTarget(transaction);
+    setReverseReason(reversalReasons[0]);
+  }
+
+  async function handleReverse(event: FormEvent) {
+    event.preventDefault();
+    if (!reverseTarget || !reverseReason) return;
+    setSubmitting(true);
     try {
-      await api(`/accounting/cash-transactions/${transaction.id}/reverse`, {
+      await api(`/accounting/cash-transactions/${reverseTarget.id}/reverse`, {
         method: "POST",
-        body: JSON.stringify({ reason: reason.trim() }),
+        body: JSON.stringify({ reason: reverseReason }),
       });
-      toast({ title: "Transaction reversed", description: transaction.documentNumber ?? transaction.id });
+      toast({ title: "Transaction reversed", description: reverseTarget.documentNumber ?? reverseTarget.id });
+      setReverseTarget(null);
       await loadDetail();
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to reverse transaction", description: err instanceof Error ? err.message : "Unable to reverse" });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -578,7 +605,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
               { ...detail.account, periodTotal: detail.summary.periodTotal ?? 0, thisMonthTotal: 0 },
               category ?? (isReceivableSubtype(detail.account.assetSubtype) ? "receivable_collection" : isPayableSubtype(detail.account.assetSubtype) ? "payable_repayment" : flow === "cash-in" ? "operating_income" : "operating_expense")
             )}
-            onReverse={handleReverse}
+            onReverse={openReverse}
             onReceipt={openCashReceipt}
           />
         ) : (
@@ -761,6 +788,62 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
               <Button type="submit" variant={isCashInAction(flow, selected?.category) ? "cashIn" : "cashOut"} disabled={submitting || !canManage}>
                 {isCashInAction(flow, selected?.category) ? <Banknote className="mr-2 h-4 w-4" /> : <BanknoteArrowUp className="mr-2 h-4 w-4" />}
                 {submitting ? "Saving..." : selectedButtonLabel}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!reverseTarget}
+        onOpenChange={(open) => {
+          if (!open && !submitting) setReverseTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Reverse Entry</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleReverse} className="space-y-5">
+            <div>
+              <div className="mb-2 text-sm font-semibold text-foreground">Transaction Info</div>
+              <div className="grid overflow-hidden rounded-lg border bg-muted/20 sm:grid-cols-3 sm:divide-x">
+                <div className="border-b p-3 sm:border-b-0">
+                  <div className="text-xs text-muted-foreground">Transaction</div>
+                  <div className="mt-1 break-words font-medium text-foreground">
+                    {reverseTarget?.documentNumber ?? reverseTarget?.transactionLabel ?? "—"}
+                  </div>
+                  {reverseTarget?.documentNumber && reverseTarget.transactionLabel ? (
+                    <div className="mt-0.5 text-xs text-muted-foreground">{reverseTarget.transactionLabel}</div>
+                  ) : null}
+                </div>
+                <div className="border-b p-3 sm:border-b-0">
+                  <div className="text-xs text-muted-foreground">Date</div>
+                  <div className="mt-1 font-medium text-foreground">{dateLabel(reverseTarget?.transactionDate)}</div>
+                </div>
+                <div className="p-3">
+                  <div className="text-xs text-muted-foreground">Amount</div>
+                  <div className="mt-1 font-semibold tabular-nums text-foreground">
+                    {reverseTarget ? formatRs(reverseTarget.amount) : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason for Reversal <span className="text-destructive">*</span></Label>
+              <Select value={reverseReason} onValueChange={setReverseReason}>
+                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectContent>
+                  {reversalReasons.map((reason) => (
+                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={() => setReverseTarget(null)} disabled={submitting}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={submitting || !reverseReason}>
+                <Undo2 className="mr-2 h-4 w-4" />
+                {submitting ? "Reversing..." : "Confirm Reversal"}
               </Button>
             </div>
           </form>
