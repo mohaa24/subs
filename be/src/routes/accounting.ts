@@ -3682,3 +3682,179 @@ accountingRouter.get("/reports/income-account", asyncRoute(async (req, res) => {
     movements: serializedMovements,
   });
 }));
+
+accountingRouter.get("/reports/expense-accounts", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+
+  const accounts = await prisma.accountingAccount.findMany({
+    where: {
+      organizationId: orgId,
+      accountType: "expense",
+      assetSubtype: "operating_expense",
+      OR: [{ systemKey: null }, { systemKey: { not: BAD_DEBT_EXPENSE_KEY } }],
+    },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, accountType: true, assetSubtype: true, systemKey: true, isActive: true },
+  });
+
+  return res.json(accounts);
+}));
+
+accountingRouter.get("/reports/expense-account", asyncRoute(async (req, res) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(400).json({ error: "Organization scope required" });
+
+  const accountId = typeof req.query.accountId === "string" ? req.query.accountId.trim() : "";
+  if (!accountId) return res.status(400).json({ error: "Account is required" });
+
+  const from = startOfDay(dateFromQuery(req.query.fromDate, new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const to = endOfDay(dateFromQuery(req.query.toDate, new Date()));
+  if (from > to) return res.status(400).json({ error: "From date must be on or before to date" });
+
+  const [organization, account, transactions] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+    prisma.accountingAccount.findFirst({
+      where: {
+        id: accountId,
+        organizationId: orgId,
+        accountType: "expense",
+        assetSubtype: "operating_expense",
+        OR: [{ systemKey: null }, { systemKey: { not: BAD_DEBT_EXPENSE_KEY } }],
+      },
+      select: { id: true, name: true, assetSubtype: true, systemKey: true },
+    }),
+    prisma.cashTransaction.findMany({
+      where: {
+        organizationId: orgId,
+        accountId,
+        flowType: "cash_out",
+        OR: [
+          { transactionDate: { gte: from, lte: to } },
+          { reversedAt: { gte: from, lte: to } },
+        ],
+      },
+      include: {
+        cashBankAccount: { select: { id: true, name: true } },
+        createdBy: { select: { email: true } },
+        reversedBy: { select: { email: true } },
+      },
+      orderBy: [{ transactionDate: "asc" }, { createdAt: "asc" }],
+    }),
+  ]);
+
+  if (!account) return res.status(404).json({ error: "Expense account not found" });
+
+  const paymentTransactions = transactions.filter((transaction) =>
+    transaction.transactionDate >= from && transaction.transactionDate <= to
+  );
+  const reversalTransactions = transactions.filter((transaction) =>
+    transaction.reversedAt && transaction.reversedAt >= from && transaction.reversedAt <= to
+  );
+
+  const paidFrom = new Map<string, { accountId: string; accountName: string; amount: number }>();
+  for (const transaction of paymentTransactions) {
+    const existing = paidFrom.get(transaction.cashBankAccountId) ?? {
+      accountId: transaction.cashBankAccountId,
+      accountName: transaction.cashBankAccount.name,
+      amount: 0,
+    };
+    existing.amount += Number(transaction.amount);
+    paidFrom.set(transaction.cashBankAccountId, existing);
+  }
+
+  type ExpenseMovement = {
+    key: string;
+    type: "receipt" | "reversal";
+    movementDate: Date;
+    enteredAt: Date;
+    documentNumber: string | null;
+    linkedDocumentNumber: string | null;
+    receivedInto: string;
+    enteredBy: string | null;
+    amount: number;
+    status: "posted" | "reversed" | "reversal";
+    reversalReason: string | null;
+    relatedDate: Date | null;
+  };
+
+  const movements: ExpenseMovement[] = [];
+  for (const transaction of paymentTransactions) {
+    movements.push({
+      key: `payment-${transaction.id}`,
+      type: "receipt",
+      movementDate: transaction.transactionDate,
+      enteredAt: transaction.createdAt,
+      documentNumber: transaction.documentNumber,
+      linkedDocumentNumber: transaction.reversedAt ? transaction.reversalDocumentNumber : null,
+      receivedInto: transaction.cashBankAccount.name,
+      enteredBy: transaction.createdBy?.email ?? null,
+      amount: Number(transaction.amount),
+      status: transaction.reversedAt ? "reversed" : "posted",
+      reversalReason: transaction.reversalReason,
+      relatedDate: transaction.reversedAt,
+    });
+  }
+  for (const transaction of reversalTransactions) {
+    movements.push({
+      key: `reversal-${transaction.id}`,
+      type: "reversal",
+      movementDate: transaction.reversedAt!,
+      enteredAt: transaction.reversedAt!,
+      documentNumber: transaction.reversalDocumentNumber,
+      linkedDocumentNumber: transaction.documentNumber,
+      receivedInto: transaction.cashBankAccount.name,
+      enteredBy: transaction.reversedBy?.email ?? transaction.createdBy?.email ?? null,
+      amount: -Number(transaction.amount),
+      status: "reversal",
+      reversalReason: transaction.reversalReason,
+      relatedDate: transaction.transactionDate,
+    });
+  }
+
+  movements.sort((left, right) => {
+    const byDate = left.movementDate.getTime() - right.movementDate.getTime();
+    if (byDate !== 0) return byDate;
+    const byEntered = left.enteredAt.getTime() - right.enteredAt.getTime();
+    if (byEntered !== 0) return byEntered;
+    return left.type === "receipt" ? -1 : 1;
+  });
+
+  let runningTotal = 0;
+  const serializedMovements = movements.map((movement) => {
+    runningTotal += movement.amount;
+    return {
+      ...movement,
+      movementDate: movement.movementDate.toISOString(),
+      enteredAt: movement.enteredAt.toISOString(),
+      relatedDate: movement.relatedDate?.toISOString() ?? null,
+      amount: Number(movement.amount.toFixed(2)),
+      runningTotal: Number(runningTotal.toFixed(2)),
+    };
+  });
+
+  const totalPaid = paymentTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const amountReversed = reversalTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+
+  return res.json({
+    organizationName: organization?.name ?? "Organization",
+    account: { ...account, category: "Operating Expenses" },
+    fromDate: localDateString(from),
+    toDate: localDateString(to),
+    currency: "LKR",
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalReceived: Number(totalPaid.toFixed(2)),
+      amountReversed: Number(amountReversed.toFixed(2)),
+      netReceived: Number((totalPaid - amountReversed).toFixed(2)),
+      postedCount: paymentTransactions.filter((transaction) => !transaction.reversedAt).length,
+      receiptCount: paymentTransactions.length,
+      reversalCount: reversalTransactions.length,
+      movementCount: serializedMovements.length,
+    },
+    receivedInto: [...paidFrom.values()]
+      .map((item) => ({ ...item, amount: Number(item.amount.toFixed(2)) }))
+      .sort((left, right) => left.accountName.localeCompare(right.accountName)),
+    movements: serializedMovements,
+  });
+}));

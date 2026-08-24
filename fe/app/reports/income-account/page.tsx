@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
+  ArrowUpRight,
   Download,
   FileText,
   RefreshCw,
@@ -110,7 +111,17 @@ function enteredDate(value: string) {
   }).format(new Date(value));
 }
 
-export default function IncomeAccountReportPage() {
+export default function AccountReportPage() {
+  const pathname = usePathname();
+  const reportType = pathname.includes("expense-account") ? "expense" : "income";
+  const isExpense = reportType === "expense";
+  const reportName = isExpense ? "Expense Account Report" : "Income Account Report";
+  const accountsEndpoint = isExpense
+    ? "/accounting/reports/expense-accounts"
+    : "/accounting/reports/income-accounts";
+  const reportEndpoint = isExpense
+    ? "/accounting/reports/expense-account"
+    : "/accounting/reports/income-account";
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const today = new Date();
@@ -129,7 +140,7 @@ export default function IncomeAccountReportPage() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    api<IncomeAccount[]>("/accounting/reports/income-accounts")
+    api<IncomeAccount[]>(accountsEndpoint)
       .then((data) => {
         if (cancelled) return;
         setAccounts(data);
@@ -139,26 +150,26 @@ export default function IncomeAccountReportPage() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load income accounts");
+        if (!cancelled) setError(err instanceof Error ? err.message : `Unable to load ${reportType} accounts`);
       });
     return () => { cancelled = true; };
     // The initial dates are intentionally captured when the page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, accountsEndpoint, reportType]);
 
   async function loadReport(selectedAccountId = accountId) {
     if (!selectedAccountId) {
-      setError("Select an income account");
+      setError(`Select an ${reportType} account`);
       return;
     }
     setLoading(true);
     setError("");
     try {
-      setReport(await api<IncomeAccountReport>("/accounting/reports/income-account", {
+      setReport(await api<IncomeAccountReport>(reportEndpoint, {
         params: { accountId: selectedAccountId, fromDate, toDate },
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to generate the income account report");
+      setError(err instanceof Error ? err.message : `Unable to generate the ${reportType} account report`);
     } finally {
       setLoading(false);
     }
@@ -174,12 +185,16 @@ export default function IncomeAccountReportPage() {
           <Breadcrumb items={[
             { label: "Dashboard", href: dashboardFlowHref("reports") },
             { label: "Reports", href: "/reports" },
-            { label: "Income Account Report" },
+            { label: reportName },
           ]} />
           <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">Income Account Report</h1>
-              <p className="mt-1 text-sm text-slate-500">Review receipts, reversals, cash or bank allocation, and the net movement for one income account.</p>
+              <h1 className="text-xl font-semibold text-slate-900">{reportName}</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {isExpense
+                  ? "Review payments, reversals, cash or bank allocation, and the net movement for one expense account."
+                  : "Review receipts, reversals, cash or bank allocation, and the net movement for one income account."}
+              </p>
             </div>
             <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-[260px_160px_160px_auto_auto] xl:items-end">
               <div>
@@ -204,7 +219,7 @@ export default function IncomeAccountReportPage() {
           {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         </div>
 
-        {report && <IncomeStatement report={report} />}
+        {report && <IncomeStatement report={report} isExpense={isExpense} />}
         {!report && !loading && !error && (
           <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 print:hidden">
             Select an account and reporting period to generate the report.
@@ -215,21 +230,23 @@ export default function IncomeAccountReportPage() {
   );
 }
 
-function IncomeStatement({ report }: { report: IncomeAccountReport }) {
+function IncomeStatement({ report, isExpense }: { report: IncomeAccountReport; isExpense: boolean }) {
   const estimatedPageCount = Math.max(1, Math.ceil(report.movements.length / 10));
+  const reportName = isExpense ? "Expense Account Report" : "Income Account Report";
+  const DirectionIcon = isExpense ? ArrowUpRight : ArrowDownLeft;
   return (
     <section className="income-account-report overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm md:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">
       <div className="income-report-header mb-5 flex items-start justify-between gap-8">
         <div className="flex min-w-0 items-start gap-4">
-          <div className="income-report-logo flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-            <ArrowDownLeft className="h-7 w-7" />
+          <div className={`income-report-logo flex h-14 w-14 shrink-0 items-center justify-center rounded-xl ${isExpense ? "bg-blue-100 text-sky-700" : "bg-emerald-100 text-emerald-700"}`}>
+            <DirectionIcon className="h-7 w-7" />
           </div>
           <div>
             <p className="text-[15px] font-semibold uppercase tracking-[0.04em] text-slate-600">{report.organizationName}</p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Income Account Report</h2>
+            <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">{reportName}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <p className="text-lg font-semibold text-slate-700">{report.account.name}</p>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{report.account.category}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isExpense ? "bg-blue-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{report.account.category}</span>
             </div>
           </div>
         </div>
@@ -241,22 +258,22 @@ function IncomeStatement({ report }: { report: IncomeAccountReport }) {
       </div>
 
       <div className="income-summary-grid mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:grid-cols-4">
-        <SummaryTile icon={<ArrowDownLeft />} label="Total Received" value={`LKR ${money(report.summary.totalReceived)}`} tone="received" />
+        <SummaryTile icon={<DirectionIcon />} label={isExpense ? "Total Paid" : "Total Received"} value={`LKR ${money(report.summary.totalReceived)}`} tone={isExpense ? "paid" : "received"} />
         <SummaryTile icon={<Undo2 />} label="Amount Reversed" value={`LKR ${money(report.summary.amountReversed)}`} tone="reversed" />
-        <SummaryTile icon={<ArrowDownLeft />} label="Net Received" value={`LKR ${money(report.summary.netReceived)}`} tone="net" />
+        <SummaryTile icon={<DirectionIcon />} label={isExpense ? "Net Paid" : "Net Received"} value={`LKR ${money(report.summary.netReceived)}`} tone="net" />
         <SummaryTile
           icon={<ArrowLeftRight />}
           label="Transaction Movements"
           value={`${report.summary.postedCount} POSTED`}
-          detail={`${report.summary.receiptCount} receipts + ${report.summary.reversalCount} reversals - ${report.summary.movementCount} movements`}
+          detail={`${report.summary.receiptCount} ${isExpense ? "payments" : "receipts"} + ${report.summary.reversalCount} reversals - ${report.summary.movementCount} movements`}
           tone="movements"
         />
       </div>
 
       <div className="income-breakdown mb-5 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 md:grid-cols-[260px_1fr] print:grid-cols-[190px_1fr]">
         <div className="border-slate-200 md:border-r md:pr-5 print:border-r print:pr-4">
-          <h3 className="text-base font-bold text-slate-900">Received into</h3>
-          <p className="mt-1 text-xs text-slate-500">Gross receipts by cash or bank account</p>
+          <h3 className="text-base font-bold text-slate-900">{isExpense ? "Paid from" : "Received into"}</h3>
+          <p className="mt-1 text-xs text-slate-500">Gross {isExpense ? "payments" : "receipts"} by cash or bank account</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
           {report.receivedInto.length > 0 ? report.receivedInto.map((item) => (
@@ -264,7 +281,7 @@ function IncomeStatement({ report }: { report: IncomeAccountReport }) {
               <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{item.accountName}</p>
               <p className="mt-1 text-base font-bold tabular-nums text-slate-900">{money(item.amount)}</p>
             </div>
-          )) : <p className="text-sm text-slate-500">No receipts in this period.</p>}
+          )) : <p className="text-sm text-slate-500">No {isExpense ? "payments" : "receipts"} in this period.</p>}
         </div>
       </div>
 
@@ -277,7 +294,7 @@ function IncomeStatement({ report }: { report: IncomeAccountReport }) {
           </colgroup>
           <thead>
             <tr>
-              <th>Date</th><th>Receipt / Link</th><th>Received Into</th><th>Entered By</th>
+              <th>Date</th><th>Receipt / Link</th><th>{isExpense ? "Paid From" : "Received Into"}</th><th>Entered By</th>
               <th className="text-right">Amount</th><th>Status</th><th>Reversal Details</th><th className="text-right">Running Total</th>
             </tr>
           </thead>
@@ -298,7 +315,7 @@ function IncomeStatement({ report }: { report: IncomeAccountReport }) {
                 </td>
                 <td className="font-medium text-slate-700">{movement.receivedInto}</td>
                 <td className="text-slate-700">{movement.enteredBy ?? "-"}</td>
-                <td className={`text-right font-semibold tabular-nums ${movement.amount < 0 ? "text-red-600" : "text-slate-900"}`}>{amount(movement.amount)}</td>
+                <td className={`text-right font-semibold tabular-nums ${movement.amount < 0 ? "text-red-600" : isExpense ? "text-sky-700" : "text-slate-900"}`}>{amount(movement.amount)}</td>
                 <td><StatusBadge status={movement.status} /></td>
                 <td>
                   {movement.reversalReason ? (
@@ -326,20 +343,20 @@ function IncomeStatement({ report }: { report: IncomeAccountReport }) {
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wide text-slate-600">Account Reconciliation</h3>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
-            <span>Total Received <strong className="ml-2 tabular-nums">{money(report.summary.totalReceived)}</strong></span>
+            <span>{isExpense ? "Total Paid" : "Total Received"} <strong className="ml-2 tabular-nums">{money(report.summary.totalReceived)}</strong></span>
             <span>-</span>
             <span>Reversals <strong className="ml-2 tabular-nums text-red-600">{money(report.summary.amountReversed)}</strong></span>
             <span>=</span>
-            <span>Net Received <strong className="ml-2 tabular-nums text-emerald-700">{money(report.summary.netReceived)}</strong></span>
+            <span>{isExpense ? "Net Paid" : "Net Received"} <strong className={`ml-2 tabular-nums ${isExpense ? "text-sky-700" : "text-emerald-700"}`}>{money(report.summary.netReceived)}</strong></span>
           </div>
         </div>
         <p className="max-w-md text-right text-xs leading-5 text-slate-500">
-          Posted receipts increase the running total. Reversal lines reduce it and remain linked to the original receipt.
+          Posted {isExpense ? "payments" : "receipts"} increase the running total. Reversal lines reduce it and remain linked to the original {isExpense ? "payment" : "receipt"}.
         </p>
       </div>
 
       <div className="income-report-footer mt-5 flex items-center justify-between border-t border-slate-200 pt-3 text-[11px] text-slate-500">
-        <span>Income Account Report</span>
+        <span>{reportName}</span>
         <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> Powered by Civica</span>
         <span>Page {estimatedPageCount}</span>
       </div>
@@ -390,10 +407,11 @@ function SummaryTile({
   label: string;
   value: string;
   detail?: string;
-  tone: "received" | "reversed" | "net" | "movements";
+  tone: "received" | "paid" | "reversed" | "net" | "movements";
 }) {
   const styles = {
     received: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    paid: "border-sky-200 bg-blue-50 text-sky-700",
     reversed: "border-red-200 bg-red-50 text-red-600",
     net: "border-slate-900 bg-slate-950 text-white",
     movements: "border-slate-200 bg-slate-50 text-slate-800",
