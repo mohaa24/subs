@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileText, Download, Search, Filter } from "lucide-react";
+import { ArrowRight, Banknote, FileText, Download, Search, Filter, TrendingUp } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
@@ -421,9 +421,6 @@ export default function ReportsPage() {
             <FileText className="h-5 w-5 text-primary" />
             {t("reports.title")}
           </h1>
-          <Button asChild variant="outline">
-            <Link href="/reports/cash-movement">Cash Movement Report</Link>
-          </Button>
         </div>
 
         {error && (
@@ -431,6 +428,30 @@ export default function ReportsPage() {
             {error}
           </div>
         )}
+
+        <Card className="mb-6 border-slate-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Financial Reports</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <Link href="/reports/cash-movement" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Banknote className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">Cash Movement Report</span>
+                <span className="mt-0.5 block text-xs text-slate-500">Reconcile money received, paid, transferred, and held.</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+            <Link href="/reports/income-account" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><TrendingUp className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">Income Account Report</span>
+                <span className="mt-0.5 block text-xs text-slate-500">Review receipts, reversals, and net income by account.</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          </CardContent>
+        </Card>
 
         <Card className="border-primary/20 mb-6">
           <CardHeader>
