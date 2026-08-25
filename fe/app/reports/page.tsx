@@ -4,7 +4,6 @@ import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { api, apiUrl, type DueType, type Zone } from "@/lib/api";
 import { Header } from "@/components/header";
 import { AbstractBg } from "@/components/abstract-bg";
@@ -20,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Banknote, FileText, Download, Search, Filter, Receipt, Scale, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleDollarSign, Download, FileText, Filter, IdCard, ListTree, Search, Users, WalletCards } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
@@ -35,6 +34,13 @@ type EntityType =
 
 const MEMBERSHIP_TYPES = ["Resident", "NonResident", "Widow", "Widower"];
 const MEMBERSHIP_STATUSES = ["Active", "Inactive"];
+const MEMBER_REPORT_TITLES: Partial<Record<EntityType, string>> = {
+  persons: "Person Data Report",
+  memberships: "Membership Data Report",
+  memberCredits: "Member Credit Liability",
+  outstandingBalances: "Outstanding Balance Report",
+  outstandingBreakdown: "Outstanding Breakdown Report",
+};
 
 type MultiSelectOption = {
   value: string;
@@ -216,6 +222,7 @@ export default function ReportsPage() {
   const router = useRouter();
 
   const [entity, setEntity] = useState<EntityType>("persons");
+  const [showBuilder, setShowBuilder] = useState(false);
 
   // Entity-specific filter state (kept in sync for controlled inputs)
   const [membershipTypes, setMembershipTypes] = useState<string[]>([]);
@@ -413,15 +420,71 @@ export default function ReportsPage() {
       <Header />
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
         <Breadcrumb
-          items={[{ label: t("dashboard.title"), href: dashboardFlowHref("reports") }, { label: t("reports.title") }]}
+          items={[{ label: t("dashboard.title"), href: dashboardFlowHref("reports") }, { label: "Member Reports" }]}
         />
 
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            {t("reports.title")}
+            Member Reports
           </h1>
         </div>
+
+        {!showBuilder && (
+          <Card className="border-slate-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Member Reports</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              {[
+                { entity: "persons" as EntityType, title: "Person Data Report", description: "View and export personal profile information with member filters.", icon: Users },
+                { entity: "memberships" as EntityType, title: "Membership Data Report", description: "Review membership, household, contribution, and status information.", icon: IdCard },
+                { entity: "memberCredits" as EntityType, title: "Member Credit Liability", description: "Review credit balances held against individual memberships.", icon: WalletCards },
+                { entity: "outstandingBalances" as EntityType, title: "Outstanding Balance Report", description: "Review each member's total outstanding balance by zone.", icon: CircleDollarSign },
+                { entity: "outstandingBreakdown" as EntityType, title: "Outstanding Breakdown Report", description: "Break down member outstanding balances by due type.", icon: ListTree },
+              ].map((report) => {
+                const Icon = report.icon;
+                return (
+                  <button
+                    key={report.entity}
+                    type="button"
+                    onClick={() => {
+                      setEntity(report.entity);
+                      setResults([]);
+                      setError(null);
+                      setShowBuilder(true);
+                    }}
+                    className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 text-left transition-colors hover:border-primary/40 hover:bg-slate-50"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{report.title}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{report.description}</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
+        {showBuilder && <>
+        <Button
+          type="button"
+          variant="ghost"
+          className="mb-3 gap-2 px-0 hover:bg-transparent"
+          onClick={() => {
+            setShowBuilder(false);
+            setResults([]);
+            setError(null);
+          }}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Member Reports
+        </Button>
 
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
@@ -429,85 +492,15 @@ export default function ReportsPage() {
           </div>
         )}
 
-        <Card className="mb-6 border-slate-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Financial Reports</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            <Link href="/reports/profit-loss" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Scale className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">Profit &amp; Loss Report</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Compare income and expenses, including special fund results and net margin.</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <Link href="/reports/payments" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Receipt className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">Member Payment Report</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Review member receipts, reversals, payment methods, and due type collections.</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <Link href="/reports/cash-movement" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Banknote className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">Cash Movement Report</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Reconcile money received, paid, transferred, and held.</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <Link href="/reports/income-account" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><TrendingUp className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">Income Account Report</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Review receipts, reversals, and net income by account.</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-            <Link href="/reports/expense-account" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-sky-700"><TrendingDown className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">Expense Account Report</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Review payments, reversals, and net expenses by account.</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          </CardContent>
-        </Card>
-
         <Card className="border-primary/20 mb-6">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Filter className="h-4 w-4 text-primary" />
-              {t("reports.buildReport")}
+              {MEMBER_REPORT_TITLES[entity] ?? t("reports.buildReport")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label className="text-sm font-medium block mb-2">
-                  {t("reports.entity")}
-                </label>
-                <Select
-                  value={entity}
-                  onValueChange={(v) => setEntity(v as EntityType)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="persons">{t("reports.persons")}</SelectItem>
-                    <SelectItem value="memberships">Membership Data Report</SelectItem>
-                    <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
-                    <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
-                    <SelectItem value="outstandingBalances">Outstanding Balance Report</SelectItem>
-                    <SelectItem value="outstandingBreakdown">Outstanding Breakdown Report</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               {entity === "persons" && (
                 <>
                   <MultiSelectFilter
@@ -1027,6 +1020,7 @@ export default function ReportsPage() {
             {t("reports.runQueryHint")}
           </p>
         )}
+        </>}
       </main>
     </div>
   );

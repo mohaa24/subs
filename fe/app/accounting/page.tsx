@@ -226,14 +226,18 @@ function accountSubtypeLabel(account: Pick<Account, "assetSubtype">) {
 }
 
 export default function AccountingPage() {
+  return <AccountingWorkspace />;
+}
+
+export function AccountingWorkspace({ journalOnly = false }: { journalOnly?: boolean }) {
   return (
     <Suspense fallback={<div className="p-8 text-muted-foreground">Loading…</div>}>
-      <AccountingPageContent />
+      <AccountingPageContent journalOnly={journalOnly} />
     </Suspense>
   );
 }
 
-function AccountingPageContent() {
+function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -246,7 +250,7 @@ function AccountingPageContent() {
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetReport | null>(null);
   const [funds, setFunds] = useState<FundPot[]>([]);
   const [fundSummaryReport, setFundSummaryReport] = useState<FundSummaryReport | null>(null);
-  const [activeTab, setActiveTab] = useState<AccountingTab>("accounts");
+  const [activeTab, setActiveTab] = useState<AccountingTab>(journalOnly ? "journal" : "accounts");
   const [accountingPeriod, setAccountingPeriod] = useState<AccountingPeriod>("this_month");
   const [fromDate, setFromDate] = useState(firstOfMonthString);
   const [toDate, setToDate] = useState(todayString);
@@ -329,8 +333,12 @@ function AccountingPageContent() {
   }, [loading, router, user]);
 
   useEffect(() => {
+    if (journalOnly) {
+      setActiveTab("journal");
+      return;
+    }
     const tab = searchParams.get("tab");
-    if (tab === "accounts" || tab === "expenses" || tab === "income" || tab === "transfers" || tab === "reports" || tab === "journal") {
+    if (tab === "accounts" || tab === "reports") {
       setActiveTab(tab);
     }
 
@@ -346,7 +354,7 @@ function AccountingPageContent() {
             : defaultSubtypeByAccountType[accountType],
       }));
     }
-  }, [searchParams]);
+  }, [journalOnly, searchParams]);
 
   useEffect(() => {
     if (!loading && user) void loadAccounting();
@@ -618,19 +626,19 @@ function AccountingPageContent() {
         <Breadcrumb
           items={[
             { label: "Dashboard", href: dashboardFlowHref("accounting") },
-            { label: "Accounting" },
+            { label: journalOnly ? "Journals" : "Chart of Accounts" },
           ]}
         />
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Landmark className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-xl font-semibold text-foreground">Accounting</h1>
+            <h1 className="text-xl font-semibold text-foreground">{journalOnly ? "Journals" : "Chart of Accounts"}</h1>
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               Beta
             </span>
           </div>
-          <div className="flex flex-wrap items-end gap-2">
+          {!journalOnly && <div className="flex flex-wrap items-end gap-2">
             <div className="w-[180px] space-y-1">
               <Label className="text-xs text-muted-foreground">P&amp;L period</Label>
               <Select value={accountingPeriod} onValueChange={handleAccountingPeriodChange}>
@@ -649,7 +657,7 @@ function AccountingPageContent() {
               <RefreshCcw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
-          </div>
+          </div>}
         </div>
 
         <>
@@ -659,7 +667,7 @@ function AccountingPageContent() {
               </div>
             )}
 
-            <div className="mb-5 grid gap-3 md:grid-cols-4">
+            {!journalOnly && <div className="mb-5 grid gap-3 md:grid-cols-4">
               <Card>
                 <CardContent className="p-4">
                   <p className="text-xs text-muted-foreground">Assets</p>
@@ -685,23 +693,13 @@ function AccountingPageContent() {
                   <p className="mt-1 text-xl font-semibold tabular-nums">{journalTotal}</p>
                 </CardContent>
               </Card>
-            </div>
+            </div>}
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AccountingTab)} className="w-full">
-              <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
+            <Tabs value={journalOnly ? "journal" : activeTab} onValueChange={(value) => setActiveTab(value as AccountingTab)} className="w-full">
+              {!journalOnly && <TabsList className="mb-4 h-auto flex-wrap justify-start gap-1 bg-transparent p-0">
                 <TabsTrigger value="accounts" className="rounded-md border border-border px-3 py-1.5">Accounts</TabsTrigger>
-                {canManageAccounting && (
-                  <TabsTrigger value="expenses" className="rounded-md border border-border px-3 py-1.5">Expenses</TabsTrigger>
-                )}
-                {canManageAccounting && (
-                  <TabsTrigger value="income" className="rounded-md border border-border px-3 py-1.5">Income</TabsTrigger>
-                )}
-                {canManageAccounting && (
-                  <TabsTrigger value="transfers" className="rounded-md border border-border px-3 py-1.5">Transfers</TabsTrigger>
-                )}
                 <TabsTrigger value="reports" className="rounded-md border border-border px-3 py-1.5">Reports</TabsTrigger>
-                <TabsTrigger value="journal" className="rounded-md border border-border px-3 py-1.5">Journal</TabsTrigger>
-              </TabsList>
+              </TabsList>}
 
               <TabsContent value="accounts">
                 <div className={canManageAccounting ? "grid gap-4 lg:grid-cols-[1fr_360px]" : "grid gap-4"}>

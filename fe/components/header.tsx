@@ -111,7 +111,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: WalletCards,
     children: [
       { label: "Chart of Accounts", href: "/accounting", actionKey: "nav-chart-of-accounts" },
-      { label: "Transactions", href: "/accounting", actionKey: "nav-account-transactions" },
+      { label: "Journals", href: "/journals", actionKey: "nav-account-journals" },
     ],
   },
   {
@@ -120,8 +120,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     children: [
       { label: "Member Reports", href: "/reports", actionKey: "nav-member-reports" },
-      { label: "Member Payment Report", href: "/reports/payments", actionKey: "nav-periodic-payments" },
-      { label: "Finance Reports", href: "/accounting", actionKey: "nav-finance-reports" },
+      { label: "Financial Reports", href: "/finance-reports", actionKey: "nav-finance-reports" },
     ],
   },
   { key: "payroll", label: "Payroll", icon: Users, badge: "Coming Soon", disabled: true },
