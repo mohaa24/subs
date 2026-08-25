@@ -40,7 +40,7 @@ export const SIDEBAR_QUICK_ACTIONS: QuickAction[] = [
   action("nav-chart-of-accounts", "Chart of Accounts", "Manage accounts", "/accounting", WalletCards, "text-blue-600 bg-blue-500/10"),
   action("nav-account-transactions", "Transactions", "View accounting transactions", "/accounting", WalletCards, "text-blue-600 bg-blue-500/10"),
   action("nav-member-reports", "Member Reports", "View member reports", "/reports", BarChart3, "text-amber-600 bg-amber-500/10"),
-  action("nav-periodic-payments", "Periodic Payments", "View periodic payments", "/reports/payments", BarChart3, "text-amber-600 bg-amber-500/10"),
+  action("nav-periodic-payments", "Member Payment Report", "View member payments", "/reports/payments", BarChart3, "text-amber-600 bg-amber-500/10"),
   action("nav-finance-reports", "Finance Reports", "View finance reports", "/accounting", BarChart3, "text-amber-600 bg-amber-500/10"),
   action("nav-administration", "Administration", "Manage administration settings", "/organizations", Settings, "text-slate-600 bg-slate-500/10"),
   action("nav-user-roles", "User & Roles", "Manage users and roles", "/users", Settings, "text-slate-600 bg-slate-500/10"),

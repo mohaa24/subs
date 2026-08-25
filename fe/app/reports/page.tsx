@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Banknote, FileText, Download, Search, Filter, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRight, Banknote, FileText, Download, Search, Filter, Receipt, TrendingDown, TrendingUp } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
@@ -433,7 +433,15 @@ export default function ReportsPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Financial Reports</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <Link href="/reports/payments" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Receipt className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">Member Payment Report</span>
+                <span className="mt-0.5 block text-xs text-slate-500">Review member receipts, reversals, payment methods, and due type collections.</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+            </Link>
             <Link href="/reports/cash-movement" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Banknote className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1">
@@ -484,7 +492,6 @@ export default function ReportsPage() {
                   <SelectContent>
                     <SelectItem value="persons">{t("reports.persons")}</SelectItem>
                     <SelectItem value="memberships">Membership Data Report</SelectItem>
-                    <SelectItem value="payments">Periodic Payment Report</SelectItem>
                     <SelectItem value="distributions">{t("reports.distributions")}</SelectItem>
                     <SelectItem value="memberCredits">Member Credit Liability</SelectItem>
                     <SelectItem value="outstandingBalances">Outstanding Balance Report</SelectItem>

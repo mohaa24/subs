@@ -718,7 +718,7 @@ function HomePageContent() {
         },
         {
           actionKey: "reports-periodic-payments",
-          title: "Periodic Payment Report",
+          title: "Member Payment Report",
           description: t("reports.periodicPaymentsDesc"),
           icon: Receipt,
           href: "/reports/payments",

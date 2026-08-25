@@ -1627,7 +1627,7 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
     };
     if (orgId)
         where.organizationId = orgId;
-    const [payments, zones] = await Promise.all([
+    const [payments, zones, organization] = await Promise.all([
         prisma_js_1.prisma.payment.findMany({
             where,
             orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
@@ -1648,15 +1648,19 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
             where: orgId ? { organizationId: orgId } : {},
             select: { code: true, name: true },
         }),
+        orgId
+            ? prisma_js_1.prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+            : Promise.resolve(null),
     ]);
     const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
-    const grossCollected = payments.reduce((sum, p) => sum.add(p.amount), new library_1.Decimal(0));
-    const totalReversed = payments
-        .filter((p) => p.isReversed)
+    const receiptPayments = payments;
+    const reversalPayments = receiptPayments.filter((payment) => payment.isReversed && payment.reversedAt);
+    const grossCollected = receiptPayments.reduce((sum, p) => sum.add(p.amount), new library_1.Decimal(0));
+    const totalReversed = reversalPayments
         .reduce((sum, p) => sum.add(p.amount), new library_1.Decimal(0));
     const netCollected = grossCollected.sub(totalReversed);
     const dueTypeTotals = new Map();
-    const activePayments = payments.filter((p) => !p.isReversed);
+    const activePayments = receiptPayments.filter((payment) => !reversalPayments.some((reversed) => reversed.id === payment.id));
     const activePaymentIds = activePayments.map((p) => p.id);
     function addDueTypeTotal(dueTypeName, amount, sortOrder) {
         if (!amount.gt(new library_1.Decimal(0)))
@@ -1748,6 +1752,78 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
             return -1;
         return a.dueType.localeCompare(b.dueType);
     });
+    const paymentMethodTotals = new Map();
+    for (const payment of receiptPayments) {
+        const label = getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown";
+        paymentMethodTotals.set(label, (paymentMethodTotals.get(label) ?? new library_1.Decimal(0)).add(payment.amount));
+    }
+    const paymentMethodSummary = [...paymentMethodTotals.entries()]
+        .map(([paymentMethod, amount]) => ({ paymentMethod, amount: amount.toNumber() }))
+        .sort((left, right) => left.paymentMethod.localeCompare(right.paymentMethod));
+    const movements = [];
+    const reversalIds = new Set(reversalPayments.map((payment) => payment.id));
+    const reversalReference = (receiptNumber) => `RV${receiptNumber.replace(/^RC/i, "")}`;
+    for (const payment of receiptPayments) {
+        const receiptNumber = payment.receiptNumber ?? payment.id.slice(-8).toUpperCase();
+        const reversedInReport = reversalIds.has(payment.id);
+        movements.push({
+            key: `payment-${payment.id}`,
+            type: "payment",
+            movementDate: payment.paymentDate,
+            enteredAt: payment.createdAt,
+            memberName: payment.membership.hod.nameWithInitials || payment.membership.hod.fullName,
+            membershipId: extractMembershipId(payment.membership.membershipNo),
+            zone: formatZoneLabel(payment.membership.areaCode, zoneMap),
+            receiptNumber,
+            linkedReceiptNumber: reversedInReport ? reversalReference(receiptNumber) : null,
+            paymentMethod: getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown",
+            enteredBy: payment.collectedBy.email,
+            amount: Number(payment.amount),
+            status: reversedInReport ? "reversed" : "posted",
+            reversalReason: reversedInReport ? payment.reversalReason : null,
+            relatedDate: reversedInReport ? payment.reversedAt : null,
+        });
+    }
+    for (const payment of reversalPayments) {
+        const receiptNumber = payment.receiptNumber ?? payment.id.slice(-8).toUpperCase();
+        movements.push({
+            key: `reversal-${payment.id}`,
+            type: "reversal",
+            movementDate: payment.reversedAt,
+            enteredAt: payment.reversedAt,
+            memberName: payment.membership.hod.nameWithInitials || payment.membership.hod.fullName,
+            membershipId: extractMembershipId(payment.membership.membershipNo),
+            zone: formatZoneLabel(payment.membership.areaCode, zoneMap),
+            receiptNumber: reversalReference(receiptNumber),
+            linkedReceiptNumber: receiptNumber,
+            paymentMethod: getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown",
+            enteredBy: payment.reversedBy?.email ?? payment.collectedBy.email,
+            amount: -Number(payment.amount),
+            status: "reversal",
+            reversalReason: payment.reversalReason,
+            relatedDate: payment.paymentDate,
+        });
+    }
+    movements.sort((left, right) => {
+        const byDate = left.movementDate.getTime() - right.movementDate.getTime();
+        if (byDate !== 0)
+            return byDate;
+        const byEntered = left.enteredAt.getTime() - right.enteredAt.getTime();
+        if (byEntered !== 0)
+            return byEntered;
+        return left.type === "payment" ? -1 : 1;
+    });
+    let runningTotal = 0;
+    const serializedMovements = movements.map((movement) => {
+        runningTotal += movement.amount;
+        return {
+            ...movement,
+            movementDate: movement.movementDate.toISOString(),
+            enteredAt: movement.enteredAt.toISOString(),
+            relatedDate: movement.relatedDate?.toISOString() ?? null,
+            runningTotal: Number(runningTotal.toFixed(2)),
+        };
+    });
     const format = req.query.format;
     if (format === "csv") {
         const headers = [
@@ -1794,15 +1870,20 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
         return res.send(csv);
     }
     return res.json({
+        organizationName: organization?.name ?? "Organization",
+        generatedAt: new Date().toISOString(),
+        generatedBy: req.auth.email,
         fromDate,
         toDate,
-        totalPayments: payments.length,
-        activePayments: payments.filter((p) => !p.isReversed).length,
-        reversedPayments: payments.filter((p) => p.isReversed).length,
+        totalPayments: receiptPayments.length,
+        activePayments: activePayments.length,
+        reversedPayments: reversalPayments.length,
         totalCollected: grossCollected.toNumber(),
         totalReversed: totalReversed.toNumber(),
         netCollected: netCollected.toNumber(),
         dueTypeSummary,
+        paymentMethodSummary,
+        movements: serializedMovements,
         payments: payments.map((p) => ({
             id: p.id,
             paymentDate: p.paymentDate.toISOString(),
