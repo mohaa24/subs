@@ -3431,13 +3431,13 @@ accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, res) => {
       if (referenceType === "fund_collection") return "Special Fund Collections";
       if (referenceType === "receivable_collection") return "Receivable Repayments";
       if (referenceType === "payable_borrowing" || referenceType === "payable_recovery") return "Other Money Received";
-      if (referenceType?.includes("reversal") || referenceType === "journal_entry") return "Reversals";
+      if (referenceType?.includes("reversal") || referenceType === "journal_entry") return "Payment Reversals - Cash Restored";
       return "Operating Income";
     }
     if (referenceType === "fund_expense") return "Special Fund Expenses";
     if (referenceType === "payable_repayment" || referenceType === "payable_payment") return "Payable Repayments";
     if (referenceType === "receivable_payment") return "Receivable Advances";
-    if (referenceType?.includes("reversal") || referenceType === "journal_entry") return "Reversals";
+    if (referenceType?.includes("reversal") || referenceType === "journal_entry") return "Receipt Reversals - Cash Removed";
     return "Operating Expenses";
   }
 
@@ -3501,8 +3501,11 @@ accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, res) => {
 
   return res.json({
     organizationName: organization?.name ?? "Organization",
-    fromDate: from.toISOString().slice(0, 10),
-    toDate: to.toISOString().slice(0, 10),
+    fromDate: localDateString(from),
+    toDate: localDateString(to),
+    currency: "LKR",
+    generatedAt: new Date().toISOString(),
+    generatedBy: req.auth!.email,
     accounts,
     summary: {
       openingBalance: Number(sumValues(openingByAccount).toFixed(2)),

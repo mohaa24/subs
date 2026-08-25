@@ -3130,7 +3130,7 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
             if (referenceType === "payable_borrowing" || referenceType === "payable_recovery")
                 return "Other Money Received";
             if (referenceType?.includes("reversal") || referenceType === "journal_entry")
-                return "Reversals";
+                return "Payment Reversals - Cash Restored";
             return "Operating Income";
         }
         if (referenceType === "fund_expense")
@@ -3140,7 +3140,7 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
         if (referenceType === "receivable_payment")
             return "Receivable Advances";
         if (referenceType?.includes("reversal") || referenceType === "journal_entry")
-            return "Reversals";
+            return "Receipt Reversals - Cash Removed";
         return "Operating Expenses";
     }
     for (const entry of entries) {
@@ -3206,8 +3206,11 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
     const moneyPaid = paid.reduce((sum, row) => sum + row.total, 0);
     return res.json({
         organizationName: organization?.name ?? "Organization",
-        fromDate: from.toISOString().slice(0, 10),
-        toDate: to.toISOString().slice(0, 10),
+        fromDate: localDateString(from),
+        toDate: localDateString(to),
+        currency: "LKR",
+        generatedAt: new Date().toISOString(),
+        generatedBy: req.auth.email,
         accounts,
         summary: {
             openingBalance: Number(sumValues(openingByAccount).toFixed(2)),
