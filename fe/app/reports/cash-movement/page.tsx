@@ -117,7 +117,7 @@ export default function CashMovementReportPage() {
       <Header />
       <main className="mx-auto max-w-[1800px] p-4 md:p-6 print:max-w-none print:p-0">
         <div className="print:hidden">
-          <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("reports") }, { label: "Reports", href: "/reports" }, { label: "Cash Movement Report" }]} />
+          <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("reports") }, { label: "Financial Reports", href: "/finance-reports" }, { label: "Cash Movement Report" }]} />
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div><h1 className="text-xl font-semibold text-slate-900">Cash Movement Report</h1><p className="mt-1 text-sm text-slate-500">Reconcile opening balances, receipts, payments, internal transfers, and closing cash positions.</p></div>
             <div className="flex flex-wrap items-end gap-2">

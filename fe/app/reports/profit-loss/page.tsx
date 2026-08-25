@@ -128,7 +128,7 @@ export default function ProfitLossReportPage() {
         <div className="print:hidden">
           <Breadcrumb items={[
             { label: "Dashboard", href: dashboardFlowHref("reports") },
-            { label: "Reports", href: "/reports" },
+            { label: "Financial Reports", href: "/finance-reports" },
             { label: "Profit & Loss Report" },
           ]} />
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

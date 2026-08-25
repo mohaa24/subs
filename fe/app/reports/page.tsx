@@ -2,7 +2,7 @@
 
 import { useTranslation } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, apiUrl, type DueType, type Zone } from "@/lib/api";
 import { Header } from "@/components/header";
@@ -220,6 +220,7 @@ export default function ReportsPage() {
   const { t } = useTranslation();
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [entity, setEntity] = useState<EntityType>("persons");
   const [showBuilder, setShowBuilder] = useState(false);
@@ -249,6 +250,10 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    if (pathname === "/reports") router.replace("/member-reports");
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!user?.organizationId) return;
@@ -420,7 +425,13 @@ export default function ReportsPage() {
       <Header />
       <main className="relative z-10 p-6 max-w-6xl mx-auto">
         <Breadcrumb
-          items={[{ label: t("dashboard.title"), href: dashboardFlowHref("reports") }, { label: "Member Reports" }]}
+          items={[
+            { label: t("dashboard.title"), href: dashboardFlowHref("reports") },
+            showBuilder
+              ? { label: "Member Reports", href: "/member-reports" }
+              : { label: "Member Reports" },
+            ...(showBuilder ? [{ label: MEMBER_REPORT_TITLES[entity] ?? "Report" }] : []),
+          ]}
         />
 
         <div className="flex items-center justify-between mb-5">

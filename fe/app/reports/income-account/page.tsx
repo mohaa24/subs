@@ -184,7 +184,7 @@ export default function AccountReportPage() {
         <div className="print:hidden">
           <Breadcrumb items={[
             { label: "Dashboard", href: dashboardFlowHref("reports") },
-            { label: "Reports", href: "/reports" },
+            { label: "Financial Reports", href: "/finance-reports" },
             { label: reportName },
           ]} />
           <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">

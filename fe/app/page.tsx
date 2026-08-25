@@ -711,17 +711,17 @@ function HomePageContent() {
       actions: [
         {
           actionKey: "reports-builder",
-          title: t("reports.title"),
-          description: t("reports.exportCSV"),
+          title: "Member Reports",
+          description: "View and export member and person reports",
           icon: FileText,
-          href: "/reports",
+          href: "/member-reports",
         },
         {
           actionKey: "reports-periodic-payments",
-          title: "Member Payment Report",
-          description: t("reports.periodicPaymentsDesc"),
+          title: "Financial Reports",
+          description: "View accounting and payment reports",
           icon: Receipt,
-          href: "/reports/payments",
+          href: "/finance-reports",
         },
         {
           actionKey: "reports-charts",

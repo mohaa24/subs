@@ -119,7 +119,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Reports",
     icon: BarChart3,
     children: [
-      { label: "Member Reports", href: "/reports", actionKey: "nav-member-reports" },
+      { label: "Member Reports", href: "/member-reports", actionKey: "nav-member-reports" },
       { label: "Financial Reports", href: "/finance-reports", actionKey: "nav-finance-reports" },
     ],
   },
