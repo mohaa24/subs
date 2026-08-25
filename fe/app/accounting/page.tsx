@@ -935,53 +935,6 @@ function AccountingPageContent() {
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Profit & Loss</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <Label>From</Label>
-                          <Input
-                            type="date"
-                            value={fromDate}
-                            onChange={(e) => {
-                              setAccountingPeriod("custom");
-                              setFromDate(e.target.value);
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label>To</Label>
-                          <Input
-                            type="date"
-                            value={toDate}
-                            onChange={(e) => {
-                              setAccountingPeriod("custom");
-                              setToDate(e.target.value);
-                            }}
-                          />
-                        </div>
-                        <Button
-                          type="button"
-                          className="sm:col-span-2"
-                          onClick={() => loadAccounting()}
-                          disabled={loadingData}
-                        >
-                          Generate Profit &amp; Loss
-                        </Button>
-                      </div>
-                      <ReportRows title="Income" rows={plReport?.income ?? []} />
-                      <ReportRows title="Expenses" rows={plReport?.expenses ?? []} />
-                      <div className="mt-3 border-t pt-3 text-sm">
-                        <div className="flex justify-between"><span>Income</span><strong>{formatRs(plReport?.incomeTotal ?? 0)}</strong></div>
-                        <div className="flex justify-between"><span>Expenses</span><strong>{formatRs(plReport?.expenseTotal ?? 0)}</strong></div>
-                        <div className="flex justify-between text-base"><span>Net Income</span><strong>{formatRs(plReport?.netIncome ?? 0)}</strong></div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
                       <CardTitle className="text-base">Statement of Financial Position</CardTitle>
                     </CardHeader>
                     <CardContent>

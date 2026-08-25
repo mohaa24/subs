@@ -2965,12 +2965,17 @@ exports.accountingRouter.get("/reports/profit-loss", asyncRoute(async (req, res)
     const orgId = getOrgId(req);
     if (!orgId)
         return res.status(400).json({ error: "Organization scope required" });
-    const from = dateFromQuery(req.query.fromDate, new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    const from = startOfDay(dateFromQuery(req.query.fromDate, new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
     const to = endOfDay(dateFromQuery(req.query.toDate, new Date()));
-    const accounts = await prisma_js_1.prisma.accountingAccount.findMany({
-        where: { organizationId: orgId, accountType: { in: ["income", "expense"] } },
-        orderBy: [{ accountType: "asc" }, { name: "asc" }],
-    });
+    if (from > to)
+        return res.status(400).json({ error: "From date must be on or before to date" });
+    const [organization, accounts] = await Promise.all([
+        prisma_js_1.prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+        prisma_js_1.prisma.accountingAccount.findMany({
+            where: { organizationId: orgId, accountType: { in: ["income", "expense"] } },
+            orderBy: [{ accountType: "asc" }, { assetSubtype: "asc" }, { name: "asc" }],
+        }),
+    ]);
     const lines = await prisma_js_1.prisma.accountingJournalLine.groupBy({
         by: ["accountId", "side"],
         where: {
@@ -2995,6 +3000,8 @@ exports.accountingRouter.get("/reports/profit-loss", asyncRoute(async (req, res)
             id: account.id,
             name: account.name,
             accountType: account.accountType,
+            assetSubtype: account.assetSubtype,
+            systemKey: account.systemKey,
             amount: asNumber((0, accounting_js_1.accountBalanceExpression)(account.accountType, total.debit, total.credit)),
         };
     }).filter((row) => Math.abs(row.amount) > 0.000001);
@@ -3004,14 +3011,27 @@ exports.accountingRouter.get("/reports/profit-loss", asyncRoute(async (req, res)
     const expenseTotal = rows
         .filter((row) => row.accountType === "expense")
         .reduce((sum, row) => sum + row.amount, 0);
+    const categoryTotal = (accountType, assetSubtype) => rows
+        .filter((row) => row.accountType === accountType && row.assetSubtype === assetSubtype)
+        .reduce((sum, row) => sum + row.amount, 0);
     return res.json({
-        fromDate: from.toISOString().slice(0, 10),
-        toDate: to.toISOString().slice(0, 10),
+        organizationName: organization?.name ?? "Organization",
+        fromDate: localDateString(from),
+        toDate: localDateString(to),
+        currency: "LKR",
+        generatedAt: new Date().toISOString(),
+        generatedBy: req.auth.email,
         income: rows.filter((row) => row.accountType === "income"),
         expenses: rows.filter((row) => row.accountType === "expense"),
         incomeTotal: Number(incomeTotal.toFixed(2)),
         expenseTotal: Number(expenseTotal.toFixed(2)),
         netIncome: Number((incomeTotal - expenseTotal).toFixed(2)),
+        categories: {
+            operatingIncome: Number(categoryTotal("income", "operating_income").toFixed(2)),
+            specialFundSurplus: Number(categoryTotal("income", "project_fund_surplus").toFixed(2)),
+            operatingExpenses: Number(categoryTotal("expense", "operating_expense").toFixed(2)),
+            specialFundDeficit: Number(categoryTotal("expense", "project_fund_deficit").toFixed(2)),
+        },
     });
 }));
 exports.accountingRouter.get("/reports/balance-sheet", asyncRoute(async (req, res) => {

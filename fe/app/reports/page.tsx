@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Banknote, FileText, Download, Search, Filter, Receipt, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRight, Banknote, FileText, Download, Search, Filter, Receipt, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
@@ -434,6 +434,14 @@ export default function ReportsPage() {
             <CardTitle className="text-base">Financial Reports</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
+            <Link href="/reports/profit-loss" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700"><Scale className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">Profit &amp; Loss Report</span>
+                <span className="mt-0.5 block text-xs text-slate-500">Compare income and expenses, including special fund results and net margin.</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+            </Link>
             <Link href="/reports/payments" className="group flex items-center gap-3 rounded-xl border border-slate-200 p-4 transition-colors hover:border-primary/40 hover:bg-slate-50">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700"><Receipt className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1">
