@@ -12,6 +12,10 @@ services:
       PORT: 4000
       FE_ORIGIN: ${FE_ORIGIN:-http://localhost:3000}
       UPLOADS_DIR: /app/uploads
+      TEXTLK_API_URL: ${TEXTLK_API_URL:-https://app.text.lk/api/v3}
+      TEXTLK_API_TOKEN: ${TEXTLK_API_TOKEN:-}
+      TEXTLK_SENDER_ID: ${TEXTLK_SENDER_ID:-}
+      TEXTLK_MESSAGE_WORKER_ENABLED: ${TEXTLK_MESSAGE_WORKER_ENABLED:-false}
     volumes:
       - uploads_data:/app/uploads
 
