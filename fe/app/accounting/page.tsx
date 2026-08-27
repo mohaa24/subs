@@ -7,6 +7,13 @@ import { AbstractBg } from "@/components/abstract-bg";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +28,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { api, type FundPot, type FundSummaryReport } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
-import { Landmark, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
+import { Landmark, LockKeyhole, Pencil, Plus, ReceiptText, RefreshCcw, WalletCards } from "lucide-react";
 
 type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 type AssetSubtype =
@@ -53,6 +60,7 @@ type Account = {
   accountType: AccountType;
   assetSubtype: AssetSubtype;
   systemKey?: string | null;
+  nameEditable: boolean;
   description?: string | null;
   isActive: boolean;
   balance?: number;
@@ -267,7 +275,10 @@ function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
   const [journalToDate, setJournalToDate] = useState("");
   const [journalSortOrder, setJournalSortOrder] = useState<JournalSortOrder>("desc");
   const [loadingData, setLoadingData] = useState(false);
+  const [savingAccount, setSavingAccount] = useState(false);
   const [error, setError] = useState("");
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editAccount, setEditAccount] = useState({ name: "", description: "" });
 
   const [newAccount, setNewAccount] = useState({
     name: "",
@@ -499,6 +510,36 @@ function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
     }
   }
 
+  function openAccountEditor(account: Account) {
+    if (!account.nameEditable) return;
+    setEditingAccount(account);
+    setEditAccount({ name: account.name, description: account.description ?? "" });
+    setError("");
+  }
+
+  async function handleUpdateAccount(event: FormEvent) {
+    event.preventDefault();
+    if (!editingAccount) return;
+
+    setSavingAccount(true);
+    setError("");
+    try {
+      await api<Account>(`/accounting/accounts/${editingAccount.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editAccount.name,
+          description: editAccount.description || null,
+        }),
+      });
+      setEditingAccount(null);
+      await loadAccounting();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update account");
+    } finally {
+      setSavingAccount(false);
+    }
+  }
+
   async function handleExpense(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -717,6 +758,7 @@ function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
                             <th className="p-2 text-left font-medium">Subtype</th>
                             <th className="p-2 text-left font-medium">Status</th>
                             <th className="p-2 text-right font-medium">Balance</th>
+                            {canManageAccounting && <th className="p-2 text-right font-medium">Actions</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -730,6 +772,27 @@ function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
                               <td className="p-2 text-muted-foreground">{accountSubtypeLabel(account)}</td>
                               <td className="p-2 text-muted-foreground">{account.isActive ? "Active" : "Archived"}</td>
                               <td className="p-2 text-right tabular-nums">{formatRs(account.balance ?? 0)}</td>
+                              {canManageAccounting && (
+                                <td className="p-2 text-right">
+                                  {account.nameEditable ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => openAccountEditor(account)}
+                                      aria-label={`Edit ${account.name}`}
+                                    >
+                                      <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                      Edit
+                                    </Button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                      <LockKeyhole className="h-3.5 w-3.5" />
+                                      System managed
+                                    </span>
+                                  )}
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -1233,6 +1296,47 @@ function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
                 </Card>
               </TabsContent>
             </Tabs>
+
+            <Dialog open={Boolean(editingAccount)} onOpenChange={(open) => !open && setEditingAccount(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit account</DialogTitle>
+                  <DialogDescription>
+                    Update the display name and description. Existing transactions and balances will remain unchanged.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={handleUpdateAccount}>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-account-name">Account name</Label>
+                    <Input
+                      id="edit-account-name"
+                      value={editAccount.name}
+                      onChange={(event) => setEditAccount((current) => ({ ...current, name: event.target.value }))}
+                      maxLength={120}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-account-description">Description</Label>
+                    <Textarea
+                      id="edit-account-description"
+                      value={editAccount.description}
+                      onChange={(event) => setEditAccount((current) => ({ ...current, description: event.target.value }))}
+                      maxLength={500}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setEditingAccount(null)} disabled={savingAccount}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={savingAccount || !editAccount.name.trim()}>
+                      {savingAccount ? "Saving…" : "Save changes"}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
         </>
       </main>
     </div>

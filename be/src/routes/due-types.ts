@@ -6,6 +6,11 @@ import {
   DEFAULT_DUE_TYPE_DEFINITIONS,
   ensureDefaultDueTypes,
 } from "../lib/due-types.js";
+import {
+  dueTypeIncomeAccountName,
+  dueTypeIncomeSystemKey,
+  ensureDefaultAccountingAccounts,
+} from "../lib/accounting.js";
 
 export const dueTypesRouter = Router();
 
@@ -115,13 +120,62 @@ dueTypesRouter.patch("/:id", requireAdmin, async (req, res) => {
     if (existing) return res.status(409).json({ error: "A due type with this name already exists" });
   }
 
-  const updated = await prisma.dueType.update({
-    where: { id: dueType.id },
-    data: {
-      ...(parsed.data.name !== undefined && { name: parsed.data.name }),
-      ...(parsed.data.autoAllocate !== undefined && { autoAllocate: parsed.data.autoAllocate }),
-      ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
+  const nextAccountName = dueTypeIncomeAccountName({
+    ...dueType,
+    name: parsed.data.name ?? dueType.name,
+  });
+  const currentIncomeAccount = await prisma.accountingAccount.findUnique({
+    where: {
+      organizationId_systemKey: {
+        organizationId: dueType.organizationId,
+        systemKey: dueTypeIncomeSystemKey(dueType.id),
+      },
     },
+  });
+  if (currentIncomeAccount && nextAccountName.toLowerCase() !== currentIncomeAccount.name.toLowerCase()) {
+    const duplicateAccount = await prisma.accountingAccount.findFirst({
+      where: {
+        organizationId: dueType.organizationId,
+        id: { not: currentIncomeAccount.id },
+        name: { equals: nextAccountName, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (duplicateAccount) {
+      return res.status(409).json({ error: "An accounting account with the updated due type name already exists" });
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.dueType.update({
+      where: { id: dueType.id },
+      data: {
+        ...(parsed.data.name !== undefined && { name: parsed.data.name }),
+        ...(parsed.data.autoAllocate !== undefined && { autoAllocate: parsed.data.autoAllocate }),
+        ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
+      },
+    });
+
+    await ensureDefaultAccountingAccounts(tx, dueType.organizationId);
+    const incomeAccount = await tx.accountingAccount.findUnique({
+      where: {
+        organizationId_systemKey: {
+          organizationId: dueType.organizationId,
+          systemKey: dueTypeIncomeSystemKey(dueType.id),
+        },
+      },
+    });
+    if (incomeAccount) {
+      await tx.accountingAccount.update({
+        where: { id: incomeAccount.id },
+        data: {
+          name: nextAccountName,
+          ...(parsed.data.isActive !== undefined && { isActive: parsed.data.isActive }),
+        },
+      });
+    }
+
+    return next;
   });
 
   return res.json(updated);

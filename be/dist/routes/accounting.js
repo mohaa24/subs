@@ -97,9 +97,22 @@ function localDateString(date) {
 function asNumber(value) {
     return Number(value.toFixed(2));
 }
+const moduleManagedAccountSubtypes = new Set([
+    "loan_receivable",
+    "service_receivable",
+    "loan_payable",
+    "service_payable",
+    "project_fund",
+    "project_fund_surplus",
+    "project_fund_deficit",
+]);
+function isAccountNameEditable(account) {
+    return !account.systemKey && !moduleManagedAccountSubtypes.has(account.assetSubtype);
+}
 function serializeAccount(account) {
     return {
         ...account,
+        nameEditable: isAccountNameEditable(account),
         debitTotal: account.debitTotal ? asNumber(account.debitTotal) : undefined,
         creditTotal: account.creditTotal ? asNumber(account.creditTotal) : undefined,
         balance: account.balance ? asNumber(account.balance) : undefined,
@@ -1452,8 +1465,8 @@ exports.accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRou
     if (req.auth.role !== "super_user" && account.organizationId !== req.auth.organizationId) {
         return res.status(403).json({ error: "Forbidden" });
     }
-    if (account.systemKey && parsed.data.name && parsed.data.name !== account.name) {
-        return res.status(409).json({ error: "System accounts cannot be renamed" });
+    if (parsed.data.name && parsed.data.name !== account.name && !isAccountNameEditable(account)) {
+        return res.status(409).json({ error: "System-managed accounts cannot be renamed" });
     }
     if (parsed.data.assetSubtype !== undefined && !accountSubtypesByType[account.accountType].includes(parsed.data.assetSubtype)) {
         return res.status(400).json({ error: "Selected subtype does not match the account type" });
@@ -1461,6 +1474,18 @@ exports.accountingRouter.patch("/accounts/:id", requireAccountingAdmin, asyncRou
     const lineCount = await prisma_js_1.prisma.accountingJournalLine.count({ where: { accountId: account.id } });
     if (lineCount > 0 && parsed.data.isActive === false && account.systemKey) {
         return res.status(409).json({ error: "System accounts with activity cannot be archived" });
+    }
+    if (parsed.data.name && parsed.data.name !== account.name) {
+        const duplicate = await prisma_js_1.prisma.accountingAccount.findFirst({
+            where: {
+                organizationId: account.organizationId,
+                id: { not: account.id },
+                name: { equals: parsed.data.name, mode: "insensitive" },
+            },
+            select: { id: true },
+        });
+        if (duplicate)
+            return res.status(409).json({ error: "An account with this name already exists" });
     }
     const updated = await prisma_js_1.prisma.$transaction(async (tx) => {
         const next = await tx.accountingAccount.update({

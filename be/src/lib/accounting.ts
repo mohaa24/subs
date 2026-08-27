@@ -202,12 +202,12 @@ export async function ensureDefaultAccountingAccounts(tx: AccountingTx, organiza
 
   const dueTypes = await tx.dueType.findMany({
     where: { organizationId },
-    select: { id: true, name: true, isActive: true },
+    select: { id: true, name: true, systemKey: true, isActive: true },
   });
 
   for (const dueType of dueTypes) {
     await ensureSystemAccount(tx, organizationId, {
-      name: `${dueType.name} Income`,
+      name: dueTypeIncomeAccountName(dueType),
       accountType: "income",
       assetSubtype: "operating_income",
       systemKey: dueTypeIncomeSystemKey(dueType.id),
@@ -227,6 +227,10 @@ export function defaultAccountSubtype(accountType: AccountingAccountType): Accou
 
 export function dueTypeIncomeSystemKey(dueTypeId: string) {
   return `income_due_type_${dueTypeId}`;
+}
+
+export function dueTypeIncomeAccountName(dueType: { name: string; systemKey?: string | null }) {
+  return dueType.systemKey === "other" ? dueType.name : `${dueType.name} Income`;
 }
 
 export async function getSystemAccount(tx: AccountingTx, organizationId: string, systemKey: string) {
