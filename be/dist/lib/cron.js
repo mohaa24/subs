@@ -82,9 +82,20 @@ async function generateMonthlyDues() {
         }, CREDIT_SWEEP_TRANSACTION_OPTIONS);
         created++;
         autoAppliedCredit = autoAppliedCredit.add(applied);
+        const outstandingTotals = await prisma_js_1.prisma.paymentDue.aggregate({
+            where: {
+                membershipId: m.id,
+                isSystemAdjustment: false,
+            },
+            _sum: {
+                amountDue: true,
+                amountPaid: true,
+            },
+        });
+        const totalOutstanding = (outstandingTotals._sum.amountDue ?? new library_1.Decimal(0)).sub(outstandingTotals._sum.amountPaid ?? new library_1.Decimal(0));
         const recipientPhone = m.hod?.mobileNumber || m.hod?.whatsAppNumber;
         if (m.hod && recipientPhone) {
-            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, recipientPhone, m.membershipNo, period, m.totalContribution.toFixed(2), m.hod.nameWithInitials || m.hod.fullName || "Member", "membership");
+            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, recipientPhone, m.membershipNo, period, m.totalContribution.toFixed(2), (totalOutstanding.gt(0) ? totalOutstanding : new library_1.Decimal(0)).toFixed(2), m.hod.nameWithInitials || m.hod.fullName || "Member", "membership");
         }
     }
     console.log(`[Cron] Dues generated: ${created}, skipped: ${skipped}, auto-applied credit: ${autoAppliedCredit.toString()}`);

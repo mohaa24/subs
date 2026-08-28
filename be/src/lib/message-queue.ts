@@ -37,6 +37,7 @@ export async function queuePaymentDueGenerated(
   membershipNo: string,
   period: string,
   amount: string,
+  outstandingAmount: string,
   memberName = "Member",
   dueType = "membership"
 ) {
@@ -50,6 +51,7 @@ export async function queuePaymentDueGenerated(
       due_type: dueType,
       period,
       amount,
+      total_outstanding_due: outstandingAmount,
     },
   });
 }

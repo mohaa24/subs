@@ -163,7 +163,7 @@ export default function PaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<DueStatus | "all">("all");
   const [dueTypeFilter, setDueTypeFilter] = useState<string>("all");
   const [searchQ, setSearchQ] = useState("");
-  const [mobileSort, setMobileSort] = useState<"name" | "date" | "amount">("name");
+  const [mobileSort, setMobileSort] = useState<"name" | "date" | "amount">("date");
   const [expandedDueId, setExpandedDueId] = useState<string | null>(null);
   const [dueTypes, setDueTypes] = useState<DueType[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);

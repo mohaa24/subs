@@ -92,6 +92,20 @@ export async function generateMonthlyDues() {
     created++;
     autoAppliedCredit = autoAppliedCredit.add(applied);
 
+    const outstandingTotals = await prisma.paymentDue.aggregate({
+      where: {
+        membershipId: m.id,
+        isSystemAdjustment: false,
+      },
+      _sum: {
+        amountDue: true,
+        amountPaid: true,
+      },
+    });
+    const totalOutstanding = (outstandingTotals._sum.amountDue ?? new Decimal(0)).sub(
+      outstandingTotals._sum.amountPaid ?? new Decimal(0)
+    );
+
     const recipientPhone = m.hod?.mobileNumber || m.hod?.whatsAppNumber;
     if (m.hod && recipientPhone) {
       await queuePaymentDueGenerated(
@@ -100,6 +114,7 @@ export async function generateMonthlyDues() {
         m.membershipNo,
         period,
         m.totalContribution.toFixed(2),
+        (totalOutstanding.gt(0) ? totalOutstanding : new Decimal(0)).toFixed(2),
         m.hod.nameWithInitials || m.hod.fullName || "Member",
         "membership"
       );

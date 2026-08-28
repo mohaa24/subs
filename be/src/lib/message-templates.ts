@@ -56,12 +56,13 @@ export const MESSAGE_TEMPLATE_DEFINITIONS: MessageTemplateDefinition[] = [
     available: true,
     defaultEnabled: false,
     defaultBody:
-      "Dear {{member_name}}, your {{due_type}} due of Rs. {{amount}} for {{period}} has been generated. Member No: {{membership_no}}. - {{organization_name}}",
+      "Dear {{member_name}}, your {{due_type}} due of Rs. {{amount}} for {{period}} has been generated. Total outstanding: Rs. {{total_outstanding_due}}. Member No: {{membership_no}}. - {{organization_name}}",
     allowedVariables: [
       "member_name",
       "due_type",
       "amount",
       "period",
+      "total_outstanding_due",
       "membership_no",
       "organization_name",
     ],
