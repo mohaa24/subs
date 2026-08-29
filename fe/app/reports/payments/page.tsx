@@ -191,7 +191,7 @@ function SummaryTiles({ report }: { report: MemberPaymentReport }) {
 
 function Breakdowns({ report }: { report: MemberPaymentReport }) {
   return <div className="space-y-3 print:space-y-2">
-    <Breakdown title="Payment Methods" description="Gross payments by payment method" items={report.paymentMethodSummary.map((item) => ({ label:item.paymentMethod, amount:item.amount }))} />
+    <Breakdown title="Payment Methods" description="Net payments after reversals" items={report.paymentMethodSummary.map((item) => ({ label:item.paymentMethod, amount:item.amount }))} />
     <Breakdown title="Collected by Due Type" description="Net receipts by due type" items={report.dueTypeSummary.map((item) => ({ label:item.dueType, amount:item.amount }))} />
   </div>;
 }
@@ -199,7 +199,7 @@ function Breakdowns({ report }: { report: MemberPaymentReport }) {
 function Breakdown({ title, description, items }: { title:string; description:string; items:Array<{ label:string; amount:number }> }) {
   return <div className="payment-breakdown grid gap-4 rounded-xl border border-slate-200 bg-slate-50 px-5 py-3 md:grid-cols-[300px_1fr] print:grid-cols-[190px_1fr]">
     <div className="border-slate-200 md:border-r md:pr-5 print:border-r print:pr-4"><h3 className="text-sm font-bold text-slate-900">{title}</h3><p className="mt-0.5 text-xs text-slate-500">{description}</p></div>
-    <div className="grid auto-cols-fr grid-flow-col gap-3">{items.length ? items.map((item) => <div key={item.label} className="border-r border-slate-200 pr-3 last:border-0"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p><p className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">{money(item.amount)}</p></div>) : <p className="text-xs text-slate-500">No collections in this period.</p>}</div>
+    <div className="grid auto-cols-fr grid-flow-col gap-3">{items.length ? items.map((item) => <div key={item.label} className="border-r border-slate-200 pr-3 last:border-0"><p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p><p className={`mt-0.5 text-sm font-bold tabular-nums ${item.amount < 0 ? "text-red-600" : "text-slate-900"}`}>{amount(item.amount)}</p></div>) : <p className="text-xs text-slate-500">No collections in this period.</p>}</div>
   </div>;
 }
 

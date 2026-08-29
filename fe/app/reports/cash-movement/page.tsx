@@ -109,27 +109,31 @@ export default function CashMovementReportPage() {
     finally { setLoading(false); }
   }
   useEffect(() => { if (user) void loadReport(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user]);
-  const pages = useMemo(() => report ? paginateRows(buildRows(report)) : [], [report]);
+  const rows = useMemo(() => report ? buildRows(report) : [], [report]);
+  const printPages = useMemo(() => report ? paginateRows(rows) : [], [report, rows]);
   if (authLoading || !user) return null;
 
   return (
     <div className="min-h-screen bg-slate-100/70">
       <Header />
-      <main className="mx-auto max-w-[1800px] p-4 md:p-6 print:max-w-none print:p-0">
+      <main className="mx-auto max-w-[1800px] p-3 sm:p-4 md:p-6 print:max-w-none print:p-0">
         <div className="print:hidden">
           <Breadcrumb items={[{ label: "Dashboard", href: dashboardFlowHref("reports") }, { label: "Financial Reports", href: "/finance-reports" }, { label: "Cash Movement Report" }]} />
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div><h1 className="text-xl font-semibold text-slate-900">Cash Movement Report</h1><p className="mt-1 text-sm text-slate-500">Reconcile opening balances, receipts, payments, internal transfers, and closing cash positions.</p></div>
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="grid w-full grid-cols-2 items-end gap-2 lg:flex lg:w-auto">
               <div><Label>From</Label><Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></div>
               <div><Label>To</Label><Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></div>
-              <Button onClick={loadReport} disabled={loading}><RefreshCw className="mr-2 h-4 w-4" />{loading ? "Generating..." : "Generate"}</Button>
-              <Button variant="outline" disabled={!report} onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />Download PDF</Button>
+              <Button className="w-full" onClick={loadReport} disabled={loading}><RefreshCw className="mr-2 h-4 w-4" />{loading ? "Generating..." : "Generate"}</Button>
+              <Button className="w-full" variant="outline" disabled={!report} onClick={() => window.print()}><Download className="mr-2 h-4 w-4" />Download PDF</Button>
             </div>
           </div>
           {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         </div>
-        {report && <div className="cash-report-pages space-y-5 print:space-y-0">{pages.map((rows, pageIndex) => <CashMovementPage key={pageIndex} report={report} rows={rows} pageIndex={pageIndex} pageCount={pages.length} />)}</div>}
+        {report && <>
+          <div className="cash-report-screen print:hidden"><CashMovementPage report={report} rows={rows} /></div>
+          <div className="cash-report-pages hidden print:block">{printPages.map((pageRows, pageIndex) => <CashMovementPage key={pageIndex} report={report} rows={pageRows} pageIndex={pageIndex} pageCount={printPages.length} printPage />)}</div>
+        </>}
         {!report && !loading && !error && <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 print:hidden">Select a reporting period to generate the report.</div>}
       </main>
       <ReportStyles />
@@ -137,13 +141,14 @@ export default function CashMovementReportPage() {
   );
 }
 
-function CashMovementPage({ report, rows, pageIndex, pageCount }: { report: CashMovementReport; rows: TableRow[]; pageIndex: number; pageCount: number }) {
+function CashMovementPage({ report, rows, pageIndex = 0, pageCount = 1, printPage = false }: { report: CashMovementReport; rows: TableRow[]; pageIndex?: number; pageCount?: number; printPage?: boolean }) {
   const firstPage = pageIndex === 0;
   return (
-    <section className="cash-report-page relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-[#334155] shadow-sm md:p-7 print:rounded-none print:border-0 print:p-0 print:shadow-none">
+    <section className="cash-report-page relative overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-[#334155] shadow-sm sm:p-5 md:rounded-2xl md:p-7 print:rounded-none print:border-0 print:p-0 print:shadow-none">
       <ReportHeader report={report} compact={!firstPage} />
       {firstPage && <SummaryCards report={report} />}
-      <div className="cash-table-wrap overflow-x-auto rounded-lg border border-slate-200 print:overflow-visible">
+      <MobileReportRows rows={rows} report={report} />
+      <div className="cash-table-wrap hidden overflow-x-auto rounded-lg border border-slate-200 md:block print:block print:overflow-visible">
         <table className="cash-report-table w-full min-w-[820px] table-fixed border-collapse print:min-w-0">
           <colgroup><col className="cash-description-column" /><col className="cash-amount-column" />{report.accounts.map((account) => <col key={account.id} className="cash-account-column" />)}</colgroup>
           <thead><tr><th>Description</th><th className="text-right">Total</th>{report.accounts.map((account) => <th key={account.id} className="text-right">{account.name}</th>)}</tr></thead>
@@ -151,14 +156,14 @@ function CashMovementPage({ report, rows, pageIndex, pageCount }: { report: Cash
         </table>
       </div>
       {firstPage && <GuidanceNotes />}
-      <footer className="cash-report-footer flex items-center justify-between border-t border-slate-200 pt-2 text-[10px] text-slate-500"><span>Generated by Civica | Cash Movement Report</span><span className="flex items-center gap-1"><FileText className="h-3 w-3" /> Page {pageIndex + 1} of {pageCount}</span></footer>
+      <footer className="cash-report-footer flex items-center justify-between border-t border-slate-200 pt-2 text-[10px] text-slate-500"><span>Generated by Civica | Cash Movement Report</span>{printPage && <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> Page {pageIndex + 1} of {pageCount}</span>}</footer>
     </section>
   );
 }
 
 function ReportHeader({ report, compact }: { report: CashMovementReport; compact: boolean }) {
   if (compact) return <header className="cash-report-header cash-report-header-compact mb-3 flex items-end justify-between border-b border-slate-200 pb-2"><div><p className="text-xs font-bold uppercase text-slate-600">{report.organizationName}</p><h2 className="text-xl font-bold text-slate-950">Cash Movement Report</h2></div><p className="text-xs text-slate-500">{reportDate(report.fromDate)} - {reportDate(report.toDate)} · Amounts in {report.currency}</p></header>;
-  return <header className="cash-report-header mb-4 text-center"><p className="text-base font-bold text-slate-900">{report.organizationName}</p><h2 className="mt-0.5 text-3xl font-bold tracking-tight text-slate-950">Cash Movement Report</h2><p className="mt-0.5 text-sm text-slate-500">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p><p className="mt-0.5 text-[11px] text-slate-400">Generated {generatedDate(report.generatedAt)} by {report.generatedBy}</p></header>;
+  return <header className="cash-report-header mb-4 text-center"><p className="text-sm font-bold text-slate-900 sm:text-base">{report.organizationName}</p><h2 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Cash Movement Report</h2><p className="mt-0.5 text-xs text-slate-500 sm:text-sm">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p><p className="mt-0.5 text-[10px] text-slate-400 sm:text-[11px]">Generated {generatedDate(report.generatedAt)} by {report.generatedBy}</p></header>;
 }
 
 function SummaryCards({ report }: { report: CashMovementReport }) {
@@ -171,7 +176,8 @@ function SummaryCards({ report }: { report: CashMovementReport }) {
 }
 function SummaryCard({ label, value, tone, badge, icon }: { label: string; value: number; tone: "balance" | "negative" | "received" | "paid" | "closing"; badge?: string; icon: ReactNode }) {
   const styles = { balance: "bg-slate-100 text-slate-700", negative: "bg-slate-100 text-red-700", received: "bg-emerald-50 text-emerald-700", paid: "bg-sky-50 text-sky-700", closing: "bg-slate-900 text-white" }[tone];
-  return <div className={`rounded-xl border border-transparent px-4 py-3 ${styles}`}><div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-white/60 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>{label}</span>{badge && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase text-red-700">{badge}</span>}</div><p className="mt-2 whitespace-nowrap text-xl font-bold tabular-nums 2xl:text-2xl">LKR {money(value)}</p></div>;
+  const negativeMovement = value < 0 && tone !== "closing";
+  return <div className={`rounded-xl border border-transparent px-4 py-3 ${styles}`}><div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-white/60 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>{label}</span>{badge && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold uppercase text-red-700">{badge}</span>}</div><p className={`mt-2 whitespace-nowrap text-xl font-bold tabular-nums 2xl:text-2xl ${negativeMovement ? "text-red-700" : ""}`}>LKR {money(value)}</p></div>;
 }
 
 function ReportTableRow({ row, report }: { row: TableRow; report: CashMovementReport }) {
@@ -186,16 +192,63 @@ function ReportTableRow({ row, report }: { row: TableRow; report: CashMovementRe
   }
   if (row.type === "empty") return <tr><td colSpan={colSpan} className="cash-empty">{row.label}</td></tr>;
   if (row.type === "movement") {
-    const reversal = /reversal/i.test(row.movement.group);
-    const total = row.tone === "paid" ? -Math.abs(row.movement.total) : row.movement.total;
-    return <tr className={reversal ? "cash-reversal-row" : ""}><td className="cash-account-name">{row.movement.description}</td><td className={`cash-number ${reversal ? "text-red-700" : ""}`}>{money(total, true)}</td>{report.accounts.map((account) => { const raw = row.movement.accounts[account.id] ?? 0; const value = row.tone === "paid" ? -Math.abs(raw) : raw; return <td key={account.id} className={`cash-number ${value < 0 || reversal ? "text-red-700" : ""}`}>{money(value, true)}</td>; })}</tr>;
+    const total = row.tone === "paid" ? -row.movement.total : row.movement.total;
+    return <tr><td className="cash-account-name">{row.movement.description}</td><td className={`cash-number ${total < 0 ? "text-red-700" : ""}`}>{money(total, true)}</td>{report.accounts.map((account) => { const raw = row.movement.accounts[account.id] ?? 0; const value = row.tone === "paid" ? -raw : raw; return <td key={account.id} className={`cash-number ${value < 0 ? "text-red-700" : ""}`}>{money(value, true)}</td>; })}</tr>;
   }
   if (row.type === "subtotal") {
-    const total = row.tone === "paid" ? -Math.abs(row.total) : row.total;
-    return <tr className={`cash-subtotal cash-${row.tone}`}><td>{row.label}</td><td className="cash-number">{money(total)}</td>{report.accounts.map((account) => { const raw = row.accounts[account.id] ?? 0; const value = row.tone === "paid" ? -Math.abs(raw) : raw; return <td key={account.id} className="cash-number">{money(value, row.tone !== "transfer")}</td>; })}</tr>;
+    const total = row.tone === "paid" ? -row.total : row.total;
+    return <tr className={`cash-subtotal cash-${row.tone}`}><td>{row.label}</td><td className={`cash-number ${total < 0 ? "text-red-700" : ""}`}>{money(total)}</td>{report.accounts.map((account) => { const raw = row.accounts[account.id] ?? 0; const value = row.tone === "paid" ? -raw : raw; return <td key={account.id} className={`cash-number ${value < 0 ? "text-red-700" : ""}`}>{money(value, row.tone !== "transfer")}</td>; })}</tr>;
   }
   const isClosing = row.type === "closing";
   return <tr className={isClosing ? "cash-closing" : row.type === "opening" ? "cash-opening" : "cash-net"}><td>{row.label}</td><td className={`cash-number ${row.total < 0 && !isClosing ? "text-red-700" : ""}`}>{money(row.total)}</td>{report.accounts.map((account) => { const value = row.accounts[account.id] ?? 0; return <td key={account.id} className={`cash-number ${!isClosing && value < 0 ? "text-red-700" : ""}`}>{money(value)}</td>; })}</tr>;
+}
+
+function MobileReportRows({ rows, report }: { rows: TableRow[]; report: CashMovementReport }) {
+  return <div className="space-y-1 overflow-hidden rounded-lg border border-slate-200 md:hidden print:hidden">
+    {rows.map((row) => {
+      if (row.type === "section") {
+        const Icon = row.tone === "received" ? ArrowDownRight : row.tone === "paid" ? ArrowUpRight : ArrowLeftRight;
+        return <div key={row.key} className={`cash-${row.tone} flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase`}><span className="cash-section-icon"><Icon className="h-4 w-4" /></span>{row.label}</div>;
+      }
+      if (row.type === "subgroup") {
+        return <div key={row.key} className={`cash-${row.tone} flex items-center gap-2 bg-opacity-40 px-3 py-2 text-xs font-semibold`}><span className="cash-bullet" />{row.label}</div>;
+      }
+      if (row.type === "empty") return <div key={row.key} className="px-3 py-4 text-center text-xs italic text-slate-500">{row.label}</div>;
+
+      const isMovement = row.type === "movement";
+      const isSubtotal = row.type === "subtotal";
+      const tone = isMovement || isSubtotal ? row.tone : null;
+      const label = isMovement ? row.movement.description : row.label;
+      const rawTotal = isMovement ? row.movement.total : row.total;
+      const rawAccounts = isMovement ? row.movement.accounts : row.accounts;
+      const total = tone === "paid" ? -rawTotal : rawTotal;
+      const closing = row.type === "closing";
+      const visibleAccounts = isMovement || isSubtotal
+        ? report.accounts.filter((account) => Math.abs(rawAccounts[account.id] ?? 0) >= 0.005)
+        : report.accounts;
+      const containerStyle = closing
+        ? "bg-slate-900 text-white"
+        : isSubtotal
+          ? `cash-${row.tone}`
+          : row.type === "opening" || row.type === "net"
+            ? "bg-slate-50"
+            : "bg-white";
+
+      return <div key={row.key} className={`px-3 py-2.5 ${containerStyle}`}>
+        <div className="flex items-start justify-between gap-3">
+          <p className={`${isSubtotal || !isMovement ? "font-bold" : "font-medium"} text-xs`}>{label}</p>
+          <p className={`whitespace-nowrap text-sm font-bold tabular-nums ${total < 0 && !closing ? "text-red-700" : ""}`}>{money(total, isMovement)}</p>
+        </div>
+        <div className={`mt-2 grid gap-1 border-t pt-2 text-[10px] ${closing ? "border-slate-700" : "border-slate-100"}`}>
+          {visibleAccounts.map((account) => {
+            const raw = rawAccounts[account.id] ?? 0;
+            const value = tone === "paid" ? -raw : raw;
+            return <div key={account.id} className="flex items-center justify-between gap-3"><span className={closing ? "text-slate-300" : "text-slate-500"}>{account.name}</span><span className={`font-semibold tabular-nums ${value < 0 && !closing ? "text-red-700" : ""}`}>{money(value, isMovement || isSubtotal)}</span></div>;
+          })}
+        </div>
+      </div>;
+    })}
+  </div>;
 }
 
 function GuidanceNotes() {

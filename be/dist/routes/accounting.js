@@ -8,6 +8,7 @@ const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
 const accounting_js_1 = require("../lib/accounting.js");
 const audit_log_js_1 = require("../lib/audit-log.js");
+const payment_report_allocation_js_1 = require("../lib/payment-report-allocation.js");
 exports.accountingRouter = (0, express_1.Router)();
 exports.accountingRouter.use(auth_js_1.requireAuth);
 exports.accountingRouter.use(auth_js_1.withOrgScope);
@@ -3110,11 +3111,11 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
         prisma_js_1.prisma.accountingAccount.findMany({
             where: { organizationId: orgId, accountType: "asset", assetSubtype: { in: ["cash", "bank"] } },
             orderBy: [{ assetSubtype: "asc" }, { name: "asc" }],
-            select: { id: true, name: true, assetSubtype: true },
+            select: { id: true, name: true, assetSubtype: true, systemKey: true },
         }),
     ]);
     const accountIds = accounts.map((account) => account.id);
-    const [openingLines, entries] = await Promise.all([
+    const [openingLines, entries, memberPayments] = await Promise.all([
         prisma_js_1.prisma.accountingJournalLine.groupBy({
             by: ["accountId", "side"],
             where: {
@@ -3133,6 +3134,34 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
             orderBy: [{ entryDate: "asc" }, { createdAt: "asc" }],
             include: { lines: { include: { account: { select: { id: true, name: true, accountType: true, assetSubtype: true } } } } },
         }),
+        prisma_js_1.prisma.payment.findMany({
+            where: {
+                organizationId: orgId,
+                AND: [
+                    {
+                        OR: [
+                            { paymentDate: { gte: from, lte: to } },
+                            { reversedAt: { gte: from, lte: to } },
+                        ],
+                    },
+                    {
+                        OR: [
+                            { paymentDueId: null },
+                            { paymentDue: { is: { isSystemAdjustment: false } } },
+                        ],
+                    },
+                ],
+            },
+            include: {
+                paymentDue: {
+                    select: {
+                        dueType: {
+                            select: { id: true, name: true, systemKey: true, sortOrder: true },
+                        },
+                    },
+                },
+            },
+        }),
     ]);
     const zeroAccountValues = () => Object.fromEntries(accounts.map((account) => [account.id, 0]));
     const openingByAccount = zeroAccountValues();
@@ -3144,29 +3173,31 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
     const paidRows = new Map();
     const transferRows = [];
     const movementByAccount = zeroAccountValues();
-    function movementGroup(referenceType, section) {
-        if (section === "transfer")
-            return "Internal Transfers";
+    function movementGroupForAccount(account, section) {
         if (section === "received") {
-            if (referenceType === "fund_collection")
+            if (account.accountType === "equity" && account.assetSubtype === "project_fund")
                 return "Special Fund Collections";
-            if (referenceType === "receivable_collection")
+            if (account.accountType === "asset" && receivableSubtypes.includes(account.assetSubtype))
                 return "Receivable Repayments";
-            if (referenceType === "payable_borrowing" || referenceType === "payable_recovery")
+            if (account.accountType === "liability" && payableSubtypes.includes(account.assetSubtype))
                 return "Other Money Received";
-            if (referenceType?.includes("reversal") || referenceType === "journal_entry")
-                return "Payment Reversals - Cash Restored";
             return "Operating Income";
         }
-        if (referenceType === "fund_expense")
+        if (account.accountType === "equity" && account.assetSubtype === "project_fund")
             return "Special Fund Expenses";
-        if (referenceType === "payable_repayment" || referenceType === "payable_payment")
+        if (account.accountType === "liability" && payableSubtypes.includes(account.assetSubtype))
             return "Payable Repayments";
-        if (referenceType === "receivable_payment")
+        if (account.accountType === "asset" && receivableSubtypes.includes(account.assetSubtype))
             return "Receivable Advances";
-        if (referenceType?.includes("reversal") || referenceType === "journal_entry")
-            return "Receipt Reversals - Cash Removed";
         return "Operating Expenses";
+    }
+    function addMovement(target, group, description, amount, accountValues) {
+        const key = `${group}::${description}`;
+        const row = target.get(key) ?? { key, group, description, total: 0, accounts: zeroAccountValues() };
+        row.total += amount;
+        for (const account of accounts)
+            row.accounts[account.id] += accountValues[account.id] ?? 0;
+        target.set(key, row);
     }
     for (const entry of entries) {
         const cashLines = entry.lines.filter((line) => accountIds.includes(line.accountId));
@@ -3178,37 +3209,75 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
         }
         const net = Object.values(signedValues).reduce((sum, amount) => sum + amount, 0);
         const isTransfer = cashLines.length > 1 && Math.abs(net) < 0.005;
-        const section = isTransfer ? "transfer" : net >= 0 ? "received" : "paid";
-        const counterpartNames = [...new Set(entry.lines
-                .filter((line) => !accountIds.includes(line.accountId))
-                .map((line) => line.account.name))];
-        const description = counterpartNames.join(" / ") || entry.description;
-        const group = movementGroup(entry.referenceType, section);
-        if (section === "transfer") {
+        if (isTransfer) {
             transferRows.push({
                 key: entry.id,
-                group,
+                group: "Internal Transfers",
                 description: entry.description,
                 total: 0,
                 accounts: signedValues,
             });
             continue;
         }
-        const target = section === "received" ? receivedRows : paidRows;
-        const key = `${group}::${description}`;
-        const row = target.get(key) ?? { key, group, description, total: 0, accounts: zeroAccountValues() };
-        row.total += Math.abs(net);
-        for (const account of accounts)
-            row.accounts[account.id] += Math.abs(signedValues[account.id]);
-        target.set(key, row);
+        // Member receipts and their corrections are classified below using the
+        // payment's due/credit allocation rather than a slash-joined journal label.
+        if (entry.entryType === "payment" || entry.entryType === "payment_correction")
+            continue;
+        const isReversal = Boolean(entry.referenceType?.includes("reversal") || entry.referenceType === "journal_entry");
+        const section = isReversal
+            ? net < 0 ? "received" : "paid"
+            : net >= 0 ? "received" : "paid";
+        const logicalSign = isReversal ? -1 : 1;
+        const balancingSide = net >= 0 ? "credit" : "debit";
+        const counterpartLines = entry.lines.filter((line) => !accountIds.includes(line.accountId) && line.side === balancingSide);
+        const directionalCashLines = cashLines.filter((line) => {
+            const signed = (line.side === "debit" ? 1 : -1) * Number(line.amount);
+            return net >= 0 ? signed > 0 : signed < 0;
+        });
+        const cashWeightTotal = directionalCashLines.reduce((sum, line) => sum + Number(line.amount), 0);
+        for (const line of counterpartLines) {
+            const amount = logicalSign * Number(line.amount);
+            const accountValues = zeroAccountValues();
+            for (const cashLine of directionalCashLines) {
+                const weight = cashWeightTotal > 0 ? Number(cashLine.amount) / cashWeightTotal : 0;
+                accountValues[cashLine.accountId] += amount * weight;
+            }
+            const group = movementGroupForAccount(line.account, section);
+            addMovement(section === "received" ? receivedRows : paidRows, group, line.account.name, amount, accountValues);
+        }
+    }
+    const paymentAllocationBreakdowns = await (0, payment_report_allocation_js_1.loadPaymentAllocationBreakdowns)(prisma_js_1.prisma, memberPayments, to);
+    const cashAccount = accounts.find((account) => account.systemKey === accounting_js_1.ACCOUNTING_SYSTEM_KEYS.cash);
+    const bankAccount = accounts.find((account) => account.systemKey === accounting_js_1.ACCOUNTING_SYSTEM_KEYS.bank);
+    const isWithinReportPeriod = (date) => Boolean(date && date >= from && date <= to);
+    function addMemberPaymentMovement(payment, sign) {
+        const depositAccountId = payment.depositAccountId
+            ?? (payment.paymentMethod === "bank_transfer" ? bankAccount?.id : cashAccount?.id);
+        if (!depositAccountId || !accountIds.includes(depositAccountId))
+            return;
+        for (const component of paymentAllocationBreakdowns.get(payment.id) ?? []) {
+            const description = component.isCreditBalance
+                ? "Member Credit Liability"
+                : (0, accounting_js_1.dueTypeIncomeAccountName)({ name: component.dueTypeName, systemKey: component.dueTypeSystemKey });
+            const amount = sign * component.amount.toNumber();
+            const accountValues = zeroAccountValues();
+            accountValues[depositAccountId] = amount;
+            addMovement(receivedRows, "Operating Income", description, amount, accountValues);
+        }
+    }
+    for (const payment of memberPayments) {
+        if (isWithinReportPeriod(payment.paymentDate))
+            addMemberPaymentMovement(payment, 1);
+        if (payment.isReversed && isWithinReportPeriod(payment.reversedAt))
+            addMemberPaymentMovement(payment, -1);
     }
     const normalizeRow = (row) => ({
         ...row,
         total: Number(row.total.toFixed(2)),
         accounts: Object.fromEntries(Object.entries(row.accounts).map(([id, amount]) => [id, Number(amount.toFixed(2))])),
     });
-    const received = [...receivedRows.values()].map(normalizeRow);
-    const paid = [...paidRows.values()].map(normalizeRow);
+    const received = [...receivedRows.values()].map(normalizeRow).filter((row) => Math.abs(row.total) >= 0.005);
+    const paid = [...paidRows.values()].map(normalizeRow).filter((row) => Math.abs(row.total) >= 0.005);
     const transfers = transferRows.map(normalizeRow);
     const receivedByAccount = zeroAccountValues();
     const paidByAccount = zeroAccountValues();

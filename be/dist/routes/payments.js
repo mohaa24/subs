@@ -11,6 +11,7 @@ const message_queue_js_1 = require("../lib/message-queue.js");
 const membership_credit_js_1 = require("../lib/membership-credit.js");
 const due_types_js_1 = require("../lib/due-types.js");
 const accounting_js_1 = require("../lib/accounting.js");
+const payment_report_allocation_js_1 = require("../lib/payment-report-allocation.js");
 exports.paymentsRouter = (0, express_1.Router)();
 exports.paymentsRouter.use(auth_js_1.requireAuth);
 exports.paymentsRouter.use(auth_js_1.withOrgScope);
@@ -1646,7 +1647,7 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
                         hod: { select: { fullName: true, nameWithInitials: true } },
                     },
                 },
-                paymentDue: { select: { period: true, dueType: { select: { name: true, sortOrder: true } } } },
+                paymentDue: { select: { period: true, dueType: { select: { id: true, name: true, systemKey: true, sortOrder: true } } } },
                 collectedBy: { select: { email: true } },
                 reversedBy: { select: { email: true } },
             },
@@ -1669,10 +1670,7 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
     const netCollected = grossCollected.sub(totalReversed);
     const dueTypeTotals = new Map();
     const activePayments = receiptPayments.filter((payment) => !payment.isReversed);
-    const activePaymentIds = activePayments.map((p) => p.id);
     function addDueTypeTotal(dueTypeName, amount, sortOrder) {
-        if (!amount.gt(new library_1.Decimal(0)))
-            return;
         const existing = dueTypeTotals.get(dueTypeName);
         if (existing) {
             existing.amount = existing.amount.add(amount);
@@ -1682,67 +1680,16 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
             dueTypeTotals.set(dueTypeName, { amount, sortOrder });
         }
     }
-    const [overpaymentRows, creditAllocations] = activePaymentIds.length > 0
-        ? await Promise.all([
-            prisma_js_1.prisma.membershipCreditLedger.groupBy({
-                by: ["paymentId"],
-                where: {
-                    paymentId: { in: activePaymentIds },
-                    entryType: "credit_overpayment",
-                },
-                _sum: { amountDelta: true },
-            }),
-            prisma_js_1.prisma.membershipCreditAllocation.findMany({
-                where: {
-                    sourcePaymentId: { in: activePaymentIds },
-                    reversedAt: null,
-                },
-                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-                select: {
-                    sourcePaymentId: true,
-                    amount: true,
-                    paymentDue: {
-                        select: {
-                            dueType: { select: { name: true, sortOrder: true } },
-                        },
-                    },
-                },
-            }),
-        ])
-        : [[], []];
-    const overpaymentByPaymentId = new Map();
-    for (const row of overpaymentRows) {
-        if (!row.paymentId)
-            continue;
-        overpaymentByPaymentId.set(row.paymentId, maxDecimal(row._sum.amountDelta ?? new library_1.Decimal(0), new library_1.Decimal(0)));
-    }
-    const allocationsByPaymentId = new Map();
-    for (const allocation of creditAllocations) {
-        if (!allocation.sourcePaymentId)
-            continue;
-        const existing = allocationsByPaymentId.get(allocation.sourcePaymentId) ?? [];
-        existing.push(allocation);
-        allocationsByPaymentId.set(allocation.sourcePaymentId, existing);
-    }
-    for (const payment of activePayments) {
-        const paymentAmount = new library_1.Decimal(payment.amount);
-        const creditCreated = minDecimal(overpaymentByPaymentId.get(payment.id) ??
-            (payment.paymentKind === "credit" || !payment.paymentDueId ? paymentAmount : new library_1.Decimal(0)), paymentAmount);
-        const directApplied = payment.paymentKind === "credit" || !payment.paymentDueId
-            ? new library_1.Decimal(0)
-            : maxDecimal(paymentAmount.sub(creditCreated), new library_1.Decimal(0));
-        if (directApplied.gt(new library_1.Decimal(0))) {
-            addDueTypeTotal(payment.paymentDue?.dueType?.name ?? "Unknown", directApplied, payment.paymentDue?.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1);
+    const allocationBreakdowns = await (0, payment_report_allocation_js_1.loadPaymentAllocationBreakdowns)(prisma_js_1.prisma, payments, to);
+    for (const payment of receiptPayments) {
+        for (const component of allocationBreakdowns.get(payment.id) ?? []) {
+            addDueTypeTotal(component.dueTypeName, component.amount, component.sortOrder);
         }
-        let remainingCredit = maxDecimal(paymentAmount.sub(directApplied), new library_1.Decimal(0));
-        for (const allocation of allocationsByPaymentId.get(payment.id) ?? []) {
-            if (!remainingCredit.gt(new library_1.Decimal(0)))
-                break;
-            const allocatedAmount = minDecimal(allocation.amount, remainingCredit);
-            addDueTypeTotal(allocation.paymentDue.dueType?.name ?? "Unknown", allocatedAmount, allocation.paymentDue.dueType?.sortOrder ?? Number.MAX_SAFE_INTEGER - 1);
-            remainingCredit = remainingCredit.sub(allocatedAmount);
+    }
+    for (const payment of reversalPayments) {
+        for (const component of allocationBreakdowns.get(payment.id) ?? []) {
+            addDueTypeTotal(component.dueTypeName, component.amount.neg(), component.sortOrder);
         }
-        addDueTypeTotal("Credit balance", remainingCredit, Number.MAX_SAFE_INTEGER);
     }
     const dueTypeSummary = [...dueTypeTotals.entries()]
         .map(([dueType, value]) => ({
@@ -1765,8 +1712,13 @@ exports.paymentsRouter.get("/report/periodic", async (req, res) => {
         const label = getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown";
         paymentMethodTotals.set(label, (paymentMethodTotals.get(label) ?? new library_1.Decimal(0)).add(payment.amount));
     }
+    for (const payment of reversalPayments) {
+        const label = getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown";
+        paymentMethodTotals.set(label, (paymentMethodTotals.get(label) ?? new library_1.Decimal(0)).sub(payment.amount));
+    }
     const paymentMethodSummary = [...paymentMethodTotals.entries()]
         .map(([paymentMethod, amount]) => ({ paymentMethod, amount: amount.toNumber() }))
+        .filter((item) => Math.abs(item.amount) > 0.000001)
         .sort((left, right) => left.paymentMethod.localeCompare(right.paymentMethod));
     const movements = [];
     const reversalReference = (receiptNumber) => `RV${receiptNumber.replace(/^RC/i, "")}`;
