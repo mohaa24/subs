@@ -1855,9 +1855,16 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
   const to = new Date(toDate);
   to.setHours(23, 59, 59, 999);
 
-  const where: any = {
-    paymentDate: { gte: from, lte: to },
-    ...nonSystemAdjustmentOrStandaloneCreditFilter(),
+  const where: Prisma.PaymentWhereInput = {
+    AND: [
+      {
+        OR: [
+          { paymentDate: { gte: from, lte: to } },
+          { reversedAt: { gte: from, lte: to } },
+        ],
+      },
+      nonSystemAdjustmentOrStandaloneCreditFilter(),
+    ],
   };
   if (orgId) where.organizationId = orgId;
 
@@ -1888,14 +1895,15 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
   ]);
   const zoneMap = new Map(zones.map((zone) => [zone.code, zone.name]));
 
-  const receiptPayments = payments;
-  const reversalPayments = receiptPayments.filter((payment) => payment.isReversed && payment.reversedAt);
+  const isWithinReportPeriod = (date: Date | null) => Boolean(date && date >= from && date <= to);
+  const receiptPayments = payments.filter((payment) => isWithinReportPeriod(payment.paymentDate));
+  const reversalPayments = payments.filter((payment) => payment.isReversed && isWithinReportPeriod(payment.reversedAt));
   const grossCollected = receiptPayments.reduce((sum, p) => sum.add(p.amount), new Decimal(0));
   const totalReversed = reversalPayments
     .reduce((sum, p) => sum.add(p.amount), new Decimal(0));
   const netCollected = grossCollected.sub(totalReversed);
   const dueTypeTotals = new Map<string, { amount: Decimal; sortOrder: number }>();
-  const activePayments = receiptPayments.filter((payment) => !reversalPayments.some((reversed) => reversed.id === payment.id));
+  const activePayments = receiptPayments.filter((payment) => !payment.isReversed);
   const activePaymentIds = activePayments.map((p) => p.id);
 
   function addDueTypeTotal(dueTypeName: string, amount: Decimal, sortOrder: number) {
@@ -2030,14 +2038,14 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
     status: "posted" | "reversed" | "reversal";
     reversalReason: string | null;
     relatedDate: Date | null;
+    reversedBy: string;
   };
   const movements: PaymentReportMovement[] = [];
-  const reversalIds = new Set(reversalPayments.map((payment) => payment.id));
   const reversalReference = (receiptNumber: string) => `RV${receiptNumber.replace(/^RC/i, "")}`;
 
   for (const payment of receiptPayments) {
     const receiptNumber = payment.receiptNumber ?? payment.id.slice(-8).toUpperCase();
-    const reversedInReport = reversalIds.has(payment.id);
+    const isReversed = payment.isReversed && Boolean(payment.reversedAt);
     movements.push({
       key: `payment-${payment.id}`,
       type: "payment",
@@ -2047,13 +2055,14 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
       membershipId: extractMembershipId(payment.membership.membershipNo),
       zone: formatZoneLabel(payment.membership.areaCode, zoneMap),
       receiptNumber,
-      linkedReceiptNumber: reversedInReport ? reversalReference(receiptNumber) : null,
+      linkedReceiptNumber: isReversed ? reversalReference(receiptNumber) : null,
       paymentMethod: getPaymentMethodLabel(payment.paymentMethod ?? extractLegacyPaymentMethod(payment.note)) ?? "Unknown",
       enteredBy: payment.collectedBy.email,
       amount: Number(payment.amount),
-      status: reversedInReport ? "reversed" : "posted",
-      reversalReason: reversedInReport ? payment.reversalReason : null,
-      relatedDate: reversedInReport ? payment.reversedAt : null,
+      status: isReversed ? "reversed" : "posted",
+      reversalReason: isReversed ? payment.reversalReason : null,
+      relatedDate: isReversed ? payment.reversedAt : null,
+      reversedBy: isReversed ? payment.reversedBy?.email ?? "" : "",
     });
   }
   for (const payment of reversalPayments) {
@@ -2074,6 +2083,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
       status: "reversal",
       reversalReason: payment.reversalReason,
       relatedDate: payment.paymentDate,
+      reversedBy: payment.reversedBy?.email ?? payment.collectedBy.email,
     });
   }
   movements.sort((left, right) => {
@@ -2109,26 +2119,22 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
       "Status",
       "Reversal Reason",
       "Reversed By",
-      "Note",
+      "Linked Receipt",
     ];
-    const csvRows = payments.map((p) => {
-      const paymentMethod = getPaymentMethodLabel(p.paymentMethod ?? extractLegacyPaymentMethod(p.note));
-      const receiptNumber = p.receiptNumber ?? p.id.slice(-8).toUpperCase();
-      const membershipId = extractMembershipId(p.membership.membershipNo);
-      const zone = formatZoneLabel(p.membership.areaCode, zoneMap);
+    const csvRows = movements.map((movement) => {
       const row = [
-        p.paymentDate.toISOString().slice(0, 10),
-        p.membership.hod.nameWithInitials || p.membership.hod.fullName,
-        zone,
-        membershipId,
-        Number(p.amount).toFixed(2),
-        paymentMethod ?? "",
-        receiptNumber,
-        p.collectedBy.email,
-        p.isReversed ? "Reversed" : "Active",
-        p.isReversed ? (p.reversalReason ?? "").replace(/"/g, '""') : "",
-        p.isReversed ? (p.reversedBy?.email ?? "").replace(/"/g, '""') : "",
-        (p.note ?? "").replace(/"/g, '""'),
+        movement.movementDate.toISOString().slice(0, 10),
+        movement.memberName,
+        movement.zone,
+        movement.membershipId,
+        movement.amount.toFixed(2),
+        movement.paymentMethod,
+        movement.receiptNumber,
+        movement.enteredBy,
+        movement.status === "posted" ? "Posted" : movement.status === "reversed" ? "Reversed" : "Reversal",
+        movement.reversalReason ?? "",
+        movement.reversedBy,
+        movement.linkedReceiptNumber ?? "",
       ];
       return row
         .map((value) => String(value))
@@ -2156,7 +2162,7 @@ paymentsRouter.get("/report/periodic", async (req, res) => {
     dueTypeSummary,
     paymentMethodSummary,
     movements: serializedMovements,
-    payments: payments.map((p) => ({
+    payments: receiptPayments.map((p) => ({
       id: p.id,
       paymentDate: p.paymentDate.toISOString(),
       memberName: p.membership.hod.nameWithInitials || p.membership.hod.fullName,
