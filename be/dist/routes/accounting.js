@@ -783,37 +783,81 @@ function receivableAccountWhere(status, search, type) {
         ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
     };
 }
-async function receivableSums(tx, organizationId, accountIds, range) {
-    if (!accountIds.length)
-        return { given: new Map(), repaid: new Map(), writeOff: new Map() };
-    const rows = await tx.cashTransaction.groupBy({
-        by: ["accountId", "category"],
+async function openingBalanceAccountAdjustments(tx, organizationId, accountIds, range, creditNormal = false) {
+    const rows = await tx.accountingJournalLine.groupBy({
+        by: ["accountId", "side"],
         where: {
             organizationId,
             accountId: { in: accountIds },
-            reversedAt: null,
-            OR: [
-                { flowType: "cash_out", category: "receivable_payment" },
-                { flowType: "cash_in", category: "receivable_collection" },
-                { flowType: "cash_out", category: "receivable_write_off" },
-            ],
-            ...(range?.from || range?.toEnd
-                ? {
-                    transactionDate: {
-                        ...(range.from ? { gte: range.from } : {}),
-                        ...(range.toEnd ? { lte: range.toEnd } : {}),
-                    },
-                }
-                : {}),
+            journalEntry: {
+                entryType: "opening_balance",
+                referenceType: {
+                    in: [
+                        "opening_balance_migration",
+                        "opening_balance_correction",
+                        "opening_balance_replacement",
+                        "opening_balance_reversal",
+                    ],
+                },
+                ...(range?.from || range?.toEnd
+                    ? {
+                        entryDate: {
+                            ...(range.from ? { gte: range.from } : {}),
+                            ...(range.toEnd ? { lte: range.toEnd } : {}),
+                        },
+                    }
+                    : {}),
+            },
         },
         _sum: { amount: true },
     });
+    const values = new Map();
+    for (const row of rows) {
+        const amount = row._sum.amount ?? new library_1.Decimal(0);
+        const signed = creditNormal
+            ? row.side === "credit" ? amount : amount.neg()
+            : row.side === "debit" ? amount : amount.neg();
+        values.set(row.accountId, (values.get(row.accountId) ?? new library_1.Decimal(0)).add(signed));
+    }
+    return values;
+}
+async function receivableSums(tx, organizationId, accountIds, range) {
+    if (!accountIds.length)
+        return { given: new Map(), repaid: new Map(), writeOff: new Map() };
+    const [rows, openingAdjustments] = await Promise.all([tx.cashTransaction.groupBy({
+            by: ["accountId", "category"],
+            where: {
+                organizationId,
+                accountId: { in: accountIds },
+                reversedAt: null,
+                OR: [
+                    { flowType: "cash_out", category: "receivable_payment" },
+                    { flowType: "cash_in", category: "receivable_collection" },
+                    { flowType: "cash_out", category: "receivable_write_off" },
+                ],
+                ...(range?.from || range?.toEnd
+                    ? {
+                        transactionDate: {
+                            ...(range.from ? { gte: range.from } : {}),
+                            ...(range.toEnd ? { lte: range.toEnd } : {}),
+                        },
+                    }
+                    : {}),
+            },
+            _sum: { amount: true },
+        }), openingBalanceAccountAdjustments(tx, organizationId, accountIds, range)]);
     const given = new Map();
     const repaid = new Map();
     const writeOff = new Map();
     for (const row of rows) {
         const target = row.category === "receivable_payment" ? given : row.category === "receivable_collection" ? repaid : writeOff;
         target.set(row.accountId, row._sum?.amount ?? new library_1.Decimal(0));
+    }
+    for (const [accountId, amount] of openingAdjustments) {
+        if (amount.gte(0))
+            given.set(accountId, (given.get(accountId) ?? new library_1.Decimal(0)).add(amount));
+        else
+            repaid.set(accountId, (repaid.get(accountId) ?? new library_1.Decimal(0)).add(amount.abs()));
     }
     return { given, repaid, writeOff };
 }
@@ -843,27 +887,33 @@ function payableAccountWhere(status, search, type) {
 async function payableSums(tx, organizationId, accountIds, range) {
     if (!accountIds.length)
         return { borrowed: new Map(), settled: new Map() };
-    const rows = await tx.cashTransaction.groupBy({
-        by: ["accountId", "category"],
-        where: {
-            organizationId,
-            accountId: { in: accountIds },
-            reversedAt: null,
-            OR: [
-                { flowType: "cash_in", category: { in: payableBorrowingCategories } },
-                { flowType: "cash_out", category: { in: payableRepaymentCategories } },
-            ],
-            ...(range?.from || range?.toEnd
-                ? { transactionDate: { ...(range.from ? { gte: range.from } : {}), ...(range.toEnd ? { lte: range.toEnd } : {}) } }
-                : {}),
-        },
-        _sum: { amount: true },
-    });
+    const [rows, openingAdjustments] = await Promise.all([tx.cashTransaction.groupBy({
+            by: ["accountId", "category"],
+            where: {
+                organizationId,
+                accountId: { in: accountIds },
+                reversedAt: null,
+                OR: [
+                    { flowType: "cash_in", category: { in: payableBorrowingCategories } },
+                    { flowType: "cash_out", category: { in: payableRepaymentCategories } },
+                ],
+                ...(range?.from || range?.toEnd
+                    ? { transactionDate: { ...(range.from ? { gte: range.from } : {}), ...(range.toEnd ? { lte: range.toEnd } : {}) } }
+                    : {}),
+            },
+            _sum: { amount: true },
+        }), openingBalanceAccountAdjustments(tx, organizationId, accountIds, range, true)]);
     const borrowed = new Map();
     const settled = new Map();
     for (const row of rows) {
         const target = payableBorrowingCategories.includes(row.category) ? borrowed : settled;
         target.set(row.accountId, row._sum?.amount ?? new library_1.Decimal(0));
+    }
+    for (const [accountId, amount] of openingAdjustments) {
+        if (amount.gte(0))
+            borrowed.set(accountId, (borrowed.get(accountId) ?? new library_1.Decimal(0)).add(amount));
+        else
+            settled.set(accountId, (settled.get(accountId) ?? new library_1.Decimal(0)).add(amount.abs()));
     }
     return { borrowed, settled };
 }
@@ -3208,6 +3258,10 @@ exports.accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, re
             movementByAccount[line.accountId] += signed;
         }
         const net = Object.values(signedValues).reduce((sum, amount) => sum + amount, 0);
+        // Opening balances change the cash/bank position but are not operating
+        // receipts, payments, or internal transfers.
+        if (entry.entryType === "opening_balance")
+            continue;
         const isTransfer = cashLines.length > 1 && Math.abs(net) < 0.005;
         if (isTransfer) {
             transferRows.push({

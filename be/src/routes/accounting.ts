@@ -925,6 +925,51 @@ function receivableAccountWhere(status: string | null, search: string, type: str
   };
 }
 
+async function openingBalanceAccountAdjustments(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  accountIds: string[],
+  range?: { from?: Date | null; toEnd?: Date | null },
+  creditNormal = false
+) {
+  const rows = await tx.accountingJournalLine.groupBy({
+    by: ["accountId", "side"],
+    where: {
+      organizationId,
+      accountId: { in: accountIds },
+      journalEntry: {
+        entryType: "opening_balance",
+        referenceType: {
+          in: [
+            "opening_balance_migration",
+            "opening_balance_correction",
+            "opening_balance_replacement",
+            "opening_balance_reversal",
+          ],
+        },
+        ...(range?.from || range?.toEnd
+          ? {
+              entryDate: {
+                ...(range.from ? { gte: range.from } : {}),
+                ...(range.toEnd ? { lte: range.toEnd } : {}),
+              },
+            }
+          : {}),
+      },
+    },
+    _sum: { amount: true },
+  });
+  const values = new Map<string, Decimal>();
+  for (const row of rows) {
+    const amount = row._sum.amount ?? new Decimal(0);
+    const signed = creditNormal
+      ? row.side === "credit" ? amount : amount.neg()
+      : row.side === "debit" ? amount : amount.neg();
+    values.set(row.accountId, (values.get(row.accountId) ?? new Decimal(0)).add(signed));
+  }
+  return values;
+}
+
 async function receivableSums(
   tx: Prisma.TransactionClient,
   organizationId: string,
@@ -932,7 +977,7 @@ async function receivableSums(
   range?: { from?: Date | null; toEnd?: Date | null }
 ) {
   if (!accountIds.length) return { given: new Map<string, Decimal>(), repaid: new Map<string, Decimal>(), writeOff: new Map<string, Decimal>() };
-  const rows = await tx.cashTransaction.groupBy({
+  const [rows, openingAdjustments] = await Promise.all([tx.cashTransaction.groupBy({
     by: ["accountId", "category"],
     where: {
       organizationId,
@@ -953,13 +998,17 @@ async function receivableSums(
         : {}),
     },
     _sum: { amount: true },
-  });
+  }), openingBalanceAccountAdjustments(tx, organizationId, accountIds, range)]);
   const given = new Map<string, Decimal>();
   const repaid = new Map<string, Decimal>();
   const writeOff = new Map<string, Decimal>();
   for (const row of rows) {
     const target = row.category === "receivable_payment" ? given : row.category === "receivable_collection" ? repaid : writeOff;
     target.set(row.accountId, row._sum?.amount ?? new Decimal(0));
+  }
+  for (const [accountId, amount] of openingAdjustments) {
+    if (amount.gte(0)) given.set(accountId, (given.get(accountId) ?? new Decimal(0)).add(amount));
+    else repaid.set(accountId, (repaid.get(accountId) ?? new Decimal(0)).add(amount.abs()));
   }
   return { given, repaid, writeOff };
 }
@@ -995,7 +1044,7 @@ async function payableSums(
   range?: { from?: Date | null; toEnd?: Date | null }
 ) {
   if (!accountIds.length) return { borrowed: new Map<string, Decimal>(), settled: new Map<string, Decimal>() };
-  const rows = await tx.cashTransaction.groupBy({
+  const [rows, openingAdjustments] = await Promise.all([tx.cashTransaction.groupBy({
     by: ["accountId", "category"],
     where: {
       organizationId,
@@ -1010,12 +1059,16 @@ async function payableSums(
         : {}),
     },
     _sum: { amount: true },
-  });
+  }), openingBalanceAccountAdjustments(tx, organizationId, accountIds, range, true)]);
   const borrowed = new Map<string, Decimal>();
   const settled = new Map<string, Decimal>();
   for (const row of rows) {
     const target = payableBorrowingCategories.includes(row.category) ? borrowed : settled;
     target.set(row.accountId, row._sum?.amount ?? new Decimal(0));
+  }
+  for (const [accountId, amount] of openingAdjustments) {
+    if (amount.gte(0)) borrowed.set(accountId, (borrowed.get(accountId) ?? new Decimal(0)).add(amount));
+    else settled.set(accountId, (settled.get(accountId) ?? new Decimal(0)).add(amount.abs()));
   }
   return { borrowed, settled };
 }
@@ -3522,6 +3575,9 @@ accountingRouter.get("/reports/cash-movement", asyncRoute(async (req, res) => {
       movementByAccount[line.accountId] += signed;
     }
     const net = Object.values(signedValues).reduce((sum, amount) => sum + amount, 0);
+    // Opening balances change the cash/bank position but are not operating
+    // receipts, payments, or internal transfers.
+    if (entry.entryType === "opening_balance") continue;
     const isTransfer = cashLines.length > 1 && Math.abs(net) < 0.005;
 
     if (isTransfer) {

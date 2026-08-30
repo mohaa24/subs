@@ -7,7 +7,7 @@ import type { RefObject } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useTranslation } from "@/lib/i18n";
 import { api } from "@/lib/api";
-import type { UserBookmark } from "@/lib/api";
+import type { UserBookmark, UserRole } from "@/lib/api";
 import { quickActionByKey } from "@/lib/quick-actions";
 import {
   ArrowDownToLine,
@@ -52,6 +52,7 @@ type NavChild = {
   actionKey?: string;
   badge?: string;
   disabled?: boolean;
+  roles?: UserRole[];
 };
 
 type NavItem = {
@@ -132,6 +133,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Settings,
     children: [
       { label: "Administration", href: "/organizations", actionKey: "nav-administration" },
+      { label: "Financial Setup", href: "/settings/financial-setup", roles: ["super_user"] },
       { label: "User & Roles", href: "/users", actionKey: "nav-user-roles" },
       { label: "Form Settings", href: "/settings/form-config", actionKey: "nav-form-settings" },
       { label: "Zones", href: "/settings/zones", actionKey: "nav-zones" },
@@ -142,7 +144,8 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-const SEARCH_ITEMS: SearchItem[] = NAV_ITEMS.flatMap((item) => {
+function searchItemsForRole(role?: UserRole): SearchItem[] {
+  return NAV_ITEMS.flatMap((item) => {
   const firstChildHref = item.children?.find((child) => !child.disabled && child.href)?.href;
   const groupItem: SearchItem[] = item.href || firstChildHref || item.disabled
     ? [
@@ -154,14 +157,15 @@ const SEARCH_ITEMS: SearchItem[] = NAV_ITEMS.flatMap((item) => {
         },
       ]
     : [{ label: item.label, description: "Navigation group", disabled: true }];
-  const children = item.children?.map((child) => ({
+  const children = item.children?.filter((child) => !child.roles || (role && child.roles.includes(role))).map((child) => ({
     label: child.label,
     description: `${item.label}${child.disabled ? " - Coming soon" : ""}`,
     href: child.href,
     disabled: child.disabled,
   })) ?? [];
   return [...groupItem, ...children];
-});
+  });
+}
 
 function isActivePath(pathname: string, href?: string) {
   if (!href) return false;
@@ -178,10 +182,12 @@ function MenuPanel({
   onNavigate,
   bookmarks,
   onToggleBookmark,
+  role,
 }: {
   onNavigate?: () => void;
   bookmarks: UserBookmark[];
   onToggleBookmark: (actionKey: string) => void;
+  role?: UserRole;
 }) {
   const pathname = usePathname();
   const initialOpen = useMemo(() => {
@@ -257,7 +263,7 @@ function MenuPanel({
                   </button>
                   {open ? (
                     <div className="ml-7 mt-1 space-y-0.5 pb-1">
-                      {item.children.map((child) => {
+                      {item.children.filter((child) => !child.roles || (role && child.roles.includes(role))).map((child) => {
                         const childActive = isActivePath(pathname, child.href);
                         const childClass = `group flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
                           child.disabled
@@ -393,7 +399,7 @@ export function Header() {
   return (
     <>
       <aside className="civica-sidebar fixed inset-y-0 left-0 z-50 hidden w-[17rem] lg:block">
-        <MenuPanel bookmarks={bookmarks} onToggleBookmark={toggleBookmark} />
+        <MenuPanel bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} />
       </aside>
 
       <header className="civica-toolbar sticky top-0 z-40 hidden h-[4.5rem] items-center justify-between border-b border-border/60 bg-background/95 px-6 backdrop-blur-sm lg:flex">
@@ -407,7 +413,7 @@ export function Header() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <NavigationSearch />
+          <NavigationSearch role={user?.role} />
           <LanguageMenu
             langRef={desktopLangRef}
             langOpen={langOpen}
@@ -477,7 +483,7 @@ export function Header() {
             >
               <X className="h-4 w-4" />
             </button>
-            <MenuPanel onNavigate={() => setMenuOpen(false)} bookmarks={bookmarks} onToggleBookmark={toggleBookmark} />
+            <MenuPanel onNavigate={() => setMenuOpen(false)} bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} />
           </div>
         </div>
       ) : null}
@@ -485,17 +491,17 @@ export function Header() {
   );
 }
 
-function NavigationSearch() {
+function NavigationSearch({ role }: { role?: UserRole }) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const trimmedQuery = query.trim().toLowerCase();
   const results = useMemo(() => {
     if (!trimmedQuery) return [];
-    return SEARCH_ITEMS.filter((item) => {
+    return searchItemsForRole(role).filter((item) => {
       const haystack = `${item.label} ${item.description}`.toLowerCase();
       return haystack.includes(trimmedQuery);
     }).slice(0, 5);
-  }, [trimmedQuery]);
+  }, [role, trimmedQuery]);
   const showPanel = focused && trimmedQuery.length > 0;
 
   return (

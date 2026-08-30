@@ -28,6 +28,7 @@ import { accountingRouter } from "./routes/accounting.js";
 import { auditLogsRouter } from "./routes/audit-logs.js";
 import { publicMembershipExportRouter } from "./routes/public-membership-export.js";
 import { qzRouter } from "./routes/qz.js";
+import { openingBalanceMigrationsRouter } from "./routes/opening-balance-migrations.js";
 import { startCronJobs } from "./lib/cron.js";
 import { startMessageWorker } from "./lib/message-worker.js";
 
@@ -71,6 +72,7 @@ app.use("/due-types", dueTypesRouter);
 app.use("/accounting", accountingRouter);
 app.use("/audit-logs", auditLogsRouter);
 app.use("/integrations/qz", qzRouter);
+app.use("/opening-balance-migrations", openingBalanceMigrationsRouter);
 app.use("/", activityFeedRouter);
 
 app.listen(PORT, () => {

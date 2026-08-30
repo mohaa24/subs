@@ -11,11 +11,11 @@ datasource db {
 // ─── Organization ────────────────────────────────────────────────
 
 model Organization {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   name                 String
-  slug                 String   @unique
-  defaultMembershipFee Decimal  @db.Decimal(12, 2) @default(0)
-  isActive             Boolean  @default(true)
+  slug                 String    @unique
+  defaultMembershipFee Decimal   @default(0) @db.Decimal(12, 2)
+  isActive             Boolean   @default(true)
   logoUrl              String?
   receiptLogoUrl       String?
   contactPersonName    String?
@@ -23,40 +23,42 @@ model Organization {
   whatsAppSenderNumber String?
   address              String?
   joinDate             DateTime?
-  proRataMonthly       Boolean  @default(false)
-  proRataQuarterly     Boolean  @default(false)
-  proRataYearly        Boolean  @default(false)
-  lateFeePercentage    Decimal  @db.Decimal(5, 2) @default(5.0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  proRataMonthly       Boolean   @default(false)
+  proRataQuarterly     Boolean   @default(false)
+  proRataYearly        Boolean   @default(false)
+  lateFeePercentage    Decimal   @default(5.0) @db.Decimal(5, 2)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  users              User[]
-  persons            Person[]
-  memberships        Membership[]
-  paymentDues        PaymentDue[]
-  payments           Payment[]
-  membershipCreditEntries MembershipCreditLedger[]
-  membershipCreditAllocations MembershipCreditAllocation[]
-  billing            OrganizationBilling[]
-  formFieldConfigs   FormFieldConfig[]
-  announcementGroups AnnouncementGroup[]
-  announcements      Announcement[]
-  messageQueue       MessageQueue[]
-  messageSettings    MessageSettings?
-  messageTemplates   MessageTemplate[]
-  distributions      Distribution[]
-  zones              Zone[]
-  activityFeedItems  ActivityFeedItem[]
-  paymentDueAdjustments PaymentDueAdjustment[]
-  dueTypes           DueType[]
-  accountingAccounts AccountingAccount[]
-  accountingJournalEntries AccountingJournalEntry[]
-  accountingJournalLines AccountingJournalLine[]
-  fundPots           FundPot[]
-  fundTransactions   FundTransaction[]
-  cashTransactions   CashTransaction[]
-  bankingTransactions BankingTransaction[]
-  auditLogs           AuditLog[]
+  users                        User[]
+  persons                      Person[]
+  memberships                  Membership[]
+  paymentDues                  PaymentDue[]
+  payments                     Payment[]
+  membershipCreditEntries      MembershipCreditLedger[]
+  membershipCreditAllocations  MembershipCreditAllocation[]
+  billing                      OrganizationBilling[]
+  formFieldConfigs             FormFieldConfig[]
+  announcementGroups           AnnouncementGroup[]
+  announcements                Announcement[]
+  messageQueue                 MessageQueue[]
+  messageSettings              MessageSettings?
+  messageTemplates             MessageTemplate[]
+  distributions                Distribution[]
+  zones                        Zone[]
+  activityFeedItems            ActivityFeedItem[]
+  paymentDueAdjustments        PaymentDueAdjustment[]
+  dueTypes                     DueType[]
+  accountingAccounts           AccountingAccount[]
+  accountingJournalEntries     AccountingJournalEntry[]
+  accountingJournalLines       AccountingJournalLine[]
+  fundPots                     FundPot[]
+  fundTransactions             FundTransaction[]
+  cashTransactions             CashTransaction[]
+  bankingTransactions          BankingTransaction[]
+  auditLogs                    AuditLog[]
+  openingBalanceMigrations     OpeningBalanceMigration[]
+  openingBalanceMigrationLines OpeningBalanceMigrationLine[]
 }
 
 // ─── Organization Billing ────────────────────────────────────────
@@ -92,27 +94,31 @@ model User {
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  createdMemberships  Membership[]          @relation("CreatedByUser")
-  collectedPayments   Payment[]             @relation("CollectedByUser")
-  reversedPayments    Payment[]             @relation("ReversedByUser")
-  permissions         UserPermission[]
-  bookmarks           UserBookmark[]
-  billingMarks        OrganizationBilling[] @relation("BillingMarkedBy")
-  distributionRecords DistributionRecord[]  @relation("DistributedByUser")
-  createdCreditEntries MembershipCreditLedger[] @relation("CreditEntryCreatedBy")
-  createdCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationCreatedBy")
-  reversedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationReversedBy")
-  createdActivityFeedItems ActivityFeedItem[]   @relation("ActivityFeedCreatedBy")
-  createdPaymentDues  PaymentDue[]            @relation("PaymentDueCreatedBy")
-  createdPaymentDueAdjustments PaymentDueAdjustment[] @relation("DueAdjustmentCreatedBy")
-  createdAccountingAccounts AccountingAccount[] @relation("AccountingAccountCreatedBy")
-  createdAccountingJournalEntries AccountingJournalEntry[] @relation("AccountingJournalEntryCreatedBy")
-  createdCashTransactions CashTransaction[] @relation("CashTransactionCreatedBy")
-  reversedCashTransactions CashTransaction[] @relation("CashTransactionReversedBy")
-  reversedFundTransactions FundTransaction[] @relation("FundTransactionReversedBy")
-  createdBankingTransactions BankingTransaction[] @relation("BankingTransactionCreatedBy")
-  reversedBankingTransactions BankingTransaction[] @relation("BankingTransactionReversedBy")
-  auditLogs            AuditLog[]             @relation("AuditLogActor")
+  createdMemberships               Membership[]                 @relation("CreatedByUser")
+  collectedPayments                Payment[]                    @relation("CollectedByUser")
+  reversedPayments                 Payment[]                    @relation("ReversedByUser")
+  permissions                      UserPermission[]
+  bookmarks                        UserBookmark[]
+  billingMarks                     OrganizationBilling[]        @relation("BillingMarkedBy")
+  distributionRecords              DistributionRecord[]         @relation("DistributedByUser")
+  createdCreditEntries             MembershipCreditLedger[]     @relation("CreditEntryCreatedBy")
+  createdCreditAllocations         MembershipCreditAllocation[] @relation("CreditAllocationCreatedBy")
+  reversedCreditAllocations        MembershipCreditAllocation[] @relation("CreditAllocationReversedBy")
+  createdActivityFeedItems         ActivityFeedItem[]           @relation("ActivityFeedCreatedBy")
+  createdPaymentDues               PaymentDue[]                 @relation("PaymentDueCreatedBy")
+  createdPaymentDueAdjustments     PaymentDueAdjustment[]       @relation("DueAdjustmentCreatedBy")
+  createdAccountingAccounts        AccountingAccount[]          @relation("AccountingAccountCreatedBy")
+  createdAccountingJournalEntries  AccountingJournalEntry[]     @relation("AccountingJournalEntryCreatedBy")
+  createdCashTransactions          CashTransaction[]            @relation("CashTransactionCreatedBy")
+  reversedCashTransactions         CashTransaction[]            @relation("CashTransactionReversedBy")
+  reversedFundTransactions         FundTransaction[]            @relation("FundTransactionReversedBy")
+  createdBankingTransactions       BankingTransaction[]         @relation("BankingTransactionCreatedBy")
+  reversedBankingTransactions      BankingTransaction[]         @relation("BankingTransactionReversedBy")
+  createdOpeningBalanceMigrations  OpeningBalanceMigration[]    @relation("OpeningBalanceMigrationCreatedBy")
+  updatedOpeningBalanceMigrations  OpeningBalanceMigration[]    @relation("OpeningBalanceMigrationUpdatedBy")
+  postedOpeningBalanceMigrations   OpeningBalanceMigration[]    @relation("OpeningBalanceMigrationPostedBy")
+  reversedOpeningBalanceMigrations OpeningBalanceMigration[]    @relation("OpeningBalanceMigrationReversedBy")
+  auditLogs                        AuditLog[]                   @relation("AuditLogActor")
 }
 
 enum UserRole {
@@ -336,7 +342,7 @@ model Zone {
 // ─── Membership ──────────────────────────────────────────────────
 
 model Membership {
-  id                               String        @id @default(cuid())
+  id                               String           @id @default(cuid())
   membershipNo                     String
   organizationId                   String
   dateOfRegistration               DateTime
@@ -346,38 +352,38 @@ model Membership {
   spousePersonId                   String?
   isZakathEligible                 Boolean?
   areaCode                         Int?
-  land                             Boolean       @default(false)
-  houseOwnership                   Boolean       @default(false)
-  commercialProperties             Boolean       @default(false)
-  toiletFacility                   Boolean       @default(false)
-  vehicleOwnership                 Boolean       @default(false)
-  waterAccessibility               Boolean       @default(false)
-  electricity                      Boolean       @default(false)
+  land                             Boolean          @default(false)
+  houseOwnership                   Boolean          @default(false)
+  commercialProperties             Boolean          @default(false)
+  toiletFacility                   Boolean          @default(false)
+  vehicleOwnership                 Boolean          @default(false)
+  waterAccessibility               Boolean          @default(false)
+  electricity                      Boolean          @default(false)
   paymentPeriod                    PaymentPeriod
-  membershipFee                    Decimal       @db.Decimal(12, 2)
-  additionalVoluntaryContributions Decimal       @db.Decimal(12, 2) @default(0)
-  membershipFeeDiscount            Decimal       @db.Decimal(12, 2) @default(0)
-  totalContribution                Decimal       @db.Decimal(12, 2)
-  disability                       Boolean       @default(false)
-  isArchived                       Boolean       @default(false)
+  membershipFee                    Decimal          @db.Decimal(12, 2)
+  additionalVoluntaryContributions Decimal          @default(0) @db.Decimal(12, 2)
+  membershipFeeDiscount            Decimal          @default(0) @db.Decimal(12, 2)
+  totalContribution                Decimal          @db.Decimal(12, 2)
+  disability                       Boolean          @default(false)
+  isArchived                       Boolean          @default(false)
   createdByUserId                  String?
-  createdAt                        DateTime      @default(now())
-  updatedAt                        DateTime      @updatedAt
+  createdAt                        DateTime         @default(now())
+  updatedAt                        DateTime         @updatedAt
 
-  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  hod          Person                @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
-  spouse       Person?               @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
-  persons      Person[]              @relation("MembershipPersons")
-  createdBy    User?                 @relation("CreatedByUser", fields: [createdByUserId], references: [id])
-  dependents   MembershipDependent[]
-  counterpartyAccountingAccounts AccountingAccount[] @relation("AccountingAccountCounterpartyMembership")
-  dues         PaymentDue[]
-  payments     Payment[]
-  creditLedgerEntries MembershipCreditLedger[]
-  creditAllocations MembershipCreditAllocation[]
-  activityFeedItems    ActivityFeedItem[]
-  dueAdjustments       PaymentDueAdjustment[]
-  cashTransactionsAsCounterparty CashTransaction[] @relation("CashTransactionCounterpartyMembership")
+  organization                   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  hod                            Person                       @relation("HOD", fields: [hodPersonId], references: [id], onDelete: Restrict)
+  spouse                         Person?                      @relation("Spouse", fields: [spousePersonId], references: [id], onDelete: SetNull)
+  persons                        Person[]                     @relation("MembershipPersons")
+  createdBy                      User?                        @relation("CreatedByUser", fields: [createdByUserId], references: [id])
+  dependents                     MembershipDependent[]
+  counterpartyAccountingAccounts AccountingAccount[]          @relation("AccountingAccountCounterpartyMembership")
+  dues                           PaymentDue[]
+  payments                       Payment[]
+  creditLedgerEntries            MembershipCreditLedger[]
+  creditAllocations              MembershipCreditAllocation[]
+  activityFeedItems              ActivityFeedItem[]
+  dueAdjustments                 PaymentDueAdjustment[]
+  cashTransactionsAsCounterparty CashTransaction[]            @relation("CashTransactionCounterpartyMembership")
 }
 
 enum DependentGroup {
@@ -449,41 +455,41 @@ model DueType {
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  paymentDues   PaymentDue[]
+  paymentDues  PaymentDue[]
 
   @@unique([organizationId, name])
   @@unique([organizationId, systemKey])
 }
 
 model PaymentDue {
-  id             String    @id @default(cuid())
-  membershipId   String
-  organizationId String
-  dueTypeId      String
-  createdByUserId String?
-  dueDate        DateTime
-  period         String
-  isManual       Boolean   @default(false)
+  id                 String    @id @default(cuid())
+  membershipId       String
+  organizationId     String
+  dueTypeId          String
+  createdByUserId    String?
+  dueDate            DateTime
+  period             String
+  isManual           Boolean   @default(false)
   isSystemAdjustment Boolean   @default(false)
-  reason         String?   @db.Text
-  periodStart    DateTime?
-  periodEnd      DateTime?
-  amountDue      Decimal   @db.Decimal(12, 2)
-  amountPaid     Decimal   @db.Decimal(12, 2) @default(0)
-  lateFeeApplied Decimal   @db.Decimal(12, 2) @default(0)
-  lateFeeDate    DateTime?
-  status         DueStatus @default(pending)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  reason             String?   @db.Text
+  periodStart        DateTime?
+  periodEnd          DateTime?
+  amountDue          Decimal   @db.Decimal(12, 2)
+  amountPaid         Decimal   @default(0) @db.Decimal(12, 2)
+  lateFeeApplied     Decimal   @default(0) @db.Decimal(12, 2)
+  lateFeeDate        DateTime?
+  status             DueStatus @default(pending)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  dueType      DueType      @relation(fields: [dueTypeId], references: [id], onDelete: Restrict)
-  createdBy    User?        @relation("PaymentDueCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  payments     Payment[]
-  creditEntries MembershipCreditLedger[]
+  membership        Membership                   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization      Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dueType           DueType                      @relation(fields: [dueTypeId], references: [id], onDelete: Restrict)
+  createdBy         User?                        @relation("PaymentDueCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  payments          Payment[]
+  creditEntries     MembershipCreditLedger[]
   creditAllocations MembershipCreditAllocation[]
-  adjustments  PaymentDueAdjustment[]
+  adjustments       PaymentDueAdjustment[]
 
   @@index([membershipId, period])
   @@index([createdByUserId])
@@ -492,19 +498,19 @@ model PaymentDue {
 
 model PaymentDueAdjustment {
   id              String                   @id @default(cuid())
-  paymentDueId     String
-  membershipId     String
-  organizationId   String
-  amountDelta      Decimal                  @db.Decimal(12, 2)
-  adjustmentType   PaymentDueAdjustmentType
-  reason           String?                  @db.Text
-  createdByUserId  String?
-  createdAt        DateTime                 @default(now())
+  paymentDueId    String
+  membershipId    String
+  organizationId  String
+  amountDelta     Decimal                  @db.Decimal(12, 2)
+  adjustmentType  PaymentDueAdjustmentType
+  reason          String?                  @db.Text
+  createdByUserId String?
+  createdAt       DateTime                 @default(now())
 
-  paymentDue    PaymentDue    @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
-  membership    Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy     User?         @relation("DueAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  paymentDue   PaymentDue   @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("DueAdjustmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([paymentDueId, createdAt])
   @@index([membershipId, createdAt])
@@ -512,33 +518,33 @@ model PaymentDueAdjustment {
 }
 
 model Payment {
-  id                String    @id @default(cuid())
-  paymentDueId      String?
-  membershipId      String
-  organizationId    String
-  receiptNumber     String?
-  paymentKind       PaymentKind @default(due)
-  paymentMethod     PaymentMethod?
-  depositAccountId   String?
-  amount            Decimal   @db.Decimal(12, 2)
-  paymentDate       DateTime  @default(now())
-  collectedByUserId String
-  note              String?
-  outstandingAfterPayment Decimal? @db.Decimal(12, 2)
-  creditBalanceAfterPayment Decimal? @db.Decimal(12, 2)
-  isReversed        Boolean   @default(false)
-  reversedAt        DateTime?
-  reversedByUserId  String?
-  reversalReason    String?
-  createdAt         DateTime  @default(now())
+  id                        String         @id @default(cuid())
+  paymentDueId              String?
+  membershipId              String
+  organizationId            String
+  receiptNumber             String?
+  paymentKind               PaymentKind    @default(due)
+  paymentMethod             PaymentMethod?
+  depositAccountId          String?
+  amount                    Decimal        @db.Decimal(12, 2)
+  paymentDate               DateTime       @default(now())
+  collectedByUserId         String
+  note                      String?
+  outstandingAfterPayment   Decimal?       @db.Decimal(12, 2)
+  creditBalanceAfterPayment Decimal?       @db.Decimal(12, 2)
+  isReversed                Boolean        @default(false)
+  reversedAt                DateTime?
+  reversedByUserId          String?
+  reversalReason            String?
+  createdAt                 DateTime       @default(now())
 
-  paymentDue   PaymentDue?  @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
-  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  collectedBy  User         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
-  reversedBy   User?        @relation("ReversedByUser", fields: [reversedByUserId], references: [id])
-  depositAccount AccountingAccount? @relation("PaymentDepositAccount", fields: [depositAccountId], references: [id], onDelete: SetNull)
-  creditEntries MembershipCreditLedger[]
+  paymentDue               PaymentDue?                  @relation(fields: [paymentDueId], references: [id], onDelete: Cascade)
+  membership               Membership                   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  organization             Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  collectedBy              User                         @relation("CollectedByUser", fields: [collectedByUserId], references: [id])
+  reversedBy               User?                        @relation("ReversedByUser", fields: [reversedByUserId], references: [id])
+  depositAccount           AccountingAccount?           @relation("PaymentDepositAccount", fields: [depositAccountId], references: [id], onDelete: SetNull)
+  creditEntries            MembershipCreditLedger[]
   sourcedCreditAllocations MembershipCreditAllocation[] @relation("CreditAllocationSourcePayment")
 
   @@unique([organizationId, receiptNumber])
@@ -616,38 +622,39 @@ enum BankingTransactionType {
 }
 
 model AccountingAccount {
-  id              String                @id @default(cuid())
-  organizationId  String
-  name            String
-  accountType     AccountingAccountType
-  assetSubtype    AccountingAssetSubtype @default(other)
-  systemKey       String?
-  description     String?               @db.Text
-  bankName        String?
-  accountNumber   String?
-  counterpartyName String?
-  counterpartyPhone String?
+  id                       String                 @id @default(cuid())
+  organizationId           String
+  name                     String
+  accountType              AccountingAccountType
+  assetSubtype             AccountingAssetSubtype @default(other)
+  systemKey                String?
+  description              String?                @db.Text
+  bankName                 String?
+  accountNumber            String?
+  counterpartyName         String?
+  counterpartyPhone        String?
   counterpartyMembershipId String?
-  isActive        Boolean               @default(true)
-  closedAt        DateTime?
-  createdByUserId String?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  isActive                 Boolean                @default(true)
+  closedAt                 DateTime?
+  createdByUserId          String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  counterpartyMembership Membership? @relation("AccountingAccountCounterpartyMembership", fields: [counterpartyMembershipId], references: [id], onDelete: SetNull)
-  createdBy    User?        @relation("AccountingAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  journalLines AccountingJournalLine[]
-  paymentDeposits Payment[] @relation("PaymentDepositAccount")
-  fundPotsAsFundAccount FundPot[] @relation("FundPotFundAccount")
-  fundPotsAsSurplusAccount FundPot[] @relation("FundPotSurplusAccount")
-  fundPotsAsDeficitAccount FundPot[] @relation("FundPotDeficitAccount")
-  fundPotsAsOpeningAssetAccount FundPot[] @relation("FundPotOpeningAssetAccount")
-  fundTransactionsAsAssetAccount FundTransaction[] @relation("FundTransactionAssetAccount")
-  cashTransactionsAsAccount CashTransaction[] @relation("CashTransactionAccount")
-  cashTransactionsAsCashBankAccount CashTransaction[] @relation("CashTransactionCashBankAccount")
-  bankingTransactionsAsSource BankingTransaction[] @relation("BankingTransactionSourceAccount")
-  bankingTransactionsAsDestination BankingTransaction[] @relation("BankingTransactionDestinationAccount")
+  organization                      Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  counterpartyMembership            Membership?                   @relation("AccountingAccountCounterpartyMembership", fields: [counterpartyMembershipId], references: [id], onDelete: SetNull)
+  createdBy                         User?                         @relation("AccountingAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  journalLines                      AccountingJournalLine[]
+  paymentDeposits                   Payment[]                     @relation("PaymentDepositAccount")
+  fundPotsAsFundAccount             FundPot[]                     @relation("FundPotFundAccount")
+  fundPotsAsSurplusAccount          FundPot[]                     @relation("FundPotSurplusAccount")
+  fundPotsAsDeficitAccount          FundPot[]                     @relation("FundPotDeficitAccount")
+  fundPotsAsOpeningAssetAccount     FundPot[]                     @relation("FundPotOpeningAssetAccount")
+  fundTransactionsAsAssetAccount    FundTransaction[]             @relation("FundTransactionAssetAccount")
+  cashTransactionsAsAccount         CashTransaction[]             @relation("CashTransactionAccount")
+  cashTransactionsAsCashBankAccount CashTransaction[]             @relation("CashTransactionCashBankAccount")
+  bankingTransactionsAsSource       BankingTransaction[]          @relation("BankingTransactionSourceAccount")
+  bankingTransactionsAsDestination  BankingTransaction[]          @relation("BankingTransactionDestinationAccount")
+  openingBalanceMigrationLines      OpeningBalanceMigrationLine[]
 
   @@unique([organizationId, name])
   @@unique([organizationId, systemKey])
@@ -677,7 +684,7 @@ model FundPot {
   periodStart           DateTime?
   periodEnd             DateTime?
   status                FundPotStatus @default(active)
-  openingBalance        Decimal       @db.Decimal(12, 2) @default(0)
+  openingBalance        Decimal       @default(0) @db.Decimal(12, 2)
   fundAccountId         String
   surplusAccountId      String
   deficitAccountId      String
@@ -687,10 +694,10 @@ model FundPot {
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
-  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  fundAccount         AccountingAccount @relation("FundPotFundAccount", fields: [fundAccountId], references: [id], onDelete: Restrict)
-  surplusAccount      AccountingAccount @relation("FundPotSurplusAccount", fields: [surplusAccountId], references: [id], onDelete: Restrict)
-  deficitAccount      AccountingAccount @relation("FundPotDeficitAccount", fields: [deficitAccountId], references: [id], onDelete: Restrict)
+  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fundAccount         AccountingAccount  @relation("FundPotFundAccount", fields: [fundAccountId], references: [id], onDelete: Restrict)
+  surplusAccount      AccountingAccount  @relation("FundPotSurplusAccount", fields: [surplusAccountId], references: [id], onDelete: Restrict)
+  deficitAccount      AccountingAccount  @relation("FundPotDeficitAccount", fields: [deficitAccountId], references: [id], onDelete: Restrict)
   openingAssetAccount AccountingAccount? @relation("FundPotOpeningAssetAccount", fields: [openingAssetAccountId], references: [id], onDelete: SetNull)
   transactions        FundTransaction[]
 
@@ -700,37 +707,37 @@ model FundPot {
 }
 
 model FundTransaction {
-  id                String              @id @default(cuid())
-  organizationId    String
-  fundPotId         String
-  transactionType   FundTransactionType
-  amount            Decimal             @db.Decimal(12, 2)
-  transactionDate   DateTime
-  assetAccountId    String?
-  paidByName        String?
-  paidByPhone       String?
+  id                 String              @id @default(cuid())
+  organizationId     String
+  fundPotId          String
+  transactionType    FundTransactionType
+  amount             Decimal             @db.Decimal(12, 2)
+  transactionDate    DateTime
+  assetAccountId     String?
+  paidByName         String?
+  paidByPhone        String?
   paidByMembershipId String?
-  description       String?             @db.Text
-  memo              String?             @db.Text
-  receiptNumber     String?
-  journalEntryId    String?
-  reversedAt        DateTime?
-  reversedByUserId  String?
-  reversalReason    String?             @db.Text
-  createdByUserId   String?
-  createdAt         DateTime            @default(now())
+  description        String?             @db.Text
+  memo               String?             @db.Text
+  receiptNumber      String?
+  journalEntryId     String?
+  reversedAt         DateTime?
+  reversedByUserId   String?
+  reversalReason     String?             @db.Text
+  createdByUserId    String?
+  createdAt          DateTime            @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  fundPot      FundPot      @relation(fields: [fundPotId], references: [id], onDelete: Cascade)
-  assetAccount AccountingAccount? @relation("FundTransactionAssetAccount", fields: [assetAccountId], references: [id], onDelete: SetNull)
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fundPot      FundPot                 @relation(fields: [fundPotId], references: [id], onDelete: Cascade)
+  assetAccount AccountingAccount?      @relation("FundTransactionAssetAccount", fields: [assetAccountId], references: [id], onDelete: SetNull)
   journalEntry AccountingJournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
-  reversedBy   User?        @relation("FundTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+  reversedBy   User?                   @relation("FundTransactionReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
 
+  @@unique([organizationId, receiptNumber])
   @@index([organizationId, transactionDate])
   @@index([fundPotId, transactionDate])
   @@index([journalEntryId])
   @@index([reversedByUserId])
-  @@unique([organizationId, receiptNumber])
 }
 
 model AccountingJournalEntry {
@@ -745,15 +752,91 @@ model AccountingJournalEntry {
   createdByUserId String?
   createdAt       DateTime                   @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?        @relation("AccountingJournalEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  lines        AccountingJournalLine[]
-  fundTransactions FundTransaction[]
-  cashTransactions CashTransaction[] @relation("CashTransactionJournalEntry")
-  bankingTransactions BankingTransaction[]
+  organization                    Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy                       User?                    @relation("AccountingJournalEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  lines                           AccountingJournalLine[]
+  fundTransactions                FundTransaction[]
+  cashTransactions                CashTransaction[]        @relation("CashTransactionJournalEntry")
+  bankingTransactions             BankingTransaction[]
+  openingBalanceMigration         OpeningBalanceMigration? @relation("OpeningBalanceMigrationJournal")
+  openingBalanceMigrationReversal OpeningBalanceMigration? @relation("OpeningBalanceMigrationReversalJournal")
 
   @@index([organizationId, entryDate])
   @@index([organizationId, referenceType, referenceId])
+}
+
+enum OpeningBalanceMigrationKind {
+  original
+  correction
+  replacement
+}
+
+enum OpeningBalanceMigrationStatus {
+  draft
+  posted
+  reversed
+}
+
+model OpeningBalanceMigration {
+  id                     String                        @id @default(cuid())
+  organizationId         String
+  cutoffDate             DateTime                      @db.Date
+  description            String                        @db.Text
+  kind                   OpeningBalanceMigrationKind   @default(original)
+  status                 OpeningBalanceMigrationStatus @default(draft)
+  parentMigrationId      String?
+  journalEntryId         String?                       @unique
+  reversalJournalEntryId String?                       @unique
+  createdByUserId        String
+  updatedByUserId        String
+  postedByUserId         String?
+  reversedByUserId       String?
+  correctionReason       String?                       @db.Text
+  reversalReason         String?                       @db.Text
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  postedAt               DateTime?
+  reversedAt             DateTime?
+
+  organization         Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentMigration      OpeningBalanceMigration?      @relation("OpeningBalanceMigrationParent", fields: [parentMigrationId], references: [id], onDelete: Restrict)
+  childMigrations      OpeningBalanceMigration[]     @relation("OpeningBalanceMigrationParent")
+  journalEntry         AccountingJournalEntry?       @relation("OpeningBalanceMigrationJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntry AccountingJournalEntry?       @relation("OpeningBalanceMigrationReversalJournal", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+  createdBy            User                          @relation("OpeningBalanceMigrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  updatedBy            User                          @relation("OpeningBalanceMigrationUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  postedBy             User?                         @relation("OpeningBalanceMigrationPostedBy", fields: [postedByUserId], references: [id], onDelete: Restrict)
+  reversedBy           User?                         @relation("OpeningBalanceMigrationReversedBy", fields: [reversedByUserId], references: [id], onDelete: Restrict)
+  lines                OpeningBalanceMigrationLine[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, cutoffDate])
+  @@index([parentMigrationId])
+}
+
+model OpeningBalanceMigrationLine {
+  id                     String                 @id @default(cuid())
+  organizationId         String
+  migrationId            String
+  accountId              String
+  accountNameSnapshot    String
+  accountTypeSnapshot    AccountingAccountType
+  accountSubtypeSnapshot AccountingAssetSubtype
+  systemKeySnapshot      String?
+  isSystemCalculated     Boolean                @default(false)
+  currentBalance         Decimal                @db.Decimal(14, 2)
+  verifiedBalance        Decimal                @db.Decimal(14, 2)
+  adjustmentDebit        Decimal                @default(0) @db.Decimal(14, 2)
+  adjustmentCredit       Decimal                @default(0) @db.Decimal(14, 2)
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  migration    OpeningBalanceMigration @relation(fields: [migrationId], references: [id], onDelete: Cascade)
+  account      AccountingAccount       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([migrationId, accountId])
+  @@index([organizationId, accountId])
 }
 
 model CashTransaction {
@@ -843,9 +926,9 @@ model AccountingJournalLine {
   memo           String?                   @db.Text
   createdAt      DateTime                  @default(now())
 
-  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  journalEntry AccountingJournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
-  account      AccountingAccount       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journalEntry AccountingJournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      AccountingAccount      @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, accountId, createdAt])
   @@index([journalEntryId])
@@ -886,15 +969,15 @@ model ActivityFeedItem {
 }
 
 model AuditLog {
-  id              String   @id @default(cuid())
-  organizationId  String
-  actorUserId     String?
-  action          String
-  entityType      String
-  entityId        String?
-  summary         String   @db.Text
-  metadata        Json?
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  organizationId String
+  actorUserId    String?
+  action         String
+  entityType     String
+  entityId       String?
+  summary        String   @db.Text
+  metadata       Json?
+  createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   actor        User?        @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
@@ -955,16 +1038,16 @@ model MembershipCreditAllocation {
 // ─── Announcements ───────────────────────────────────────────────
 
 model AnnouncementGroup {
-  id             String   @id @default(cuid())
-  name           String
-  description    String?
-  organizationId String
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  organizationId  String
   createdByUserId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members      AnnouncementGroupMember[]
+  organization  Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members       AnnouncementGroupMember[]
   announcements Announcement[]
 }
 
@@ -1021,24 +1104,24 @@ enum MessageStatus {
 }
 
 model MessageQueue {
-  id             String           @id @default(cuid())
-  organizationId String
-  recipientPhone String
-  eventType      MessageEventType
-  messageBody    String
-  status         MessageStatus    @default(pending)
-  createdAt      DateTime         @default(now())
-  sentAt         DateTime?
-  deliveredAt    DateTime?
+  id                String           @id @default(cuid())
+  organizationId    String
+  recipientPhone    String
+  eventType         MessageEventType
+  messageBody       String
+  status            MessageStatus    @default(pending)
+  createdAt         DateTime         @default(now())
+  sentAt            DateTime?
+  deliveredAt       DateTime?
   providerMessageId String?
-  providerStatus String?
-  attemptCount   Int              @default(0)
-  lastAttemptAt  DateTime?
-  nextAttemptAt  DateTime?        @default(now())
-  lastError      String?          @db.Text
-  smsCount       Int?
-  cost           Decimal?         @db.Decimal(12, 4)
-  deliveryEnabled Boolean         @default(true)
+  providerStatus    String?
+  attemptCount      Int              @default(0)
+  lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?        @default(now())
+  lastError         String?          @db.Text
+  smsCount          Int?
+  cost              Decimal?         @db.Decimal(12, 4)
+  deliveryEnabled   Boolean          @default(true)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -1047,12 +1130,12 @@ model MessageQueue {
 }
 
 model MessageSettings {
-  id             String   @id @default(cuid())
-  organizationId String   @unique
-  monthlyQuota   Int      @default(100)
+  id              String   @id @default(cuid())
+  organizationId  String   @unique
+  monthlyQuota    Int      @default(100)
   updatedByUserId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
@@ -1099,16 +1182,16 @@ model Distribution {
 }
 
 model DistributionRecord {
-  id                String   @id @default(cuid())
-  distributionId    String
-  personId          String
-  distributedAt     DateTime @default(now())
+  id                  String   @id @default(cuid())
+  distributionId      String
+  personId            String
+  distributedAt       DateTime @default(now())
   distributedByUserId String?
-  distributionDate  String
+  distributionDate    String
 
-  distribution Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
-  person       Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
-  distributedBy User?       @relation("DistributedByUser", fields: [distributedByUserId], references: [id])
+  distribution  Distribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  person        Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  distributedBy User?        @relation("DistributedByUser", fields: [distributedByUserId], references: [id])
 
   @@unique([distributionId, personId, distributionDate])
 }

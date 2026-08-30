@@ -32,6 +32,7 @@ const accounting_js_1 = require("./routes/accounting.js");
 const audit_logs_js_1 = require("./routes/audit-logs.js");
 const public_membership_export_js_1 = require("./routes/public-membership-export.js");
 const qz_js_1 = require("./routes/qz.js");
+const opening_balance_migrations_js_1 = require("./routes/opening-balance-migrations.js");
 const cron_js_1 = require("./lib/cron.js");
 const message_worker_js_1 = require("./lib/message-worker.js");
 const app = (0, express_1.default)();
@@ -70,6 +71,7 @@ app.use("/due-types", due_types_js_1.dueTypesRouter);
 app.use("/accounting", accounting_js_1.accountingRouter);
 app.use("/audit-logs", audit_logs_js_1.auditLogsRouter);
 app.use("/integrations/qz", qz_js_1.qzRouter);
+app.use("/opening-balance-migrations", opening_balance_migrations_js_1.openingBalanceMigrationsRouter);
 app.use("/", activity_feed_js_1.activityFeedRouter);
 app.listen(PORT, () => {
     console.log(`BE running on http://localhost:${PORT}`);
