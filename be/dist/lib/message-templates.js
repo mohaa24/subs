@@ -157,6 +157,7 @@ async function queueTemplatedMessage(tx, input) {
             eventType: input.eventType,
             messageBody: body,
             deliveryEnabled: true,
+            nextAttemptAt: input.nextAttemptAt,
         },
     });
 }

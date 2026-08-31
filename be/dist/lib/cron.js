@@ -16,8 +16,33 @@ const CREDIT_SWEEP_TRANSACTION_OPTIONS = {
     maxWait: 10000,
     timeout: 10000,
 };
+const SRI_LANKA_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+const DAILY_CRON_MINUTE = 5;
+const DUE_SMS_HOUR = 8;
+function sriLankaDate(date = new Date()) {
+    return new Date(date.getTime() + SRI_LANKA_OFFSET_MS);
+}
+function sriLankaDateParts(date = new Date()) {
+    const local = sriLankaDate(date);
+    return {
+        year: local.getUTCFullYear(),
+        month: local.getUTCMonth(),
+        day: local.getUTCDate(),
+    };
+}
+function sriLankaTimeAsUtc(year, month, day, hour, minute = 0) {
+    return new Date(Date.UTC(year, month, day, hour, minute) - SRI_LANKA_OFFSET_MS);
+}
+function nextDailyCronRun(now = new Date()) {
+    const { year, month, day } = sriLankaDateParts(now);
+    let next = sriLankaTimeAsUtc(year, month, day, 0, DAILY_CRON_MINUTE);
+    if (next.getTime() <= now.getTime()) {
+        next = sriLankaTimeAsUtc(year, month, day + 1, 0, DAILY_CRON_MINUTE);
+    }
+    return next;
+}
 function periodString(date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 function endOfDueMonth(date) {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -27,7 +52,9 @@ function isPastDueGracePeriod(dueDate, now = new Date()) {
 }
 async function generateMonthlyDues() {
     const now = new Date();
-    const targetDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { year, month } = sriLankaDateParts(now);
+    const targetDate = new Date(Date.UTC(year, month, 1));
+    const dueSmsSendAt = sriLankaTimeAsUtc(year, month, 1, DUE_SMS_HOUR);
     const period = periodString(targetDate);
     console.log(`[Cron] Generating dues for period ${period}`);
     const memberships = await prisma_js_1.prisma.membership.findMany({
@@ -95,7 +122,7 @@ async function generateMonthlyDues() {
         const totalOutstanding = (outstandingTotals._sum.amountDue ?? new library_1.Decimal(0)).sub(outstandingTotals._sum.amountPaid ?? new library_1.Decimal(0));
         const recipientPhone = m.hod?.mobileNumber || m.hod?.whatsAppNumber;
         if (m.hod && recipientPhone) {
-            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, recipientPhone, m.membershipNo, period, m.totalContribution.toFixed(2), (totalOutstanding.gt(0) ? totalOutstanding : new library_1.Decimal(0)).toFixed(2), m.hod.nameWithInitials || m.hod.fullName || "Member", "membership");
+            await (0, message_queue_js_1.queuePaymentDueGenerated)(m.organizationId, recipientPhone, m.membershipNo, period, m.totalContribution.toFixed(2), (totalOutstanding.gt(0) ? totalOutstanding : new library_1.Decimal(0)).toFixed(2), m.hod.nameWithInitials || m.hod.fullName || "Member", "membership", dueSmsSendAt);
         }
     }
     console.log(`[Cron] Dues generated: ${created}, skipped: ${skipped}, auto-applied credit: ${autoAppliedCredit.toString()}`);
@@ -223,14 +250,13 @@ async function generateOrgBilling() {
     return { created };
 }
 function startCronJobs() {
-    const ONE_HOUR = 60 * 60 * 1000;
-    const ONE_DAY = 24 * ONE_HOUR;
     async function runMonthlyCron() {
         const now = new Date();
-        if (now.getDate() === 1) {
+        const sriLankaNow = sriLankaDate(now);
+        if (sriLankaNow.getUTCDate() === 1) {
             try {
                 await generateMonthlyDues();
-                if (now.getMonth() === 0) {
+                if (sriLankaNow.getUTCMonth() === 0) {
                     await generateOrgBilling();
                 }
             }
@@ -246,7 +272,15 @@ function startCronJobs() {
             console.error("[Cron] Late fee/overdue check failed:", err);
         }
     }
-    runMonthlyCron();
-    setInterval(runMonthlyCron, ONE_DAY);
-    console.log("[Cron] Cron jobs started (daily check interval)");
+    const scheduleNextRun = () => {
+        const nextRun = nextDailyCronRun();
+        setTimeout(async () => {
+            await runMonthlyCron();
+            scheduleNextRun();
+        }, nextRun.getTime() - Date.now());
+        console.log(`[Cron] Next daily check: ${nextRun.toISOString()} (00:05 Asia/Colombo)`);
+    };
+    void runMonthlyCron();
+    scheduleNextRun();
+    console.log("[Cron] Cron jobs started (Asia/Colombo schedule; due SMS at 08:00)");
 }

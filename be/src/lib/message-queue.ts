@@ -39,7 +39,8 @@ export async function queuePaymentDueGenerated(
   amount: string,
   outstandingAmount: string,
   memberName = "Member",
-  dueType = "membership"
+  dueType = "membership",
+  nextAttemptAt?: Date
 ) {
   return queueTemplatedMessage(prisma as unknown as MessageWriter, {
     organizationId,
@@ -53,6 +54,7 @@ export async function queuePaymentDueGenerated(
       amount,
       total_outstanding_due: outstandingAmount,
     },
+    nextAttemptAt,
   });
 }
 

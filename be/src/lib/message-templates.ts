@@ -139,6 +139,7 @@ export async function queueTemplatedMessage(
     recipientPhone: string;
     eventType: MessageEventType;
     variables: Record<string, string | number | null | undefined>;
+    nextAttemptAt?: Date;
   }
 ) {
   if (!input.recipientPhone.trim()) return null;
@@ -175,6 +176,7 @@ export async function queueTemplatedMessage(
       eventType: input.eventType,
       messageBody: body,
       deliveryEnabled: true,
+      nextAttemptAt: input.nextAttemptAt,
     },
   });
 }

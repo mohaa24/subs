@@ -28,7 +28,7 @@ async function queueMessage(organizationId, recipientPhone, eventType, messageBo
         data: { organizationId, recipientPhone, eventType, messageBody },
     });
 }
-async function queuePaymentDueGenerated(organizationId, recipientPhone, membershipNo, period, amount, outstandingAmount, memberName = "Member", dueType = "membership") {
+async function queuePaymentDueGenerated(organizationId, recipientPhone, membershipNo, period, amount, outstandingAmount, memberName = "Member", dueType = "membership", nextAttemptAt) {
     return (0, message_templates_js_1.queueTemplatedMessage)(prisma_js_1.prisma, {
         organizationId,
         recipientPhone,
@@ -41,6 +41,7 @@ async function queuePaymentDueGenerated(organizationId, recipientPhone, membersh
             amount,
             total_outstanding_due: outstandingAmount,
         },
+        nextAttemptAt,
     });
 }
 async function queuePaymentReceived(tx, input) {
