@@ -172,21 +172,21 @@ async function announcementList(organizationId: string) {
     include: {
       template: { select: { id: true, name: true } },
       sentBy: { select: { id: true, email: true } },
-      messages: { select: { status: true, smsCount: true, lastError: true } },
+      messages: { select: { status: true, smsCount: true } },
     },
   });
   return announcements.map(({ messages, ...announcement }) => {
     const consumedSmsCount = messages.reduce((sum, item) => sum + (item.smsCount ?? 0), 0);
-    const sentCount = messages.filter((item) => item.status === MessageStatus.submitted || item.status === MessageStatus.sent || item.status === MessageStatus.delivered).length;
-    const errorCount = messages.filter((item) => item.status === MessageStatus.failed || (item.status === MessageStatus.pending && Boolean(item.lastError))).length;
-    const queuedCount = Math.max(0, messages.length - sentCount - errorCount);
-    let displayStatus: AnnouncementStatus | "partially_sent" = announcement.status;
+    let displayStatus: AnnouncementStatus = announcement.status;
     if (announcement.status !== AnnouncementStatus.draft && messages.length) {
-      if (errorCount > 0) displayStatus = sentCount > 0 ? AnnouncementStatus.partially_failed : AnnouncementStatus.failed;
-      else if (queuedCount > 0) displayStatus = sentCount > 0 ? "partially_sent" : AnnouncementStatus.queued;
+      const pending = messages.filter((item) => item.status === MessageStatus.pending || item.status === MessageStatus.submitted).length;
+      const failed = messages.filter((item) => item.status === MessageStatus.failed).length;
+      if (pending > 0) displayStatus = AnnouncementStatus.queued;
+      else if (failed === messages.length) displayStatus = AnnouncementStatus.failed;
+      else if (failed > 0) displayStatus = AnnouncementStatus.partially_failed;
       else displayStatus = AnnouncementStatus.sent;
     }
-    return { ...announcement, status: displayStatus, consumedSmsCount, sentCount, errorCount, queuedCount };
+    return { ...announcement, status: displayStatus, consumedSmsCount };
   });
 }
 
@@ -377,7 +377,7 @@ announcementsRouter.get("/announcements/:id", async (req, res) => {
     include: {
       template: { select: { id: true, name: true } },
       sentBy: { select: { id: true, email: true } },
-      recipients: { include: { messageQueue: { select: { status: true, smsCount: true, lastError: true, providerStatus: true, lastAttemptAt: true } } }, orderBy: { membershipNo: "asc" } },
+      recipients: { include: { messageQueue: { select: { status: true, smsCount: true, lastError: true } } }, orderBy: { membershipNo: "asc" } },
     },
   });
   if (!announcement || !assertOrgAccess(req, announcement.organizationId)) return res.status(404).json({ error: "Announcement not found" });
