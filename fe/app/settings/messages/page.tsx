@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
+import { smsSegmentInfo } from "@/lib/sms-segments";
 
 type MessageTemplate = {
   eventType: string;
@@ -121,6 +122,10 @@ export default function MessageSettingsPage() {
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.eventType === selectedTemplateType) ?? null,
     [selectedTemplateType, templates]
+  );
+  const selectedTemplateSegments = useMemo(
+    () => smsSegmentInfo(selectedTemplate?.body ?? ""),
+    [selectedTemplate?.body]
   );
 
   function updateTemplate(eventType: string, patch: Partial<MessageTemplate>) {
@@ -344,6 +349,13 @@ export default function MessageSettingsPage() {
                     updateTemplate(selectedTemplate.eventType, { body: event.target.value })
                   }
                 />
+                <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <span>{selectedTemplateSegments.encoding === "unicode" ? "Unicode (Sinhala/Tamil)" : "Plain text"} · {selectedTemplateSegments.characters} characters</span>
+                    <strong className="text-foreground">{selectedTemplateSegments.segments} segments</strong>
+                  </div>
+                  <p className="mt-1">{selectedTemplateSegments.remainingInSegment} characters remaining in this segment. Placeholder values can change the final recipient count.</p>
+                </div>
               </div>
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">

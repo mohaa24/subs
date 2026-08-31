@@ -152,6 +152,14 @@ async function resolveAudience(organizationId, audience, message) {
         missingPhone,
         recipients,
         estimatedSmsCount: recipients.reduce((sum, recipient) => sum + recipient.estimatedSmsCount, 0),
+        overLimitRecipients: recipients
+            .filter((recipient) => recipient.estimatedSmsCount > message_templates_js_1.MAX_SMS_SEGMENTS)
+            .map((recipient) => ({
+            membershipId: recipient.membershipId,
+            membershipNo: recipient.membershipNo,
+            memberName: recipient.memberName,
+            estimatedSmsCount: recipient.estimatedSmsCount,
+        })),
     };
 }
 async function announcementList(organizationId) {
@@ -361,7 +369,18 @@ exports.announcementsRouter.post("/announcements/estimate", async (req, res) => 
         return res.status(403).json({ error: "Organization scope required" });
     try {
         const [estimate, quota] = await Promise.all([resolveAudience(organizationId, parsed.data.audience, parsed.data.message.trim()), (0, message_templates_js_1.getMessageUsage)(organizationId)]);
-        return res.json({ selectedCount: estimate.selectedCount, eligibleCount: estimate.eligibleCount, missingPhone: estimate.missingPhone, estimatedSmsCount: estimate.estimatedSmsCount, quota, canSend: estimate.estimatedSmsCount > 0 && estimate.estimatedSmsCount <= quota.remaining });
+        return res.json({
+            selectedCount: estimate.selectedCount,
+            eligibleCount: estimate.eligibleCount,
+            missingPhone: estimate.missingPhone,
+            estimatedSmsCount: estimate.estimatedSmsCount,
+            overLimitRecipients: estimate.overLimitRecipients,
+            maximumSegmentsPerRecipient: message_templates_js_1.MAX_SMS_SEGMENTS,
+            quota,
+            canSend: estimate.estimatedSmsCount > 0 &&
+                estimate.overLimitRecipients.length === 0 &&
+                estimate.estimatedSmsCount <= quota.remaining,
+        });
     }
     catch (error) {
         return res.status(400).json({ error: error instanceof Error ? error.message : "Unable to estimate announcement" });
@@ -430,6 +449,12 @@ exports.announcementsRouter.post("/announcements/send", async (req, res) => {
         const resolved = await resolveAudience(organizationId, parsed.data.audience, parsed.data.message);
         if (!resolved.eligibleCount)
             return res.status(400).json({ error: "None of the selected members has a mobile or WhatsApp number" });
+        if (resolved.overLimitRecipients.length) {
+            return res.status(400).json({
+                error: `Announcement messages are limited to ${message_templates_js_1.MAX_SMS_SEGMENTS} SMS segments per recipient`,
+                overLimitRecipients: resolved.overLimitRecipients,
+            });
+        }
         if (resolved.estimatedSmsCount !== parsed.data.confirmedEstimatedSmsCount) {
             return res.status(409).json({ error: "The quota estimate changed. Please review and confirm again.", estimatedSmsCount: resolved.estimatedSmsCount });
         }

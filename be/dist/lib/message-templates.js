@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MESSAGE_TEMPLATE_DEFINITIONS = void 0;
+exports.MAX_SMS_SEGMENTS = exports.MESSAGE_TEMPLATE_DEFINITIONS = void 0;
 exports.getTemplateDefinition = getTemplateDefinition;
 exports.validateTemplateBody = validateTemplateBody;
 exports.renderMessageTemplate = renderMessageTemplate;
 exports.normalizeRecipientPhone = normalizeRecipientPhone;
+exports.smsEncoding = smsEncoding;
+exports.smsSegmentInfo = smsSegmentInfo;
 exports.estimateSmsSegments = estimateSmsSegments;
 exports.queueTemplatedMessage = queueTemplatedMessage;
 exports.currentQuotaPeriod = currentQuotaPeriod;
@@ -123,11 +125,32 @@ function normalizeRecipientPhone(phone) {
         return `+${compact}`;
     return compact;
 }
+exports.MAX_SMS_SEGMENTS = 4;
+function smsEncoding(message) {
+    return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
+}
+function smsSegmentInfo(message) {
+    const encoding = smsEncoding(message);
+    const characters = message.length;
+    const singleLimit = encoding === "unicode" ? 70 : 155;
+    const multipartLimit = encoding === "unicode" ? 67 : 155;
+    const segments = characters === 0
+        ? 0
+        : characters <= singleLimit
+            ? 1
+            : Math.ceil(characters / multipartLimit);
+    const currentCapacity = segments <= 1 ? singleLimit : segments * multipartLimit;
+    return {
+        encoding,
+        characters,
+        segments,
+        perSegmentLimit: segments <= 1 ? singleLimit : multipartLimit,
+        remainingInSegment: Math.max(0, currentCapacity - characters),
+        maximumCharacters: exports.MAX_SMS_SEGMENTS * multipartLimit,
+    };
+}
 function estimateSmsSegments(message) {
-    const unicode = !/^[\x00-\x7F]*$/.test(message);
-    const singleLimit = unicode ? 70 : 160;
-    const multipartLimit = unicode ? 67 : 153;
-    return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
+    return Math.max(1, smsSegmentInfo(message).segments);
 }
 async function queueTemplatedMessage(tx, input) {
     if (!input.recipientPhone.trim())

@@ -132,11 +132,35 @@ export function normalizeRecipientPhone(phone: string) {
   return compact;
 }
 
+export const MAX_SMS_SEGMENTS = 4;
+
+export function smsEncoding(message: string): "plain" | "unicode" {
+  return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
+}
+
+export function smsSegmentInfo(message: string) {
+  const encoding = smsEncoding(message);
+  const characters = message.length;
+  const singleLimit = encoding === "unicode" ? 70 : 155;
+  const multipartLimit = encoding === "unicode" ? 67 : 155;
+  const segments = characters === 0
+    ? 0
+    : characters <= singleLimit
+      ? 1
+      : Math.ceil(characters / multipartLimit);
+  const currentCapacity = segments <= 1 ? singleLimit : segments * multipartLimit;
+  return {
+    encoding,
+    characters,
+    segments,
+    perSegmentLimit: segments <= 1 ? singleLimit : multipartLimit,
+    remainingInSegment: Math.max(0, currentCapacity - characters),
+    maximumCharacters: MAX_SMS_SEGMENTS * multipartLimit,
+  };
+}
+
 export function estimateSmsSegments(message: string) {
-  const unicode = !/^[\x00-\x7F]*$/.test(message);
-  const singleLimit = unicode ? 70 : 160;
-  const multipartLimit = unicode ? 67 : 153;
-  return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
+  return Math.max(1, smsSegmentInfo(message).segments);
 }
 
 export async function queueTemplatedMessage(

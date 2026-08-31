@@ -14,9 +14,6 @@ function normalizedStatus(value) {
 function nextPollDate() {
     return new Date(Date.now() + 5 * 60 * 1000);
 }
-function smsEncoding(message) {
-    return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
-}
 async function processMessageQueueBatch(limit = 25) {
     const senderId = process.env.TEXTLK_SENDER_ID?.trim();
     if (!senderId)
@@ -58,7 +55,7 @@ async function processMessageQueueBatch(limit = 25) {
                     recipient: message.recipientPhone,
                     senderId,
                     message: message.messageBody,
-                    type: smsEncoding(message.messageBody),
+                    type: (0, message_templates_js_1.smsEncoding)(message.messageBody),
                 });
             const status = normalizedStatus(provider.status);
             const common = {

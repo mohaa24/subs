@@ -1,7 +1,7 @@
 import { MessageStatus } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { getTextLkMessage, sendTextLkSms } from "./textlk.js";
-import { currentQuotaPeriod, estimateSmsSegments, getMessageUsage } from "./message-templates.js";
+import { currentQuotaPeriod, estimateSmsSegments, getMessageUsage, smsEncoding } from "./message-templates.js";
 
 const FINAL_DELIVERED = new Set(["delivered"]);
 const FINAL_FAILED = new Set(["failed", "rejected", "expired", "undelivered", "cancelled"]);
@@ -12,10 +12,6 @@ function normalizedStatus(value: string | null) {
 
 function nextPollDate() {
   return new Date(Date.now() + 5 * 60 * 1000);
-}
-
-function smsEncoding(message: string): "plain" | "unicode" {
-  return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
 }
 
 export async function processMessageQueueBatch(limit = 25) {
