@@ -40,7 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type Status = "draft" | "scheduled" | "queued" | "sent" | "partially_failed" | "failed";
+type Status = "draft" | "scheduled" | "queued" | "sent" | "partially_sent" | "partially_failed" | "failed";
 type Audience = { allMembers: boolean; groupIds: string[]; membershipIds: string[]; excludedMembershipIds: string[] };
 type MemberOption = { id: string; membershipNo: string; memberName: string; hasPhone: boolean };
 type Template = { id: string; name: string; description?: string | null; body: string; updatedAt: string };
@@ -54,11 +54,22 @@ type Announcement = {
   recipientCount: number;
   estimatedSmsCount: number;
   consumedSmsCount: number;
+  sentCount: number;
+  errorCount: number;
+  queuedCount: number;
   status: Status;
   sentAt?: string | null;
   updatedAt: string;
   template?: { id: string; name: string } | null;
   sentBy?: { id: string; email: string } | null;
+};
+type AnnouncementDetail = Announcement & {
+  recipients: Array<{
+    id: string;
+    membershipNo: string;
+    memberName: string;
+    messageQueue?: { status: string; smsCount?: number | null; lastError?: string | null; providerStatus?: string | null; lastAttemptAt?: string | null } | null;
+  }>;
 };
 type Quota = { period: string; monthlyQuota: number; used: number; reserved: number; remaining: number; queued: number };
 type Estimate = {
@@ -77,6 +88,7 @@ function statusStyle(status: Status) {
   if (status === "sent") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (status === "draft") return "bg-slate-50 text-slate-700 border-slate-200";
   if (status === "queued" || status === "scheduled") return "bg-sky-50 text-sky-700 border-sky-200";
+  if (status === "partially_sent" || status === "partially_failed") return "bg-amber-50 text-amber-700 border-amber-200";
   return "bg-red-50 text-red-700 border-red-200";
 }
 
@@ -106,6 +118,10 @@ export function AnnouncementsWorkspace({ section = "announcements" }: { section?
   const [estimating, setEstimating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [announcementDetail, setAnnouncementDetail] = useState<AnnouncementDetail | null>(null);
+  const [detailSummary, setDetailSummary] = useState<Announcement | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [recipientPickerOpen, setRecipientPickerOpen] = useState(false);
   const [recipientPickerMode, setRecipientPickerMode] = useState<"all" | "add">("add");
   const messageRef = useRef<HTMLTextAreaElement>(null);
@@ -146,6 +162,14 @@ export function AnnouncementsWorkspace({ section = "announcements" }: { section?
     setLoading(true);
     loadData().catch((err) => setError(err instanceof Error ? err.message : "Unable to load announcements")).finally(() => setLoading(false));
   }, [user, loadData]);
+
+  useEffect(() => {
+    if (!user || section !== "announcements") return;
+    const timer = window.setInterval(() => {
+      loadData().catch(() => undefined);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [user, section, loadData]);
 
   useEffect(() => {
     if (!composerOpen) return;
@@ -391,6 +415,21 @@ export function AnnouncementsWorkspace({ section = "announcements" }: { section?
     await loadData();
   }
 
+  async function openAnnouncementDetail(announcement: Announcement) {
+    setDetailOpen(true);
+    setDetailSummary(announcement);
+    setAnnouncementDetail(null);
+    setDetailLoading(true);
+    try {
+      setAnnouncementDetail(await api<AnnouncementDetail>(`/announcements/${announcement.id}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load announcement details");
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   const sectionTitle = section === "templates" ? "Announcement templates" : section === "groups" ? "Announcement groups" : "Announcements";
   const sectionDescription = section === "templates"
     ? "Create and maintain reusable personalized message templates."
@@ -437,11 +476,11 @@ export function AnnouncementsWorkspace({ section = "announcements" }: { section?
                       <tbody>{announcements.map((announcement) => (
                         <tr key={announcement.id} className="border-b last:border-0">
                           <td className="max-w-[360px] px-4 py-3"><p className="truncate font-medium">{announcement.message || "Untitled draft"}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(announcement.sentAt ?? announcement.updatedAt).toLocaleString()}{announcement.template?.name ? ` · ${announcement.template.name}` : ""}</p></td>
-                          <td className="px-3 py-3">{announcement.status === "draft" ? "—" : announcement.recipientCount}</td>
+                          <td className="px-3 py-3">{announcement.status === "draft" ? "—" : <div><span className="font-medium">{announcement.sentCount} / {announcement.recipientCount} sent</span>{announcement.errorCount > 0 && <p className="mt-0.5 text-xs text-red-600">{announcement.errorCount} error{announcement.errorCount === 1 ? "" : "s"}</p>}{announcement.queuedCount > 0 && <p className="mt-0.5 text-xs text-muted-foreground">{announcement.queuedCount} waiting</p>}</div>}</td>
                           <td className="px-3 py-3"><span className="font-medium">{announcement.consumedSmsCount}</span><span className="text-xs text-muted-foreground"> / {announcement.estimatedSmsCount || 0}</span></td>
                           <td className="px-3 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyle(announcement.status)}`}>{statusLabel(announcement.status)}</span></td>
                           <td className="px-3 py-3 text-xs text-muted-foreground">{announcement.sentBy?.email ?? "—"}</td>
-                          <td className="px-4 py-3"><div className="flex justify-end gap-1">{announcement.status === "draft" && <><Button size="sm" variant="outline" onClick={() => openDraft(announcement)}><Pencil className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteDraft(announcement)}><Trash2 className="h-3.5 w-3.5" /></Button></>}</div></td>
+                          <td className="px-4 py-3"><div className="flex justify-end gap-1">{announcement.status === "draft" ? <><Button size="sm" variant="outline" onClick={() => openDraft(announcement)}><Pencil className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteDraft(announcement)}><Trash2 className="h-3.5 w-3.5" /></Button></> : <Button size="sm" variant="outline" onClick={() => openAnnouncementDetail(announcement)} className="gap-1.5"><FileText className="h-3.5 w-3.5" /> Details</Button>}</div></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -509,6 +548,27 @@ export function AnnouncementsWorkspace({ section = "announcements" }: { section?
             </div>
             <div className="flex justify-end"><Button onClick={() => setRecipientPickerOpen(false)}>Done</Button></div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
+          <DialogHeader><DialogTitle>Announcement delivery details</DialogTitle></DialogHeader>
+          {detailLoading ? <p className="py-8 text-center text-sm text-muted-foreground">Loading delivery results…</p> : announcementDetail && detailSummary ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sent</p><p className="mt-1 text-xl font-semibold text-emerald-700">{detailSummary.sentCount} / {detailSummary.recipientCount}</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Errors</p><p className={`mt-1 text-xl font-semibold ${detailSummary.errorCount ? "text-red-700" : "text-foreground"}`}>{detailSummary.errorCount}</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Waiting</p><p className="mt-1 text-xl font-semibold text-sky-700">{detailSummary.queuedCount}</p></div>
+              </div>
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full min-w-[620px] text-sm">
+                  <thead><tr className="border-b bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground"><th className="px-3 py-2.5">Member</th><th className="px-3 py-2.5">Delivery</th><th className="px-3 py-2.5">Result</th></tr></thead>
+                  <tbody>{announcementDetail.recipients.map((recipient) => { const queue = recipient.messageQueue; const hasError = queue?.status === "failed" || (queue?.status === "pending" && Boolean(queue.lastError)); const wasSent = queue && ["submitted", "sent", "delivered"].includes(queue.status); return <tr key={recipient.id} className="border-b align-top last:border-0"><td className="px-3 py-3"><p className="font-medium">{recipient.memberName}</p><p className="text-xs text-muted-foreground">{recipient.membershipNo}</p></td><td className="px-3 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${hasError ? "border-red-200 bg-red-50 text-red-700" : wasSent ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-sky-200 bg-sky-50 text-sky-700"}`}>{hasError ? "Error" : wasSent ? "Sent" : "Waiting"}</span></td><td className="max-w-md px-3 py-3 text-xs">{hasError ? <span className="text-red-700">{queue?.lastError || "Delivery failed"}</span> : <span className="text-muted-foreground">{queue?.providerStatus || (wasSent ? "Accepted by SMS provider" : "Waiting to be processed")}</span>}</td></tr>; })}</tbody>
+                </table>
+              </div>
+            </div>
+          ) : <p className="py-8 text-center text-sm text-muted-foreground">Delivery details are unavailable.</p>}
         </DialogContent>
       </Dialog>
 

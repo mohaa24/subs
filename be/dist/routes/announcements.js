@@ -161,25 +161,24 @@ async function announcementList(organizationId) {
         include: {
             template: { select: { id: true, name: true } },
             sentBy: { select: { id: true, email: true } },
-            messages: { select: { status: true, smsCount: true } },
+            messages: { select: { status: true, smsCount: true, lastError: true } },
         },
     });
     return announcements.map(({ messages, ...announcement }) => {
         const consumedSmsCount = messages.reduce((sum, item) => sum + (item.smsCount ?? 0), 0);
+        const sentCount = messages.filter((item) => item.status === client_1.MessageStatus.submitted || item.status === client_1.MessageStatus.sent || item.status === client_1.MessageStatus.delivered).length;
+        const errorCount = messages.filter((item) => item.status === client_1.MessageStatus.failed || (item.status === client_1.MessageStatus.pending && Boolean(item.lastError))).length;
+        const queuedCount = Math.max(0, messages.length - sentCount - errorCount);
         let displayStatus = announcement.status;
         if (announcement.status !== client_1.AnnouncementStatus.draft && messages.length) {
-            const pending = messages.filter((item) => item.status === client_1.MessageStatus.pending || item.status === client_1.MessageStatus.submitted).length;
-            const failed = messages.filter((item) => item.status === client_1.MessageStatus.failed).length;
-            if (pending > 0)
-                displayStatus = client_1.AnnouncementStatus.queued;
-            else if (failed === messages.length)
-                displayStatus = client_1.AnnouncementStatus.failed;
-            else if (failed > 0)
-                displayStatus = client_1.AnnouncementStatus.partially_failed;
+            if (errorCount > 0)
+                displayStatus = sentCount > 0 ? client_1.AnnouncementStatus.partially_failed : client_1.AnnouncementStatus.failed;
+            else if (queuedCount > 0)
+                displayStatus = sentCount > 0 ? "partially_sent" : client_1.AnnouncementStatus.queued;
             else
                 displayStatus = client_1.AnnouncementStatus.sent;
         }
-        return { ...announcement, status: displayStatus, consumedSmsCount };
+        return { ...announcement, status: displayStatus, consumedSmsCount, sentCount, errorCount, queuedCount };
     });
 }
 exports.announcementsRouter.get("/announcement-templates", async (req, res) => {
@@ -380,7 +379,7 @@ exports.announcementsRouter.get("/announcements/:id", async (req, res) => {
         include: {
             template: { select: { id: true, name: true } },
             sentBy: { select: { id: true, email: true } },
-            recipients: { include: { messageQueue: { select: { status: true, smsCount: true, lastError: true } } }, orderBy: { membershipNo: "asc" } },
+            recipients: { include: { messageQueue: { select: { status: true, smsCount: true, lastError: true, providerStatus: true, lastAttemptAt: true } } }, orderBy: { membershipNo: "asc" } },
         },
     });
     if (!announcement || !assertOrgAccess(req, announcement.organizationId))
