@@ -242,16 +242,16 @@ function IncomeStatement({ report, isExpense }: { report: IncomeAccountReport; i
             <DirectionIcon className="h-7 w-7" />
           </div>
           <div>
-            <p className="text-[15px] font-semibold uppercase tracking-[0.04em] text-slate-600">{report.organizationName}</p>
+            <p className="income-org-name text-[15px] font-semibold uppercase tracking-[0.04em] text-slate-600">{report.organizationName}</p>
             <h2 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">{reportName}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <p className="text-lg font-semibold text-slate-700">{report.account.name}</p>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isExpense ? "bg-blue-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{report.account.category}</span>
+              <p className="income-account-name text-lg font-semibold text-slate-700">{report.account.name}</p>
+              <span className={`income-category-badge rounded-full px-2.5 py-1 text-xs font-semibold ${isExpense ? "bg-blue-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{report.account.category}</span>
             </div>
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-base font-bold text-slate-900">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p>
+        <div className="income-generated shrink-0 text-right">
+          <p className="income-period text-base font-bold text-slate-900">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p>
           <p className="mt-1 text-sm text-slate-500">Amounts in {report.currency}</p>
           <p className="mt-2 text-xs text-slate-500">Generated {enteredDate(report.generatedAt)}</p>
         </div>
@@ -374,22 +374,25 @@ function IncomeStatement({ report, isExpense }: { report: IncomeAccountReport; i
         @media print {
           @page { size: A4 landscape; margin: 9mm 10mm; }
           html, body { background:#fff !important; }
-          .income-account-report { width:100%; color:#0f172a; }
-          .income-report-header { margin-bottom:12px; }
-          .income-report-logo { width:38px; height:38px; border-radius:8px; }
-          .income-report-header h2 { font-size:20px; line-height:1.1; }
-          .income-report-header p { line-height:1.2; }
-          .income-summary-grid { gap:8px; margin-bottom:10px; }
-          .income-summary-tile { min-height:76px; padding:10px !important; }
-          .income-summary-tile .summary-value { font-size:17px !important; }
-          .income-breakdown { gap:10px; margin-bottom:10px; padding:9px 12px; }
-          .income-report-table { font-size:8px; }
-          .income-report-table th { padding:6px 7px; font-size:7px; }
-          .income-report-table td { height:31px; padding:4px 7px; }
-          .income-report-table td p { line-height:1.15; }
-          .income-report-table td .text-\\[11px\\] { font-size:6.5px !important; }
-          .income-reconciliation { margin-top:10px; padding:8px 12px; }
-          .income-report-footer { margin-top:8px; padding-top:4px; }
+          .civica-sidebar,.civica-toolbar { display:none !important; }
+          .income-account-report { width:100%;color:#0f172a;font-size:8pt;line-height:1.22; }
+          .income-report-header { margin-bottom:9pt; }.income-report-logo { width:28.5pt;height:28.5pt;border-radius:6pt; }
+          .income-report-logo svg { width:14px !important;height:14px !important;stroke-width:1.5; }
+          .income-report-header h2 { font-size:17pt !important;font-weight:700;line-height:1.1; }
+          .income-org-name,.income-account-name { font-size:10.5pt !important;font-weight:600;letter-spacing:.2pt; }
+          .income-category-badge { font-size:7.25pt !important;font-weight:600; }.income-period { font-size:8.5pt !important;font-weight:600; }
+          .income-generated,.income-generated p { font-size:7.75pt !important;font-weight:400;line-height:1.2; }
+          .income-summary-grid { gap:6pt;margin-bottom:7.5pt; }.income-summary-tile { min-height:57pt;padding:7.5pt !important; }
+          .income-summary-tile > div { font-size:8pt !important;font-weight:600; }.income-summary-tile .summary-value { font-size:14.5pt !important;font-weight:700; }
+          .income-summary-tile p:last-child:not(.summary-value) { font-size:7.25pt !important; }
+          .income-breakdown { gap:7.5pt;margin-bottom:7.5pt;padding:6.75pt 9pt; }.income-breakdown h3 { font-size:8.5pt !important;font-weight:700; }
+          .income-breakdown h3 + p { font-size:7.25pt !important; }.income-breakdown .text-\[11px\] { font-size:8.25pt !important;font-weight:600; }.income-breakdown .text-base { font-size:9pt !important;font-weight:700; }
+          .income-report-table { font-size:8pt;line-height:1.22; }.income-report-table th { padding:4.5pt 5.25pt;font-size:7.5pt;font-weight:600;letter-spacing:.2pt; }
+          .income-report-table td { height:32pt;padding:4.5pt 5.25pt;font-size:8pt;font-weight:400; }.income-report-table td p { line-height:1.22; }
+          .income-report-table td .font-semibold { font-size:8.25pt;font-weight:600; }.income-report-table td .text-\\[11px\\] { font-size:7.25pt !important;font-weight:400; }
+          .income-status-badge { border:0 !important;border-radius:3pt;padding:2pt 5pt !important;font-size:7pt !important;font-weight:600 !important;line-height:1.1;letter-spacing:.15pt;box-shadow:none !important; }
+          .income-reconciliation { margin-top:7.5pt;padding:6pt 9pt;font-size:8pt; }.income-reconciliation h3 { font-size:8pt !important;font-weight:600; }.income-reconciliation p { font-size:7.25pt !important; }
+          .income-report-footer { margin-top:6pt;padding-top:3pt;font-size:7.5pt !important; }
         }
       `}</style>
     </section>
@@ -430,5 +433,5 @@ function SummaryTile({
 function StatusBadge({ status }: { status: IncomeMovement["status"] }) {
   const labels = { posted: "Posted", reversed: "Reversed", reversal: "Reversal" };
   const styles = status === "posted" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600";
-  return <span className={`inline-flex rounded-md px-2.5 py-1 text-[11px] font-bold uppercase ${styles}`}>{labels[status]}</span>;
+  return <span className={`income-status-badge inline-flex rounded-md px-2.5 py-1 text-[11px] font-bold uppercase ${styles}`}>{labels[status]}</span>;
 }

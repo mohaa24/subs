@@ -153,15 +153,26 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
       @media print {
         @page { size:A4 landscape;margin:9mm 10mm; }
         html,body { background:#fff !important; }
-        .payment-print-sheet { position:relative;height:192mm;overflow:hidden; }
+        .civica-sidebar,.civica-toolbar { display:none !important; }
+        .payment-print-sheet { position:relative;display:flex;flex-direction:column;height:192mm;overflow:hidden;padding-bottom:13pt;font-size:8pt;line-height:1.22; }
         .payment-print-sheet + .payment-print-sheet { break-before:page; }
-        .payment-report-header { margin-bottom:10px; }.payment-report-logo { width:38px;height:38px;border-radius:8px; }
-        .payment-report-header h2 { font-size:20px;line-height:1.1; }.payment-summary-grid { gap:8px;margin-bottom:9px; }
-        .payment-summary-tile { min-height:72px;padding:9px !important; }.payment-summary-tile .summary-value { font-size:16px !important; }
-        .payment-breakdown { margin-bottom:8px;padding:7px 10px; }.member-payment-table { font-size:7.5px; }
-        .member-payment-table th { padding:5px 6px;font-size:6.5px; }.member-payment-table td { height:29px;padding:3px 6px; }
-        .member-payment-table td p { line-height:1.12; }.member-payment-table td .text-\\[10px\\] { font-size:6px !important; }
-        .payment-reconciliation { margin-top:8px;padding:7px 10px; }.payment-report-footer { position:absolute;right:0;bottom:0;left:0;margin-top:0;padding-top:4px; }
+        .payment-report-header { margin-bottom:7.5pt; }.payment-report-logo { width:28.5pt;height:28.5pt;border-radius:6pt; }
+        .payment-report-logo svg { width:13px !important;height:13px !important;stroke-width:1.5; }
+        .payment-report-header h2 { font-size:17pt !important;line-height:1.1; }.payment-org-name { font-size:10pt !important;font-weight:600;letter-spacing:.2pt; }
+        .payment-subtitle,.payment-period { font-size:10pt !important;font-weight:600; }.payment-category-badge { font-size:7.25pt !important; }
+        .payment-generated,.payment-generated p { font-size:8pt !important;font-weight:400;line-height:1.2; }
+        .payment-continuation-header { margin-bottom:7pt; }.payment-continuation-header h2 { font-size:13pt !important;line-height:1.1; }.payment-continuation-header p { font-size:8pt !important; }
+        .payment-summary-grid { gap:6pt;margin-bottom:7pt; }.payment-summary-tile { min-height:54pt;padding:7pt !important; }
+        .payment-summary-tile > div { font-size:8pt !important;font-weight:600; }.payment-summary-tile .summary-value { font-size:14.5pt !important;font-weight:700; }
+        .payment-summary-tile p:last-child:not(.summary-value) { font-size:7.25pt !important; }
+        .payment-breakdown { margin-bottom:6pt;padding:5.5pt 7.5pt; }.payment-breakdown h3 { font-size:8pt !important;font-weight:600; }.payment-breakdown h3 + p { font-size:7.25pt !important; }
+        .payment-breakdown .text-\\[10px\\] { font-size:8pt !important;font-weight:600; }.payment-breakdown .text-sm { font-size:9pt !important;font-weight:600; }
+        .payment-table-wrap { display:flex !important;flex:1;min-height:0; }.member-payment-table { height:100%;font-size:8pt;line-height:1.22; }.member-payment-table th { padding:4.5pt 5pt;font-size:7.5pt;font-weight:600;letter-spacing:.2pt; }
+        .member-payment-table td { height:31pt;padding:4.5pt 5pt;font-size:8pt;font-weight:400; }.member-payment-table td p { line-height:1.22; }
+        .member-payment-table td .font-semibold { font-size:8.25pt;font-weight:600; }.member-payment-table td .text-\\[10px\\] { font-size:7.25pt !important;font-weight:400; }
+        .payment-status-badge { border:0 !important;border-radius:3pt;padding:2pt 5pt !important;font-size:7pt !important;font-weight:600 !important;line-height:1.1;letter-spacing:.15pt;box-shadow:none !important; }
+        .payment-reconciliation { margin-top:7pt;padding:5.5pt 7.5pt;font-size:8pt; }.payment-reconciliation h3 { font-size:8pt !important;font-weight:600; }
+        .payment-report-footer { position:absolute;right:0;bottom:0;left:0;margin-top:0;padding-top:3pt;font-size:7.5pt !important; }
       }
     `}</style>
   </>;
@@ -170,14 +181,14 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
 function ReportHeader({ report }: { report: MemberPaymentReport }) {
   return <div className="payment-report-header mb-5 flex flex-col items-start justify-between gap-4 md:flex-row md:gap-8">
     <div className="flex min-w-0 items-start gap-3 sm:gap-4"><div className="payment-report-logo flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 sm:h-14 sm:w-14"><ArrowDownLeft className="h-6 w-6 sm:h-7 sm:w-7" /></div>
-      <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.04em] text-slate-600 sm:text-[15px]">{report.organizationName}</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Member Payment Report</h2><div className="mt-1.5 flex flex-wrap items-center gap-2"><p className="text-base font-semibold text-slate-700 sm:text-lg">All Member Payments</p><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Membership</span></div></div>
+      <div className="min-w-0"><p className="payment-org-name text-xs font-semibold uppercase tracking-[0.04em] text-slate-600 sm:text-[15px]">{report.organizationName}</p><h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">Member Payment Report</h2><div className="mt-1.5 flex flex-wrap items-center gap-2"><p className="payment-subtitle text-base font-semibold text-slate-700 sm:text-lg">All Member Payments</p><span className="payment-category-badge rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Membership</span></div></div>
     </div>
-    <div className="shrink-0 text-left md:text-right"><p className="text-sm font-bold text-slate-900 sm:text-base">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p><p className="mt-1 text-xs text-slate-500 sm:text-sm">Amounts in LKR</p><p className="mt-2 text-xs text-slate-500">Generated {enteredDate(report.generatedAt)}</p><p className="mt-1 break-all text-xs text-slate-500">Generated by {report.generatedBy}</p></div>
+    <div className="payment-generated shrink-0 text-left md:text-right"><p className="payment-period text-sm font-bold text-slate-900 sm:text-base">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p><p className="mt-1 text-xs text-slate-500 sm:text-sm">Amounts in LKR</p><p className="mt-2 text-xs text-slate-500">Generated {enteredDate(report.generatedAt)}</p><p className="mt-1 break-all text-xs text-slate-500">Generated by {report.generatedBy}</p></div>
   </div>;
 }
 
 function ContinuationHeader({ report }: { report: MemberPaymentReport }) {
-  return <div className="mb-3 flex items-end justify-between border-b border-slate-200 pb-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{report.organizationName}</p><h2 className="text-xl font-bold text-slate-950">Member Payment Report</h2></div><p className="text-sm font-bold text-slate-800">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p></div>;
+  return <div className="payment-continuation-header mb-3 flex items-end justify-between border-b border-slate-200 pb-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{report.organizationName}</p><h2 className="text-xl font-bold text-slate-950">Member Payment Report</h2></div><p className="text-sm font-bold text-slate-800">{reportDate(report.fromDate)} - {reportDate(report.toDate)}</p></div>;
 }
 
 function SummaryTiles({ report }: { report: MemberPaymentReport }) {
@@ -206,7 +217,7 @@ function Breakdown({ title, description, items }: { title:string; description:st
 function MovementTable({ movements }: { movements:PaymentMovement[] }) {
   return <>
     <MovementCards movements={movements} />
-    <div className="mt-4 hidden overflow-x-auto rounded-xl border border-slate-200 md:block print:mt-0 print:block print:overflow-visible"><table className="member-payment-table w-full min-w-[1380px] border-collapse text-sm print:min-w-0">
+    <div className="payment-table-wrap mt-4 hidden overflow-x-auto rounded-xl border border-slate-200 md:block print:mt-0 print:overflow-visible"><table className="member-payment-table w-full min-w-[1380px] border-collapse text-sm print:min-w-0">
     <colgroup><col className="col-date" /><col className="col-member" /><col className="col-receipt" /><col className="col-method" /><col className="col-entered" /><col className="col-amount" /><col className="col-status" /><col className="col-reversal" /><col className="col-total" /></colgroup>
     <thead><tr><th>Date</th><th>Member Details</th><th>Receipt / Link</th><th>Payment Method</th><th>Entered By</th><th className="text-right">Amount</th><th>Status</th><th>Reversal Details</th><th className="text-right">Running Total</th></tr></thead>
     <tbody>{movements.map((movement) => <tr key={movement.key} className={movement.status === "posted" ? "" : "payment-reversal-row"}>
@@ -255,5 +266,5 @@ function SummaryTile({ icon, label, value, detail, tone }: { icon:ReactNode; lab
 function StatusBadge({ status }: { status:PaymentMovement["status"] }) {
   const labels = { posted:"Posted", reversed:"Reversed", reversal:"Reversal" };
   const styles = status === "posted" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600";
-  return <span className={`inline-flex rounded-md px-2.5 py-1 text-[11px] font-bold uppercase ${styles}`}>{labels[status]}</span>;
+  return <span className={`payment-status-badge inline-flex rounded-md px-2.5 py-1 text-[11px] font-bold uppercase ${styles}`}>{labels[status]}</span>;
 }

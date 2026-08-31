@@ -1143,6 +1143,9 @@ async function cashAccountRows(tx, organizationId, flowType, category, from, toE
             organizationId,
             isActive: true,
             ...cashAccountWhere(flowType, category),
+            ...(flowType === "cash_in" && category === "operating_income"
+                ? { NOT: { systemKey: "income_other" } }
+                : {}),
             ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
         },
         orderBy: { name: "asc" },

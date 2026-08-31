@@ -49,6 +49,15 @@ type MemberLookup = {
 };
 type TransferMode = "full" | "partial";
 
+const reversalReasons = [
+  "Incorrect Amount",
+  "Incorrect Account",
+  "Duplicate Entry",
+  "Incorrect Payment Method",
+  "Entered By Mistake",
+  "Other",
+] as const;
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -132,6 +141,8 @@ export default function FundDetailPage() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [collectionReceipt, setCollectionReceipt] = useState<PaymentReceiptData | null>(null);
+  const [reverseTarget, setReverseTarget] = useState<FundTransaction | null>(null);
+  const [reverseReason, setReverseReason] = useState<string>(reversalReasons[0]);
   const [submitting, setSubmitting] = useState(false);
   const [collection, setCollection] = useState({
     amount: "",
@@ -156,6 +167,7 @@ export default function FundDetailPage() {
   const [transfer, setTransfer] = useState({
     mode: "full" as TransferMode,
     amount: "",
+    transactionDate: todayString(),
     memo: "",
   });
   const [memberQuery, setMemberQuery] = useState("");
@@ -175,6 +187,13 @@ export default function FundDetailPage() {
   const transferredFromFundPerspective = -(fund?.summary?.netTransferred ?? 0);
   const backHref = fundMode ? `/${fundMode}` : "/funds";
   const backLabel = fundMode === "cash-in" ? "Back to Cash In" : fundMode === "cash-out" ? "Back to Cash Out" : "Back to fund summary";
+
+  function defaultCashBankAccountId(source = cashBankAccounts) {
+    return source.find((account) => account.systemKey === "asset_cash_on_hand")?.id
+      ?? source.find((account) => account.name.trim().toLowerCase() === "cash on hand")?.id
+      ?? source[0]?.id
+      ?? "";
+  }
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -216,9 +235,10 @@ export default function FundDetailPage() {
     try {
       const data = await api<AccountingAccount[]>("/accounting/accounts", { params: { includeInactive: "true" } });
       setAccounts(data);
-      const firstCashBank = data.find((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive);
-      setCollection((v) => ({ ...v, assetAccountId: v.assetAccountId || firstCashBank?.id || "" }));
-      setExpense((v) => ({ ...v, assetAccountId: v.assetAccountId || firstCashBank?.id || "" }));
+      const availableCashBank = data.filter((account) => account.accountType === "asset" && (account.assetSubtype === "cash" || account.assetSubtype === "bank") && account.isActive);
+      const defaultAccountId = defaultCashBankAccountId(availableCashBank);
+      setCollection((v) => ({ ...v, assetAccountId: v.assetAccountId || defaultAccountId }));
+      setExpense((v) => ({ ...v, assetAccountId: v.assetAccountId || defaultAccountId }));
     } catch {
       setAccounts([]);
     }
@@ -242,7 +262,7 @@ export default function FundDetailPage() {
         }),
       });
       setCollectionOpen(false);
-      setCollection({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", paidByName: "", paidByPhone: "", paidByMembershipId: "", reference: "", memo: "" });
+      setCollection({ amount: "", transactionDate: todayString(), assetAccountId: defaultCashBankAccountId(), paidByName: "", paidByPhone: "", paidByMembershipId: "", reference: "", memo: "" });
       setMemberQuery("");
       await loadFundDetails();
       await openCollectionReceipt(transaction.id);
@@ -270,7 +290,7 @@ export default function FundDetailPage() {
         }),
       });
       setExpenseOpen(false);
-      setExpense({ amount: "", transactionDate: todayString(), assetAccountId: cashBankAccounts[0]?.id || "", description: "", paidToPhone: "", paidToMembershipId: "", reference: "", memo: "" });
+      setExpense({ amount: "", transactionDate: todayString(), assetAccountId: defaultCashBankAccountId(), description: "", paidToPhone: "", paidToMembershipId: "", reference: "", memo: "" });
       await loadFundDetails();
       toast({ title: "Expense added", description: "Restricted fund expense has been recorded." });
     } catch (err) {
@@ -294,18 +314,27 @@ export default function FundDetailPage() {
     }
   }
 
-  async function handleReverseFundTransaction(transaction: FundTransaction) {
-    const reason = window.prompt("Reason for reversal");
-    if (!reason?.trim()) return;
+  function openReverseFundTransaction(transaction: FundTransaction) {
+    setReverseTarget(transaction);
+    setReverseReason(reversalReasons[0]);
+  }
+
+  async function handleReverseFundTransaction(event: FormEvent) {
+    event.preventDefault();
+    if (!reverseTarget || !reverseReason) return;
+    setSubmitting(true);
     try {
-      await api(`/accounting/fund-transactions/${transaction.id}/reverse`, {
+      await api(`/accounting/fund-transactions/${reverseTarget.id}/reverse`, {
         method: "POST",
-        body: JSON.stringify({ reason: reason.trim() }),
+        body: JSON.stringify({ reason: reverseReason }),
       });
-      toast({ title: "Fund transaction reversed", description: transaction.receiptNumber ?? transaction.id });
+      toast({ title: "Fund transaction reversed", description: reverseTarget.receiptNumber ?? reverseTarget.id });
+      setReverseTarget(null);
       await loadFundDetails();
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to reverse fund transaction", description: err instanceof Error ? err.message : "Unable to reverse" });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -349,11 +378,12 @@ export default function FundDetailPage() {
         method: "POST",
         body: JSON.stringify({
           amount: transfer.mode === "partial" ? partialAmount : null,
+          transactionDate: transfer.transactionDate,
           memo: transfer.memo || null,
         }),
       });
       setTransferOpen(false);
-      setTransfer({ mode: "full", amount: "", memo: "" });
+      setTransfer({ mode: "full", amount: "", transactionDate: todayString(), memo: "" });
       await loadFundDetails();
       toast({ title: "Balance transferred", description: "The fund balance has been moved to surplus or deficit." });
     } catch (err) {
@@ -419,19 +449,19 @@ export default function FundDetailPage() {
           {canManageFunds ? (
             <div className="flex flex-wrap gap-2">
               {fundMode !== "cash-out" ? (
-                <Button variant="cashIn" onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
+                <Button variant="cashIn" onClick={() => { setMemberQuery(""); setMemberOptions([]); setCollection((value) => ({ ...value, assetAccountId: defaultCashBankAccountId() })); setCollectionOpen(true); }} disabled={fundClosed || submitting || loadingData}>
                   <Banknote className="mr-2 h-4 w-4" />
                   Receive
                 </Button>
               ) : null}
               {fundMode !== "cash-in" ? (
-                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant="cashOut">
+                <Button onClick={() => { setMemberQuery(""); setMemberOptions([]); setExpense((value) => ({ ...value, assetAccountId: defaultCashBankAccountId() })); setExpenseOpen(true); }} disabled={fundClosed || submitting || loadingData} variant="cashOut">
                   <BanknoteArrowUp className="mr-2 h-4 w-4" />Pay Expense
                 </Button>
               ) : null}
               {!fundMode ? (
                 <>
-                  <Button onClick={() => setTransferOpen(true)} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="transfer"><ArrowLeftRight className="mr-2 h-4 w-4" />Transfer Balance</Button>
+                  <Button onClick={() => { setTransfer((value) => ({ ...value, transactionDate: todayString() })); setTransferOpen(true); }} disabled={fundClosed || submitting || loadingData || transferLimit <= 0} variant="transfer"><ArrowLeftRight className="mr-2 h-4 w-4" />Transfer Balance</Button>
                   <Button onClick={handleCloseFund} disabled={fundClosed || submitting || loadingData} variant="neutralOutline"><X className="mr-2 h-4 w-4" />Close Fund</Button>
                 </>
               ) : null}
@@ -462,8 +492,8 @@ export default function FundDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 p-0 md:p-6 md:pt-0 lg:grid-cols-3">
-            <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
-            <FundActivityTable title="Expenses" rows={expenses} onReverse={canManageFunds ? handleReverseFundTransaction : undefined} />
+            <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? openReverseFundTransaction : undefined} />
+            <FundActivityTable title="Expenses" rows={expenses} onReverse={canManageFunds ? openReverseFundTransaction : undefined} />
             {transfers.length > 0 ? <FundActivityTable title="Transfers" rows={transfers} /> : null}
           </CardContent>
         </Card>
@@ -620,6 +650,11 @@ export default function FundDetailPage() {
                 Partial Amount
               </label>
             </div>
+            <div className="space-y-1.5">
+              <Label>Transfer Date</Label>
+              <Input type="date" value={transfer.transactionDate} onChange={(e) => setTransfer((v) => ({ ...v, transactionDate: e.target.value }))} required />
+              <p className="text-xs text-muted-foreground">Use the actual date of the transfer, even when recording it later.</p>
+            </div>
             {transfer.mode === "partial" ? (
               <div className="space-y-1.5">
                 <Label>Transfer Amount</Label>
@@ -642,6 +677,33 @@ export default function FundDetailPage() {
               <ArrowLeftRight className="mr-2 h-4 w-4" />
               {submitting ? "Transferring..." : "Transfer Balance"}
             </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!reverseTarget} onOpenChange={(open) => { if (!open && !submitting) setReverseTarget(null); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader><DialogTitle>Reverse Special Fund {reverseTarget?.transactionType === "expense" ? "Expense" : "Payment"}</DialogTitle></DialogHeader>
+          <form className="space-y-5" onSubmit={handleReverseFundTransaction}>
+            <div>
+              <div className="mb-2 text-sm font-semibold text-foreground">Original Transaction Info</div>
+              <div className="grid overflow-hidden rounded-lg border bg-muted/20 sm:grid-cols-3 sm:divide-x">
+                <div className="border-b p-3 sm:border-b-0"><div className="text-xs text-muted-foreground">Transaction</div><div className="mt-1 break-words font-medium text-foreground">{reverseTarget?.receiptNumber ?? (reverseTarget ? txLabel(reverseTarget.transactionType) : "—")}</div>{reverseTarget?.receiptNumber && <div className="mt-0.5 text-xs text-muted-foreground">{txLabel(reverseTarget.transactionType)}</div>}</div>
+                <div className="border-b p-3 sm:border-b-0"><div className="text-xs text-muted-foreground">Date</div><div className="mt-1 font-medium text-foreground">{reverseTarget ? dateLabel(reverseTarget.transactionDate) : "—"}</div></div>
+                <div className="p-3"><div className="text-xs text-muted-foreground">Amount</div><div className="mt-1 font-semibold tabular-nums text-foreground">{reverseTarget ? formatRs(reverseTarget.amount) : "—"}</div></div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason for Reversal <span className="text-destructive">*</span></Label>
+              <Select value={reverseReason} onValueChange={setReverseReason}>
+                <SelectTrigger><SelectValue placeholder="Select a reason" /></SelectTrigger>
+                <SelectContent>{reversalReasons.map((reason) => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={() => setReverseTarget(null)} disabled={submitting}>Cancel</Button>
+              <Button type="submit" variant="destructive" disabled={submitting || !reverseReason}><Undo2 className="mr-2 h-4 w-4" />{submitting ? "Reversing..." : "Confirm Reversal"}</Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

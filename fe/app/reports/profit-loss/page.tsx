@@ -252,12 +252,27 @@ function ProfitLossStatement({ report }: { report: ProfitLossReport }) {
           @page { size: A4 landscape; margin: 8mm; }
           .civica-sidebar, .civica-toolbar, header:not(.pl-header) { display: none !important; }
           html, body { background: #fff !important; }
-          .profit-loss-report { width: 281mm; min-height: 194mm; padding: 0 !important; break-inside: avoid; font-size: 10px; }
-          .pl-header { margin-bottom: 3.5mm !important; }
+          .profit-loss-report { display:flex !important;flex-direction:column;width: 281mm; min-height: 194mm; padding: 0 !important; break-inside: avoid; font-size: 8.25pt;line-height:1.22; }
+          .pl-header { display:flex !important;margin-bottom: 3.5mm !important; }
           .pl-logo { width: 12mm !important; height: 12mm !important; }
+          .pl-logo svg { width:14px !important;height:14px !important;stroke-width:1.5; }
+          .pl-header h2 { font-size:17.5pt !important;font-weight:700;line-height:1.1; }
+          .pl-header h2 + div > p { font-size:9pt !important;font-weight:600; }
+          .pl-header div > p:first-child { font-size:10pt !important;font-weight:600;letter-spacing:.2pt; }
+          .pl-header > div:last-child p:first-child { font-size:9pt !important;font-weight:600; }
+          .pl-header > div:last-child p { font-size:8pt !important;font-weight:400;line-height:1.2; }
           .pl-summary, .pl-category-summary, .pl-panels { margin-bottom: 3mm !important; gap: 3mm !important; }
+          .pl-summary > div { padding:7pt !important; }.pl-summary > div div > p { font-size:8pt !important;font-weight:600; }.pl-summary > div > p { font-size:14.5pt !important;font-weight:700; }
+          .pl-category-summary { padding:7pt 9pt !important; }.pl-category-summary h3 { font-size:9pt !important;font-weight:700; }.pl-category-summary h3 + p { font-size:7.5pt !important; }
+          .pl-category-summary .text-\[11px\] { font-size:9pt !important;font-weight:600; }.pl-category-summary .text-base { font-size:9.5pt !important;font-weight:700; }
+          .pl-panels section > div:first-child h3,.pl-panels section > div:first-child strong { font-size:9pt !important;font-weight:700; }
+          .pl-panels section > div:nth-child(2) { font-size:8pt !important;font-weight:600;letter-spacing:.2pt; }
+          .pl-panels section > div:last-child { font-size:9pt !important;font-weight:700; }
+          .pl-panels section > div > div > div { font-size:8.25pt !important;line-height:1.22;min-height:19pt;padding-top:4pt !important;padding-bottom:4pt !important; }
+          .pl-panels section > div > div > div:first-child { font-size:8.5pt !important;font-weight:700; }
           .pl-result { margin-top: 3mm !important; }
-          .pl-footer { margin-top: 3mm !important; }
+          .pl-result h3 { font-size:8.5pt !important; }.pl-result .text-xs { font-size:7.5pt !important; }.pl-result .text-base { font-size:10pt !important; }
+          .pl-footer { display:flex !important;margin-top:auto !important;padding-top:4pt !important;font-size:7.5pt !important; }
         }
       `}</style>
     </section>
