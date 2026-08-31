@@ -1,7 +1,6 @@
 import { MessageEventType, Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import {
-  estimateSmsSegments,
   getTemplateDefinition,
   queueTemplatedMessage,
 } from "./message-templates.js";
@@ -28,7 +27,7 @@ export async function queueMessage(
   const definition = getTemplateDefinition(eventType);
   if (!definition?.available) return null;
   return prisma.messageQueue.create({
-    data: { organizationId, recipientPhone, eventType, messageBody, estimatedSmsCount: estimateSmsSegments(messageBody) },
+    data: { organizationId, recipientPhone, eventType, messageBody },
   });
 }
 

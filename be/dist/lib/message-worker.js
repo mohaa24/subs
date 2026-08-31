@@ -17,6 +17,12 @@ function nextPollDate() {
 function smsEncoding(message) {
     return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
 }
+function estimateSmsSegments(message) {
+    const unicode = smsEncoding(message) === "unicode";
+    const singleLimit = unicode ? 70 : 160;
+    const multipartLimit = unicode ? 67 : 153;
+    return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
+}
 async function processMessageQueueBatch(limit = 25) {
     const senderId = process.env.TEXTLK_SENDER_ID?.trim();
     if (!senderId)
@@ -39,8 +45,8 @@ async function processMessageQueueBatch(limit = 25) {
         try {
             if (!message.providerMessageId) {
                 const usage = await (0, message_templates_js_1.getMessageUsage)(message.organizationId, now);
-                const estimatedSegments = message.estimatedSmsCount || (0, message_templates_js_1.estimateSmsSegments)(message.messageBody);
-                if (usage.monthlyQuota - usage.used < estimatedSegments) {
+                const estimatedSegments = estimateSmsSegments(message.messageBody);
+                if (usage.remaining < estimatedSegments) {
                     await prisma_js_1.prisma.messageQueue.update({
                         where: { id: message.id },
                         data: {

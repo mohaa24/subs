@@ -25,7 +25,7 @@ async function queueMessage(organizationId, recipientPhone, eventType, messageBo
     if (!definition?.available)
         return null;
     return prisma_js_1.prisma.messageQueue.create({
-        data: { organizationId, recipientPhone, eventType, messageBody, estimatedSmsCount: (0, message_templates_js_1.estimateSmsSegments)(messageBody) },
+        data: { organizationId, recipientPhone, eventType, messageBody },
     });
 }
 async function queuePaymentDueGenerated(organizationId, recipientPhone, membershipNo, period, amount, outstandingAmount, memberName = "Member", dueType = "membership") {
