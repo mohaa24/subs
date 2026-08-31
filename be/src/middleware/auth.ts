@@ -66,8 +66,7 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
 
 export function withOrgScope(req: Request, _res: Response, next: NextFunction) {
   if (req.auth?.role === UserRole.super_user) {
-    const selectedOrganizationId = req.header("x-organization-id")?.trim();
-    (req as Request & { organizationId?: string }).organizationId = selectedOrganizationId || undefined;
+    (req as Request & { organizationId?: string }).organizationId = undefined;
   } else if (req.auth?.organizationId) {
     (req as Request & { organizationId?: string }).organizationId = req.auth.organizationId;
   }

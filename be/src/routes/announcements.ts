@@ -27,9 +27,7 @@ function getOrgId(req: any): string | undefined {
 }
 
 function assertOrgAccess(req: any, organizationId: string) {
-  return req.auth!.role === "super_user"
-    ? getOrgId(req) === organizationId
-    : req.auth!.organizationId === organizationId;
+  return req.auth!.role === "super_user" || req.auth!.organizationId === organizationId;
 }
 
 function validateAnnouncementBody(body: string) {
@@ -55,7 +53,6 @@ const groupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().nullable(),
 });
-const createGroupSchema = groupSchema.extend({ membershipIds: z.array(z.string()).max(1000).default([]) });
 const groupMembersSchema = z.object({ membershipIds: z.array(z.string()).min(1).max(1000) });
 const emptyAudience = { allMembers: false, groupIds: [], membershipIds: [], excludedMembershipIds: [] };
 const draftSchema = z.object({
@@ -273,23 +270,12 @@ announcementsRouter.get("/announcement-groups", async (req, res) => {
 });
 
 announcementsRouter.post("/announcement-groups", async (req, res) => {
-  const parsed = createGroupSchema.safeParse(req.body);
+  const parsed = groupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid group", details: parsed.error.flatten() });
   const organizationId = await getOrganizationId(req);
   if (!organizationId) return res.status(403).json({ error: "Organization scope required" });
-  const validMemberships = parsed.data.membershipIds.length
-    ? await prisma.membership.findMany({ where: { id: { in: parsed.data.membershipIds }, organizationId }, select: { id: true } })
-    : [];
-  const group = await prisma.$transaction(async (tx) => {
-    const created = await tx.announcementGroup.create({
-      data: { name: parsed.data.name, description: parsed.data.description || null, organizationId, createdByUserId: req.auth!.userId },
-    });
-    if (validMemberships.length) {
-      await tx.announcementGroupMember.createMany({ data: validMemberships.map((membership) => ({ groupId: created.id, membershipId: membership.id })) });
-    }
-    return created;
-  });
-  return res.status(201).json({ ...group, memberCount: validMemberships.length });
+  const group = await prisma.announcementGroup.create({ data: { ...parsed.data, description: parsed.data.description || null, organizationId, createdByUserId: req.auth!.userId } });
+  return res.status(201).json({ ...group, memberCount: 0 });
 });
 
 announcementsRouter.put("/announcement-groups/:id", async (req, res) => {

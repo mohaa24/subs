@@ -125,16 +125,7 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Financial Reports", href: "/finance-reports", actionKey: "nav-finance-reports" },
     ],
   },
-  {
-    key: "announcements",
-    label: "Announcements",
-    icon: MessageSquare,
-    children: [
-      { label: "Announcements", href: "/announcements", actionKey: "nav-announcements" },
-      { label: "Templates", href: "/announcements/templates" },
-      { label: "Groups", href: "/announcements/groups" },
-    ],
-  },
+  { key: "announcements", label: "Announcements", icon: MessageSquare, href: "/announcements", actionKey: "nav-announcements" },
   { key: "payroll", label: "Payroll", icon: Users, badge: "Coming Soon", disabled: true },
   { key: "budgets", label: "Budgets", icon: PieChart, badge: "Coming Soon", disabled: true },
   { key: "scan", label: "Scan QR Code", icon: QrCode, href: "/?scan=membership" },
@@ -182,7 +173,6 @@ function isActivePath(pathname: string, href?: string) {
   if (!href) return false;
   const cleanHref = href.split("?")[0];
   if (cleanHref === "/") return pathname === "/";
-  if (cleanHref === "/announcements") return pathname === cleanHref;
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
@@ -335,7 +325,7 @@ function MenuPanel({
 }
 
 export function Header() {
-  const { user, logout, refetch, organizations, activeOrganization, switchOrganization } = useAuth();
+  const { user, logout, refetch } = useAuth();
   const { locale, t, setLocale: setI18nLocale } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -423,19 +413,6 @@ export function Header() {
             <p className="truncate text-sm font-semibold text-foreground">{orgName || "Membership"}</p>
             <p className="text-xs text-muted-foreground">Workspace</p>
           </div>
-          {user?.role === "super_user" && (
-            <select
-              aria-label="Switch organization"
-              value={activeOrganization?.id ?? ""}
-              onChange={(event) => switchOrganization(event.target.value)}
-              className="ml-2 h-9 max-w-[260px] rounded-md border border-border/70 bg-card px-3 text-sm font-medium shadow-sm outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
-            >
-              <option value="" disabled>Select organization</option>
-              {organizations.filter((organization) => organization.isActive !== false).map((organization) => (
-                <option key={organization.id} value={organization.id}>{organization.name}</option>
-              ))}
-            </select>
-          )}
         </div>
         <div className="flex items-center gap-3">
           <NavigationSearch role={user?.role} />
@@ -467,24 +444,10 @@ export function Header() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        {user?.role === "super_user" ? (
-          <select
-            aria-label="Switch organization"
-            value={activeOrganization?.id ?? ""}
-            onChange={(event) => switchOrganization(event.target.value)}
-            className="mx-2 h-9 min-w-0 max-w-[190px] flex-1 rounded-md border border-border/70 bg-background px-2 text-xs font-medium"
-          >
-            <option value="" disabled>Select organization</option>
-            {organizations.filter((organization) => organization.isActive !== false).map((organization) => (
-              <option key={organization.id} value={organization.id}>{organization.name}</option>
-            ))}
-          </select>
-        ) : (
-          <Link href="/" className="text-center">
-            <div className="text-sm font-bold tracking-wide text-foreground">CIVICA</div>
-            <div className="text-[11px] text-muted-foreground">Finance Suite</div>
-          </Link>
-        )}
+        <Link href="/" className="text-center">
+          <div className="text-sm font-bold tracking-wide text-foreground">CIVICA</div>
+          <div className="text-[11px] text-muted-foreground">Finance Suite</div>
+        </Link>
         <div className="flex items-center gap-2">
           <LanguageMenu
             langRef={mobileLangRef}

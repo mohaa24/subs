@@ -57,8 +57,7 @@ function requireAdmin(req, res, next) {
 }
 function withOrgScope(req, _res, next) {
     if (req.auth?.role === client_1.UserRole.super_user) {
-        const selectedOrganizationId = req.header("x-organization-id")?.trim();
-        req.organizationId = selectedOrganizationId || undefined;
+        req.organizationId = undefined;
     }
     else if (req.auth?.organizationId) {
         req.organizationId = req.auth.organizationId;
