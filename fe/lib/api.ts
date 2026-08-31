@@ -824,6 +824,7 @@ export interface AnnouncementGroup {
   description?: string | null;
   organizationId: string;
   createdAt: string;
+  memberCount?: number;
 }
 
 export interface Announcement {
@@ -832,7 +833,17 @@ export interface Announcement {
   organizationId: string;
   message: string;
   sentAt?: string | null;
-  status: "draft" | "sent" | "failed";
+  status: "draft" | "scheduled" | "queued" | "sent" | "partially_failed" | "failed";
+  audience?: {
+    allMembers: boolean;
+    groupIds: string[];
+    membershipIds: string[];
+    excludedMembershipIds: string[];
+  } | null;
+  recipientCount?: number;
+  estimatedSmsCount?: number;
+  consumedSmsCount?: number;
+  sentBy?: { id: string; email: string } | null;
   group?: { id: string; name: string } | null;
   createdAt: string;
 }

@@ -125,11 +125,18 @@ export function renderMessageTemplate(body: string, variables: Record<string, st
   });
 }
 
-function normalizeRecipientPhone(phone: string) {
+export function normalizeRecipientPhone(phone: string) {
   const compact = phone.trim().replace(/[\s()-]/g, "");
   if (/^0\d{9}$/.test(compact)) return `+94${compact.slice(1)}`;
   if (/^94\d{9}$/.test(compact)) return `+${compact}`;
   return compact;
+}
+
+export function estimateSmsSegments(message: string) {
+  const unicode = !/^[\x00-\x7F]*$/.test(message);
+  const singleLimit = unicode ? 70 : 160;
+  const multipartLimit = unicode ? 67 : 153;
+  return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
 }
 
 export async function queueTemplatedMessage(
@@ -174,6 +181,7 @@ export async function queueTemplatedMessage(
       recipientPhone: normalizeRecipientPhone(input.recipientPhone),
       eventType: input.eventType,
       messageBody: body,
+      estimatedSmsCount: estimateSmsSegments(body),
       deliveryEnabled: true,
     },
   });
@@ -187,7 +195,7 @@ export function currentQuotaPeriod(now = new Date()) {
 
 export async function getMessageUsage(organizationId: string, now = new Date()) {
   const period = currentQuotaPeriod(now);
-  const [settings, accepted, queued] = await Promise.all([
+  const [settings, accepted, queued, queuedSegments] = await Promise.all([
     prisma.messageSettings.findUnique({ where: { organizationId } }),
     prisma.messageQueue.aggregate({
       where: {
@@ -208,14 +216,25 @@ export async function getMessageUsage(organizationId: string, now = new Date()) 
         deliveryEnabled: true,
       },
     }),
+    prisma.messageQueue.aggregate({
+      where: {
+        organizationId,
+        createdAt: { gte: period.start, lt: period.end },
+        status: MessageStatus.pending,
+        deliveryEnabled: true,
+      },
+      _sum: { estimatedSmsCount: true },
+    }),
   ]);
   const monthlyQuota = settings?.monthlyQuota ?? 100;
   const used = accepted._sum.smsCount ?? 0;
+  const reserved = queuedSegments._sum.estimatedSmsCount ?? 0;
   return {
     period: period.label,
     monthlyQuota,
     used,
-    remaining: Math.max(0, monthlyQuota - used),
+    reserved,
+    remaining: Math.max(0, monthlyQuota - used - reserved),
     queued,
   };
 }

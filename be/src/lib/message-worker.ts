@@ -1,7 +1,7 @@
 import { MessageStatus } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { getTextLkMessage, sendTextLkSms } from "./textlk.js";
-import { currentQuotaPeriod, getMessageUsage } from "./message-templates.js";
+import { currentQuotaPeriod, estimateSmsSegments, getMessageUsage } from "./message-templates.js";
 
 const FINAL_DELIVERED = new Set(["delivered"]);
 const FINAL_FAILED = new Set(["failed", "rejected", "expired", "undelivered", "cancelled"]);
@@ -16,13 +16,6 @@ function nextPollDate() {
 
 function smsEncoding(message: string): "plain" | "unicode" {
   return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
-}
-
-function estimateSmsSegments(message: string) {
-  const unicode = smsEncoding(message) === "unicode";
-  const singleLimit = unicode ? 70 : 160;
-  const multipartLimit = unicode ? 67 : 153;
-  return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
 }
 
 export async function processMessageQueueBatch(limit = 25) {
@@ -48,8 +41,8 @@ export async function processMessageQueueBatch(limit = 25) {
     try {
       if (!message.providerMessageId) {
         const usage = await getMessageUsage(message.organizationId, now);
-        const estimatedSegments = estimateSmsSegments(message.messageBody);
-        if (usage.remaining < estimatedSegments) {
+        const estimatedSegments = message.estimatedSmsCount || estimateSmsSegments(message.messageBody);
+        if (usage.monthlyQuota - usage.used < estimatedSegments) {
           await prisma.messageQueue.update({
             where: { id: message.id },
             data: {
