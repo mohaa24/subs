@@ -20,8 +20,8 @@ function smsEncoding(message: string): "plain" | "unicode" {
 
 function estimateSmsSegments(message: string) {
   const unicode = smsEncoding(message) === "unicode";
-  const singleLimit = unicode ? 70 : 160;
-  const multipartLimit = unicode ? 67 : 153;
+  const singleLimit = unicode ? 70 : 155;
+  const multipartLimit = unicode ? 67 : 155;
   return message.length <= singleLimit ? 1 : Math.ceil(message.length / multipartLimit);
 }
 
