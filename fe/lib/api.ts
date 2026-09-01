@@ -73,6 +73,9 @@ export interface User {
   phoneNumber?: string | null;
   organizationId: string | null;
   permissions?: string[];
+  isActive?: boolean;
+  organizationRoleId?: string | null;
+  organizationRole?: { id: string; name: string; permissions?: { permission: string }[] } | null;
   organization?: {
     id: string;
     name: string;
@@ -802,23 +805,25 @@ export interface MembershipCreditEntry {
   createdBy?: { id: string; email: string } | null;
 }
 
-export type PermissionType =
-  | "MANAGE_PERSONS"
-  | "VIEW_PERSONS"
-  | "MANAGE_MEMBERSHIPS"
-  | "VIEW_MEMBERSHIPS"
-  | "COLLECT_PAYMENTS"
-  | "VIEW_PAYMENTS"
-  | "MANAGE_ANNOUNCEMENTS"
-  | "MANAGE_DISTRIBUTIONS"
-  | "VIEW_REPORTS";
+export type PermissionType = string;
 
-export const ALL_PERMISSIONS: PermissionType[] = [
-  "MANAGE_PERSONS", "VIEW_PERSONS",
-  "MANAGE_MEMBERSHIPS", "VIEW_MEMBERSHIPS",
-  "COLLECT_PAYMENTS", "VIEW_PAYMENTS",
-  "MANAGE_ANNOUNCEMENTS", "MANAGE_DISTRIBUTIONS", "VIEW_REPORTS",
-];
+export interface OrganizationRole {
+  id: string;
+  name: string;
+  description?: string | null;
+  permissions: string[];
+  userCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PermissionDefinition {
+  category: string;
+  key: string;
+  label: string;
+  description: string;
+  implies?: readonly string[];
+}
 
 export interface UserBookmark {
   id: string;

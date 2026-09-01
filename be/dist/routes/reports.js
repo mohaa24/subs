@@ -5,9 +5,11 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const permissions_js_1 = require("./permissions.js");
 exports.reportsRouter = (0, express_1.Router)();
 exports.reportsRouter.use(auth_js_1.requireAuth);
 exports.reportsRouter.use(auth_js_1.withOrgScope);
+exports.reportsRouter.use((0, permissions_js_1.requirePermission)("VIEW_MEMBER_REPORTS"));
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }

@@ -3,11 +3,13 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { requirePermission } from "./permissions.js";
 
 export const reportsRouter = Router();
 
 reportsRouter.use(requireAuth);
 reportsRouter.use(withOrgScope);
+reportsRouter.use(requirePermission("VIEW_MEMBER_REPORTS"));
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;

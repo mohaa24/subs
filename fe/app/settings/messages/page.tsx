@@ -50,7 +50,7 @@ type MessageSettingsPayload = {
 };
 
 export default function MessageSettingsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState("");
@@ -62,6 +62,8 @@ export default function MessageSettingsPage() {
   const [selectedTemplateType, setSelectedTemplateType] = useState<string | null>(null);
 
   const isSuperUser = user?.role === "super_user";
+  const canViewSettings = hasPermission("VIEW_SMS_SETTINGS");
+  const canEditTemplates = hasPermission("MANAGE_SMS_TEMPLATES");
   const effectiveOrgId = isSuperUser ? selectedOrgId : user?.organizationId ?? "";
 
   useEffect(() => {
@@ -111,8 +113,8 @@ export default function MessageSettingsPage() {
   }, [effectiveOrgId, isSuperUser]);
 
   useEffect(() => {
-    if (user && (user.role === "admin" || user.role === "super_user")) void loadSettings();
-  }, [loadSettings, user]);
+    if (user && canViewSettings) void loadSettings();
+  }, [loadSettings, user, canViewSettings]);
 
   const usagePercent = useMemo(() => {
     if (!settings?.usage.monthlyQuota) return settings?.usage.used ? 100 : 0;
@@ -135,7 +137,7 @@ export default function MessageSettingsPage() {
   }
 
   async function saveSettings() {
-    if (!isSuperUser || !effectiveOrgId) return;
+    if (!canEditTemplates || !effectiveOrgId) return;
     setSaving(true);
     try {
       const updated = await api<MessageSettingsPayload>("/messages/settings", {
@@ -162,7 +164,7 @@ export default function MessageSettingsPage() {
   }
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
-  if (user.role !== "admin" && user.role !== "super_user") {
+  if (!canViewSettings) {
     router.replace("/");
     return null;
   }
@@ -190,7 +192,7 @@ export default function MessageSettingsPage() {
               Manage monthly quota and member notification templates.
             </p>
           </div>
-          {isSuperUser && (
+          {canEditTemplates && (
             <Button onClick={saveSettings} disabled={saving || loading || !settings} className="gap-2">
               <Save className="h-4 w-4" />
               {saving ? "Saving…" : "Save settings"}
@@ -293,7 +295,7 @@ export default function MessageSettingsPage() {
                         <Checkbox
                           aria-label={`Enable ${template.label}`}
                           checked={template.enabled}
-                          disabled={!isSuperUser || !template.available}
+                          disabled={!canEditTemplates || !template.available}
                           onCheckedChange={(checked) =>
                             updateTemplate(template.eventType, { enabled: checked === true })
                           }
@@ -306,12 +308,12 @@ export default function MessageSettingsPage() {
                         className="min-w-20 gap-1.5"
                         onClick={() => setSelectedTemplateType(template.eventType)}
                       >
-                        {isSuperUser && template.available ? (
+                        {canEditTemplates && template.available ? (
                           <Pencil className="h-3.5 w-3.5" />
                         ) : (
                           <Eye className="h-3.5 w-3.5" />
                         )}
-                        {isSuperUser && template.available ? "Edit" : "View"}
+                        {canEditTemplates && template.available ? "Edit" : "View"}
                       </Button>
                     </div>
                   </div>
@@ -344,7 +346,7 @@ export default function MessageSettingsPage() {
                   id="message-template-body"
                   className="min-h-36"
                   value={selectedTemplate.body}
-                  disabled={!isSuperUser || !selectedTemplate.available}
+                  disabled={!canEditTemplates || !selectedTemplate.available}
                   onChange={(event) =>
                     updateTemplate(selectedTemplate.eventType, { body: event.target.value })
                   }

@@ -14,6 +14,7 @@ import type {
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 import {
   accountBalanceExpression,
   accountBalances,
@@ -32,6 +33,31 @@ export const accountingRouter = Router();
 
 accountingRouter.use(requireAuth);
 accountingRouter.use(withOrgScope);
+accountingRouter.use(enforceRoutePermissions((req) => {
+  const path = req.path;
+  if (path.startsWith("/reports/")) return "VIEW_FINANCIAL_REPORTS";
+  if (path === "/journal") return "VIEW_JOURNALS";
+  if (path.startsWith("/accounts")) return req.method === "GET" ? "VIEW_CHART_OF_ACCOUNTS" : "MANAGE_CHART_OF_ACCOUNTS";
+  if (path.startsWith("/cash-in")) {
+    if (req.method === "GET") return "VIEW_CASH_IN";
+    if (path.includes("receivable")) return "MANAGE_RECEIVABLES";
+    if (path.includes("payable")) return "MANAGE_PAYABLES";
+    return "RECEIVE_OPERATING_INCOME";
+  }
+  if (path.startsWith("/cash-out")) {
+    if (req.method === "GET") return "VIEW_CASH_OUT";
+    if (path.includes("payable")) return "MANAGE_PAYABLES";
+    return "PAY_OPERATING_EXPENSE";
+  }
+  if (path.startsWith("/cash-transactions/") && path.endsWith("/reverse")) return "REVERSE_CASH_TRANSACTION";
+  if (path.startsWith("/receivables")) return req.method === "GET" ? "VIEW_RECEIVABLES" : "MANAGE_RECEIVABLES";
+  if (path.startsWith("/payables")) return req.method === "GET" ? "VIEW_PAYABLES" : "MANAGE_PAYABLES";
+  if (path.startsWith("/funds") || path.startsWith("/fund-transactions")) return req.method === "GET" ? "VIEW_SPECIAL_FUNDS" : "MANAGE_SPECIAL_FUNDS";
+  if (path.startsWith("/banking") || path === "/transfers") return req.method === "GET" ? "VIEW_BANKING" : "MANAGE_BANKING";
+  if (path === "/income") return "RECEIVE_OPERATING_INCOME";
+  if (path === "/expenses") return "PAY_OPERATING_EXPENSE";
+  return "VIEW_CHART_OF_ACCOUNTS";
+}));
 
 const accountTypes: AccountingAccountType[] = ["asset", "liability", "equity", "income", "expense"];
 const accountSubtypes: AccountingAssetSubtype[] = [
@@ -340,7 +366,6 @@ const fundTransferSchema = z.object({
 });
 
 function requireAccountingAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!requireAccountingRole(req, res)) return;
   next();
 }
 

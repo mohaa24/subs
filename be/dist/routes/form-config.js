@@ -6,9 +6,11 @@ const zod_1 = require("zod");
 const client_1 = require("@prisma/client");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 exports.formConfigRouter = (0, express_1.Router)();
 exports.formConfigRouter.use(auth_js_1.requireAuth);
 exports.formConfigRouter.use(auth_js_1.withOrgScope);
+exports.formConfigRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_FORM_SETTINGS"));
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
@@ -38,7 +40,7 @@ exports.formConfigRouter.get("/", async (req, res) => {
     });
     return res.json(configs);
 });
-exports.formConfigRouter.put("/", auth_js_1.requireAdmin, async (req, res) => {
+exports.formConfigRouter.put("/", async (req, res) => {
     const parsed = putFormConfigSchema.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

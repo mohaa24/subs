@@ -7,13 +7,13 @@ const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
-const permissions_js_1 = require("./permissions.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 const audit_log_js_1 = require("../lib/audit-log.js");
 const message_templates_js_1 = require("../lib/message-templates.js");
 exports.announcementsRouter = (0, express_1.Router)();
 exports.announcementsRouter.use(auth_js_1.requireAuth);
 exports.announcementsRouter.use(auth_js_1.withOrgScope);
-exports.announcementsRouter.use((0, permissions_js_1.requirePermission)(client_1.Permission.MANAGE_ANNOUNCEMENTS));
+exports.announcementsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_ANNOUNCEMENTS" : "MANAGE_ANNOUNCEMENTS"));
 const ANNOUNCEMENT_VARIABLES = ["member_name", "membership_no", "organization_name", "total_outstanding_due"];
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;

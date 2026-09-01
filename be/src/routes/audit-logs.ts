@@ -2,11 +2,13 @@ import { Router } from "express";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { requirePermission } from "./permissions.js";
 
 export const auditLogsRouter = Router();
 
 auditLogsRouter.use(requireAuth);
 auditLogsRouter.use(withOrgScope);
+auditLogsRouter.use(requirePermission("VIEW_AUDIT_LOG"));
 
 auditLogsRouter.get("/", async (req, res) => {
   if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {

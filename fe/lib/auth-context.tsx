@@ -13,6 +13,7 @@ const AuthContext = createContext<{
   organizations: Organization[];
   activeOrganization: Organization | null;
   switchOrganization: (organizationId: string) => void;
+  hasPermission: (...permissions: string[]) => boolean;
 } | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -117,8 +118,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.reload();
   }, [organizations]);
 
+  const hasPermission = useCallback((...permissions: string[]) => {
+    if (!user) return false;
+    if (user.role === "super_user" || user.role === "admin") return true;
+    return permissions.some((permission) => user.permissions?.includes(permission));
+  }, [user]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refetch, organizations, activeOrganization, switchOrganization }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refetch, organizations, activeOrganization, switchOrganization, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

@@ -123,14 +123,14 @@ function formatFundPeriod(fund?: FundPot | null) {
 }
 
 export default function FundDetailPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
   const fundId = typeof params.id === "string" ? params.id : "";
   const mode = searchParams.get("mode");
   const fundMode = mode === "cash-in" || mode === "cash-out" ? mode : null;
-  const canManageFunds = user?.role === "admin" || user?.role === "super_user";
+  const canManageFunds = hasPermission("MANAGE_SPECIAL_FUNDS");
 
   const [fund, setFund] = useState<FundPot | null>(null);
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);

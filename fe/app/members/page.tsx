@@ -86,7 +86,7 @@ type AppliedFilterPill = {
 };
 
 function MembersContent() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState<Membership[]>([]);
@@ -470,12 +470,12 @@ function MembersContent() {
 
         <div className="flex items-center justify-between mb-5">
           <h1 className="text-xl font-semibold text-foreground">Members</h1>
-          <Link href="/members/new">
+          {hasPermission("CREATE_MEMBERSHIP") && <Link href="/members/new">
             <Button size="sm" variant="addNew" className="gap-1.5">
               <UserPlus className="h-4 w-4" />
               New Member
             </Button>
-          </Link>
+          </Link>}
         </div>
 
         <Card className="overflow-hidden border-0 shadow-none md:border md:shadow-sm">

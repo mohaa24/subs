@@ -281,7 +281,7 @@ function ManualDueDateInput({
 }
 
 export default function MembershipDetailPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -514,7 +514,7 @@ export default function MembershipDetailPage() {
     }
   }
 
-  const canManage = user?.role === "admin" || user?.role === "super_user";
+  const canManage = hasPermission("EDIT_MEMBERSHIP", "MANAGE_MEMBER_DUES", "REVERSE_MEMBER_PAYMENT");
   const canRecordCreditPayment = !!membership;
 
   async function sendPaymentReminder() {

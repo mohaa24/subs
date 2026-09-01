@@ -154,9 +154,9 @@ function extractPersonIdFromQr(decoded: string): string {
 
 export default function DistributionsPage() {
   const { t } = useTranslation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
-  const isAdmin = user?.role === "admin" || user?.role === "super_user";
+  const isAdmin = hasPermission("MANAGE_DISTRIBUTIONS");
 
   const [distributions, setDistributions] = useState<Distribution[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

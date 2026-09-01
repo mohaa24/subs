@@ -4,11 +4,13 @@ import { DistributionFrequency } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 
 export const distributionsRouter = Router();
 
 distributionsRouter.use(requireAuth);
 distributionsRouter.use(withOrgScope);
+distributionsRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_DISTRIBUTIONS" : "MANAGE_DISTRIBUTIONS"));
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;

@@ -5,9 +5,11 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 exports.zonesRouter = (0, express_1.Router)();
 exports.zonesRouter.use(auth_js_1.requireAuth);
 exports.zonesRouter.use(auth_js_1.withOrgScope);
+exports.zonesRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_ZONES"));
 const maxZoneCode = 9;
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
@@ -35,7 +37,7 @@ exports.zonesRouter.get("/", async (req, res) => {
     });
     return res.json(zones);
 });
-exports.zonesRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
+exports.zonesRouter.post("/", async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -58,7 +60,7 @@ exports.zonesRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     });
     return res.status(201).json(zone);
 });
-exports.zonesRouter.patch("/:id", auth_js_1.requireAdmin, async (req, res) => {
+exports.zonesRouter.patch("/:id", async (req, res) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -76,7 +78,7 @@ exports.zonesRouter.patch("/:id", auth_js_1.requireAdmin, async (req, res) => {
     });
     return res.json(updated);
 });
-exports.zonesRouter.delete("/:id", auth_js_1.requireAdmin, async (req, res) => {
+exports.zonesRouter.delete("/:id", async (req, res) => {
     const zone = await prisma_js_1.prisma.zone.findUnique({ where: { id: req.params.id } });
     if (!zone)
         return res.status(404).json({ error: "Zone not found" });

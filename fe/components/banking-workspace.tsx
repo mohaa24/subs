@@ -32,9 +32,9 @@ const periodDates = (period: Period) => period === "this_month" ? { fromDate: fi
 function toReceiptData(receipt: BankingReceipt): PaymentReceiptData { return { paymentKind: "fund", organizationName: receipt.organizationName, organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl), membershipNo: receipt.accountName, membershipId: "", memberName: receipt.counterpartyName ?? "—", paymentId: receipt.transactionId, receiptNumber: receipt.receiptNumber, paymentDate: receipt.transactionDate, paymentMethod: receipt.paymentMethod ?? "—", paidAmount: receipt.amount, appliedToDue: 0, overpaymentToCredit: 0, remainingAfter: 0, outstandingAfterPayment: 0, creditBalanceAfterPayment: 0, note: receipt.reversalReason ?? receipt.description ?? receipt.reference ?? null, collectedBy: receipt.collectedBy ?? undefined, memberQrValue: "", receiptTitle: receipt.receiptTitle, primaryLabel: "From Account", nameLabel: receipt.counterpartyLabel, amountLabel: receipt.amountLabel, showBalanceAfterPayment: false, extraRows: [receipt.originalReceiptNumber ? { label: "Original Receipt", value: receipt.originalReceiptNumber } : null, receipt.reference ? { label: "Reference", value: receipt.reference } : null, receipt.reversalReason ? { label: "Reversal Reason", value: receipt.reversalReason } : null].filter(Boolean) as Array<{ label: string; value: string }> }; }
 
 export function BankingWorkspace({ accountId }: { accountId?: string }) {
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const router = useRouter();
-  const canManage = user?.role === "admin" || user?.role === "super_user";
+  const canManage = hasPermission("MANAGE_BANKING");
   const [period, setPeriod] = useState<Period>("this_year");
   const [fromDate, setFromDate] = useState(firstOfYear());
   const [toDate, setToDate] = useState(today());

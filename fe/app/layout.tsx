@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/toaster";
+import { AccessBoundary } from "@/components/access-boundary";
 
 export const metadata: Metadata = {
   title: "Civica",
@@ -42,7 +43,7 @@ export default function RootLayout({
         </noscript>
         <AuthProvider>
           <I18nProvider>
-            {children}
+            <AccessBoundary>{children}</AccessBoundary>
             <Toaster />
           </I18nProvider>
         </AuthProvider>

@@ -5,9 +5,11 @@ const express_1 = require("express");
 const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const permissions_js_1 = require("./permissions.js");
 exports.dashboardRouter = (0, express_1.Router)();
 exports.dashboardRouter.use(auth_js_1.requireAuth);
 exports.dashboardRouter.use(auth_js_1.withOrgScope);
+exports.dashboardRouter.use((0, permissions_js_1.requirePermission)("VIEW_DASHBOARD"));
 function getOrgId(req) {
     return req.organizationId ?? req.query?.organizationId;
 }

@@ -3,11 +3,13 @@ import { z } from "zod";
 import { MaritalStatus, ResidentType, LivingStatus, PersonTitle, IdentityType, BloodGroup, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions, readWritePermissions } from "../middleware/route-permissions.js";
 
 export const personsRouter = Router();
 
 personsRouter.use(requireAuth);
 personsRouter.use(withOrgScope);
+personsRouter.use(enforceRoutePermissions(readWritePermissions("VIEW_PERSONS", "CREATE_PERSON", "EDIT_PERSON")));
 
 const maritalStatuses: MaritalStatus[] = ["single", "married", "widower", "widow"];
 const residentTypes: ResidentType[] = [

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { AnnouncementStatus, MembershipStatus, MessageEventType, MessageStatus, Permission, Prisma } from "@prisma/client";
+import { AnnouncementStatus, MembershipStatus, MessageEventType, MessageStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
 import { requirePermission } from "./permissions.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 import { writeAuditLog } from "../lib/audit-log.js";
 import {
   currentQuotaPeriod,
@@ -19,7 +20,7 @@ export const announcementsRouter = Router();
 
 announcementsRouter.use(requireAuth);
 announcementsRouter.use(withOrgScope);
-announcementsRouter.use(requirePermission(Permission.MANAGE_ANNOUNCEMENTS));
+announcementsRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_ANNOUNCEMENTS" : "MANAGE_ANNOUNCEMENTS"));
 
 const ANNOUNCEMENT_VARIABLES = ["member_name", "membership_no", "organization_name", "total_outstanding_due"] as const;
 

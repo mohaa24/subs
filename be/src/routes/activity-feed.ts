@@ -2,12 +2,14 @@ import { Router, type Request } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 import { createRemarkActivityFeedItem, listActivityFeedItems } from "../lib/activity-feed.js";
 
 export const activityFeedRouter = Router();
 
 activityFeedRouter.use(requireAuth);
 activityFeedRouter.use(withOrgScope);
+activityFeedRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_PERSONS" : "ADD_ACTIVITY_NOTE"));
 
 const createRemarkSchema = z.object({
   entryType: z.literal("remark").optional(),

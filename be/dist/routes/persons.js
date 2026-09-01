@@ -5,9 +5,11 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 exports.personsRouter = (0, express_1.Router)();
 exports.personsRouter.use(auth_js_1.requireAuth);
 exports.personsRouter.use(auth_js_1.withOrgScope);
+exports.personsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((0, route_permissions_js_1.readWritePermissions)("VIEW_PERSONS", "CREATE_PERSON", "EDIT_PERSON")));
 const maritalStatuses = ["single", "married", "widower", "widow"];
 const residentTypes = [
     "ResidentSinceBirth",

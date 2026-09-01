@@ -32,6 +32,9 @@ async function requireAuth(req, res, next) {
             if (!org || !org.isActive) {
                 return res.status(403).json({ error: "Organization is inactive" });
             }
+            const currentUser = await prisma_js_1.prisma.user.findUnique({ where: { id: decoded.userId }, select: { isActive: true } });
+            if (!currentUser?.isActive)
+                return res.status(403).json({ error: "Your user account is inactive" });
         }
         next();
     }
