@@ -43,8 +43,8 @@ exports.usersRouter = (0, express_1.Router)();
 exports.usersRouter.use(auth_js_1.requireAuth);
 exports.usersRouter.use(auth_js_1.withOrgScope);
 const createSchema = zod_1.z.object({
-    email: zod_1.z.string().email(),
-    password: zod_1.z.string().min(6),
+    email: zod_1.z.string().trim().email("Enter a valid email address"),
+    password: zod_1.z.string().min(6, "Temporary password must contain at least 6 characters"),
     role: zod_1.z.enum(["admin", "user"]).default("user"),
     organizationId: zod_1.z.string().optional(),
     phoneNumber: zod_1.z.string().optional(),
@@ -91,7 +91,7 @@ exports.usersRouter.patch("/me", async (req, res) => {
 exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Check the user details and try again", details: parsed.error.flatten() });
     }
     const isSuper = req.auth.role === "super_user";
     if (!isSuper && parsed.data.role !== "user")
@@ -100,7 +100,8 @@ exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     if (!orgId)
         return res.status(400).json({ error: "organizationId required" });
     // Schema restricts role to admin|user; super_user cannot be created via this endpoint
-    const existing = await prisma_js_1.prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
+    const normalizedEmail = parsed.data.email.toLowerCase();
+    const existing = await prisma_js_1.prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing)
         return res.status(409).json({ error: "Email already in use" });
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
@@ -113,7 +114,7 @@ exports.usersRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     }
     const user = await prisma_js_1.prisma.user.create({
         data: {
-            email: parsed.data.email.toLowerCase(),
+            email: normalizedEmail,
             passwordHash,
             role: parsed.data.role,
             organizationId: orgId || null,

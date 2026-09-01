@@ -11,8 +11,8 @@ usersRouter.use(requireAuth);
 usersRouter.use(withOrgScope);
 
 const createSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().trim().email("Enter a valid email address"),
+  password: z.string().min(6, "Temporary password must contain at least 6 characters"),
   role: z.enum(["admin", "user"]).default("user"),
   organizationId: z.string().optional(),
   phoneNumber: z.string().optional(),
@@ -62,14 +62,15 @@ usersRouter.patch("/me", async (req, res) => {
 usersRouter.post("/", requireAdmin, async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Check the user details and try again", details: parsed.error.flatten() });
   }
   const isSuper = req.auth!.role === "super_user";
   if (!isSuper && parsed.data.role !== "user") return res.status(403).json({ error: "Organisation administrators can only create role-based users" });
   const orgId = parsed.data.organizationId ?? (isSuper ? (req as any).organizationId : req.auth!.organizationId);
   if (!orgId) return res.status(400).json({ error: "organizationId required" });
   // Schema restricts role to admin|user; super_user cannot be created via this endpoint
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) return res.status(409).json({ error: "Email already in use" });
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   if (parsed.data.role === "user" && !parsed.data.organizationRoleId) return res.status(400).json({ error: "Select a role for this user" });
@@ -79,7 +80,7 @@ usersRouter.post("/", requireAdmin, async (req, res) => {
   }
   const user = await prisma.user.create({
     data: {
-      email: parsed.data.email.toLowerCase(),
+      email: normalizedEmail,
       passwordHash,
       role: parsed.data.role as UserRole,
       organizationId: orgId || null,

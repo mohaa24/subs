@@ -50,10 +50,23 @@ export default function UsersPage() {
 
   async function createUser(event: React.FormEvent) {
     event.preventDefault();
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      toast({ variant: "destructive", title: "Email address required", description: "Enter the new user's email address." });
+      return;
+    }
+    if (password.length < 6) {
+      toast({ variant: "destructive", title: "Temporary password is too short", description: "Use at least 6 characters." });
+      return;
+    }
+    if (!roleId) {
+      toast({ variant: "destructive", title: "Role required", description: "Select a role before creating the user." });
+      return;
+    }
     setSaving(true);
     try {
       await api("/users", { method: "POST", body: JSON.stringify({
-        email, password, role: "user",
+        email: normalizedEmail, password, role: "user",
         organizationRoleId: roleId || null,
       }) });
       toast({ title: "User created", description: `${email} can now sign in.` });
@@ -102,7 +115,7 @@ export default function UsersPage() {
     <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Add user</DialogTitle></DialogHeader>
       <form onSubmit={createUser} className="space-y-4">
         <div className="space-y-2"><Label>Email address</Label><Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></div>
-        <div className="space-y-2"><Label>Temporary password</Label><Input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /><p className="text-xs text-muted-foreground">Share this password securely with the new user.</p></div>
+        <div className="space-y-2"><Label>Temporary password</Label><Input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /><p className="text-xs text-muted-foreground">Use at least 6 characters and share it securely with the new user.</p></div>
         <div className="space-y-2"><Label>Role</Label><Select value={roleId} onValueChange={setRoleId}><SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger><SelectContent>{roles.map((role) => <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>)}</SelectContent></Select>{roles.length === 0 && <button type="button" onClick={() => router.push("/roles")} className="text-xs font-medium text-primary">Create a role first</button>}</div>
         <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button type="submit" disabled={saving || !roleId}>{saving ? "Creating…" : "Create user"}</Button></div>
       </form>
