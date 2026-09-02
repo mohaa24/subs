@@ -131,6 +131,11 @@ type PosPrinterProfile = {
   columns: number;
 };
 
+type PosTextLine = {
+  text: string;
+  align: "left" | "right";
+};
+
 type PrintMethod = "qz" | "rawbt" | "browser";
 
 const RECEIPT_WIDTH_INCHES = 2.8;
@@ -436,30 +441,45 @@ function wrapText(value: string, width: number): string[] {
   return lines;
 }
 
-function formatKeyValueLines(label: string, value: string, width = XP_P801A_COLUMNS): string[] {
+function formatKeyValueLines(label: string, value: string, width = XP_P801A_COLUMNS): PosTextLine[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim();
-  if (!cleanValue) return [cleanLabel];
+  if (!cleanValue) return [{ text: cleanLabel, align: "left" }];
 
   if (cleanLabel.length + cleanValue.length + 1 <= width) {
-    return [`${cleanLabel}${" ".repeat(width - cleanLabel.length - cleanValue.length)}${cleanValue}`];
+    return [{
+      text: `${cleanLabel}${" ".repeat(width - cleanLabel.length - cleanValue.length)}${cleanValue}`,
+      align: "left",
+    }];
   }
 
   const wrappedValue = wrapText(cleanValue, width);
-  return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
+  return [
+    { text: cleanLabel, align: "left" },
+    ...wrappedValue.map((line) => ({ text: line, align: "right" as const })),
+  ];
 }
 
-function formatTwoColumnLines(label: string, value: string, width = XP_P801A_COLUMNS, valueWidth = 22): string[] {
+function formatTwoColumnLines(label: string, value: string, width = XP_P801A_COLUMNS, valueWidth = 22): PosTextLine[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim() || "-";
   const normalizedValueWidth = Math.min(Math.max(valueWidth, 8), width - 4);
   const labelWidth = width - normalizedValueWidth - 1;
   const wrappedValue = wrapText(cleanValue, normalizedValueWidth);
 
-  return wrappedValue.map((line, index) => {
-    const left = index === 0 ? cleanLabel : "";
-    return `${left.padEnd(labelWidth)} ${line.padStart(normalizedValueWidth)}`;
-  });
+  return wrappedValue.map((line, index) => index === 0
+    ? {
+        text: `${cleanLabel.padEnd(labelWidth)} ${line.padStart(normalizedValueWidth)}`,
+        align: "left" as const,
+      }
+    : { text: line, align: "right" as const });
+}
+
+function printPosLines(encoder: ReceiptEncoderInstance, lines: PosTextLine[]) {
+  for (const line of lines) {
+    encoder.align(line.align).line(line.text);
+  }
+  encoder.align("left");
 }
 
 async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
@@ -507,6 +527,9 @@ async function encodePosReceipt(
   });
 
   encoder.initialize();
+  // Flush initialization before the first centred line. Otherwise the
+  // XP-P801A resets after the encoder's leading centring spaces and drops them.
+  encoder.newline();
   if (receipt.organizationReceiptLogoUrl) {
     try {
       const logoCanvas = await loadReceiptLogoCanvas(receipt.organizationReceiptLogoUrl);
@@ -532,42 +555,32 @@ async function encodePosReceipt(
   encoder.align("left");
   encoder.rule();
 
-  for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
-  for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
-  for (const line of formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo)) encoder.line(line);
-  for (const line of formatTwoColumnLines(nameLabel(receipt), receipt.memberName || "-")) encoder.line(line);
+  printPosLines(encoder, formatKeyValueLines("Receipt #", receipt.receiptNumber));
+  printPosLines(encoder, formatKeyValueLines("Date", posDateTime(receipt.paymentDate)));
+  printPosLines(encoder, formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo));
+  printPosLines(encoder, formatTwoColumnLines(nameLabel(receipt), receipt.memberName || "-"));
 
-  for (const line of formatKeyValueLines("Payment Method", receipt.paymentMethod || "-")) {
-    encoder.line(line);
-  }
+  printPosLines(encoder, formatKeyValueLines("Payment Method", receipt.paymentMethod || "-"));
   for (const row of receipt.extraRows ?? []) {
     if (!row.value) continue;
-    for (const line of formatTwoColumnLines(row.label, row.value)) encoder.line(line);
+    printPosLines(encoder, formatTwoColumnLines(row.label, row.value));
   }
 
   encoder.rule();
   encoder.bold(true);
-  for (const line of formatKeyValueLines(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
+  printPosLines(encoder, formatKeyValueLines(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`));
   encoder.bold(false);
   if (shouldShowBalanceAfterPayment(receipt)) {
     encoder.newline();
     encoder.line("Balance After Payment");
-    for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
-      encoder.line(line);
-    }
-    for (const line of formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)) {
-      encoder.line(line);
-    }
+    printPosLines(encoder, formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`));
+    printPosLines(encoder, formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`));
   }
 
   encoder.rule();
-  for (const line of formatTwoColumnLines("Collected By", receipt.collectedBy || "-")) {
-    encoder.line(line);
-  }
+  printPosLines(encoder, formatTwoColumnLines("Collected By", receipt.collectedBy || "-"));
   if (receipt.note) {
-    for (const line of formatTwoColumnLines("Note", receipt.note)) {
-      encoder.line(line);
-    }
+    printPosLines(encoder, formatTwoColumnLines("Note", receipt.note));
   }
   encoder.rule();
 
