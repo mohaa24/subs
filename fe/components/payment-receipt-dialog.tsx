@@ -144,9 +144,9 @@ const XP_P801A_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 96;
 const RECEIPT_LOGO_WIDTH_PX = 384;
 const RECEIPT_LOGO_HEIGHT_PX = 96;
-const HUDHA_RECEIPT_LOGO_WIDTH_PX = 384;
-const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 272;
-const HUDHA_RECEIPT_LOGO_URL = "/document/huda_doc_header.png";
+const HUDHA_RECEIPT_LOGO_WIDTH_PX = 304;
+const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 264;
+const HUDHA_RECEIPT_LOGO_URL = "/document/hudha_receipt_logo_thermal.png";
 const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -290,18 +290,18 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
         object-fit: contain;
       }
       .logo-box.hudha-logo {
-        width: 2in;
-        height: 0.98in;
+        width: 1.55in;
+        height: 1.35in;
         min-height: 0;
         margin: 0 auto 4px;
         overflow: hidden;
       }
       .logo-box.hudha-logo img {
-        width: 2in;
+        width: 1.55in;
         max-width: none;
         height: auto;
         max-height: none;
-        transform: translateY(-0.03in);
+        transform: translateY(-0.04in);
       }
       .text-box { width: 100%; }
       .textbox-info {
@@ -530,10 +530,10 @@ async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const sourceX = hudhaLogo ? Math.round(image.naturalWidth * 0.16) : 0;
-  const sourceY = hudhaLogo ? Math.round(image.naturalHeight * 0.02) : 0;
-  const sourceWidth = hudhaLogo ? Math.round(image.naturalWidth * 0.68) : image.naturalWidth;
-  const sourceHeight = hudhaLogo ? Math.round(image.naturalHeight * 0.72) : image.naturalHeight;
+  const sourceX = hudhaLogo ? Math.round(image.naturalWidth * 0.03) : 0;
+  const sourceY = hudhaLogo ? Math.round(image.naturalHeight * 0.04) : 0;
+  const sourceWidth = hudhaLogo ? Math.round(image.naturalWidth * 0.94) : image.naturalWidth;
+  const sourceHeight = hudhaLogo ? Math.round(image.naturalHeight * 0.82) : image.naturalHeight;
   const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
   const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
   const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
@@ -950,14 +950,14 @@ export function PaymentReceiptDialog({
                 {previewLogoUrl ? (
                   <div
                     className={previewUsesBundledHudhaLogo
-                      ? "mx-auto mb-1 h-[0.98in] w-[2in] overflow-hidden"
+                      ? "mx-auto mb-1 h-[1.35in] w-[1.55in] overflow-hidden"
                       : "mb-1 flex min-h-[0.68in] items-center justify-center"}
                   >
                     <img
                       src={previewLogoUrl}
                       alt={`${receipt.organizationName} logo`}
                       className={previewUsesBundledHudhaLogo
-                        ? "h-auto w-[2in] max-w-none -translate-y-[0.03in]"
+                        ? "h-auto w-[1.55in] max-w-none -translate-y-[0.04in]"
                         : "max-h-[0.58in] max-w-[2.35in] object-contain"}
                     />
                   </div>
