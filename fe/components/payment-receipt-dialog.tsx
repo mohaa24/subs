@@ -292,17 +292,16 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       }
       .logo-box.hudha-logo {
         width: 1.55in;
-        height: 1.35in;
+        height: auto;
         min-height: 0;
         margin: 0 auto 4px;
-        overflow: hidden;
       }
       .logo-box.hudha-logo img {
+        display: block;
         width: 1.55in;
         max-width: none;
         height: auto;
         max-height: none;
-        transform: translateY(-0.04in);
       }
       .text-box { width: 100%; }
       .textbox-info {
@@ -957,14 +956,14 @@ export function PaymentReceiptDialog({
                 {previewLogoUrl ? (
                   <div
                     className={previewUsesBundledHudhaLogo
-                      ? "mx-auto mb-1 h-[1.35in] w-[1.55in] overflow-hidden"
+                      ? "mx-auto mb-1 w-[1.55in]"
                       : "mb-1 flex min-h-[0.68in] items-center justify-center"}
                   >
                     <img
                       src={previewLogoUrl}
                       alt={`${receipt.organizationName} logo`}
                       className={previewUsesBundledHudhaLogo
-                        ? "h-auto w-[1.55in] max-w-none -translate-y-[0.04in]"
+                        ? "block h-auto w-[1.55in] max-w-none"
                         : "max-h-[0.58in] max-w-[2.35in] object-contain"}
                     />
                   </div>
