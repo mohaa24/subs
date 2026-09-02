@@ -531,10 +531,12 @@ async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const sourceX = hudhaLogo ? Math.round(image.naturalWidth * 0.03) : 0;
-  const sourceY = hudhaLogo ? Math.round(image.naturalHeight * 0.04) : 0;
-  const sourceWidth = hudhaLogo ? Math.round(image.naturalWidth * 0.94) : image.naturalWidth;
-  const sourceHeight = hudhaLogo ? Math.round(image.naturalHeight * 0.82) : image.naturalHeight;
+  // The bundled Hudha asset is already tightly laid out and includes its
+  // registration line, so retain the complete source when rasterising it.
+  const sourceX = 0;
+  const sourceY = 0;
+  const sourceWidth = image.naturalWidth;
+  const sourceHeight = image.naturalHeight;
   const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
   const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
   const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
