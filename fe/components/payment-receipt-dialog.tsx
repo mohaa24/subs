@@ -919,6 +919,10 @@ export function PaymentReceiptDialog({
   }
 
   const isPrinting = qzPrinting || rawBtPrinting;
+  const previewLogoUrl = receipt ? receiptLogoUrl(receipt) : null;
+  const previewUsesBundledHudhaLogo = previewLogoUrl
+    ? isBundledHudhaLogo(previewLogoUrl)
+    : false;
   const currentPrintLabel =
     selectedPrintMethod === "qz"
       ? qzPrinting
@@ -943,12 +947,18 @@ export function PaymentReceiptDialog({
               style={{ width: `${RECEIPT_WIDTH_INCHES}in` }}
             >
               <div className="text-center">
-                {receipt.organizationReceiptLogoUrl ? (
-                  <div className="mb-1 flex min-h-[0.68in] items-center justify-center">
+                {previewLogoUrl ? (
+                  <div
+                    className={previewUsesBundledHudhaLogo
+                      ? "mx-auto mb-1 h-[0.98in] w-[2in] overflow-hidden"
+                      : "mb-1 flex min-h-[0.68in] items-center justify-center"}
+                  >
                     <img
-                      src={receipt.organizationReceiptLogoUrl}
+                      src={previewLogoUrl}
                       alt={`${receipt.organizationName} logo`}
-                      className="max-h-[0.58in] max-w-[2.35in] object-contain"
+                      className={previewUsesBundledHudhaLogo
+                        ? "h-auto w-[2in] max-w-none -translate-y-[0.03in]"
+                        : "max-h-[0.58in] max-w-[2.35in] object-contain"}
                     />
                   </div>
                 ) : null}
