@@ -79,6 +79,7 @@ type ReceiptPrinterEncoderClass = {
     codepageMapping?: string;
     feedBeforeCut?: number;
     newline?: string;
+    imageMode?: "column" | "raster";
     errors?: "strict" | "relaxed";
   }): ReceiptEncoderInstance;
 };
@@ -564,6 +565,10 @@ async function encodePosReceipt(
     language: profile.language,
     codepageMapping: profile.codepageMapping,
     feedBeforeCut: 3,
+    // Column mode splits images into 24-dot bands. Some XP-P801A firmware
+    // advances the paper between those bands, leaving white horizontal gaps.
+    // Raster mode emits the logo as one continuous GS v 0 bitmap instead.
+    imageMode: "raster",
     errors: "relaxed",
   });
 
