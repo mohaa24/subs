@@ -144,6 +144,9 @@ const XP_P801A_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 96;
 const RECEIPT_LOGO_WIDTH_PX = 384;
 const RECEIPT_LOGO_HEIGHT_PX = 96;
+const HUDHA_RECEIPT_LOGO_WIDTH_PX = 384;
+const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 272;
+const HUDHA_RECEIPT_LOGO_URL = "/document/huda_doc_header.png";
 const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -218,6 +221,17 @@ function shouldShowBalanceAfterPayment(receipt: PaymentReceiptData): boolean {
   return receipt.showBalanceAfterPayment !== false;
 }
 
+function receiptLogoUrl(receipt: PaymentReceiptData): string | null {
+  if (receipt.organizationReceiptLogoUrl) return receipt.organizationReceiptLogoUrl;
+
+  const normalizedName = receipt.organizationName.trim().toLowerCase();
+  return normalizedName.includes("masjidul hudha") ? HUDHA_RECEIPT_LOGO_URL : null;
+}
+
+function isBundledHudhaLogo(url: string): boolean {
+  return url.includes(HUDHA_RECEIPT_LOGO_URL);
+}
+
 function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): string {
   const noteHtml = receipt.note ? rowHtml("Note", receipt.note) : "";
   const paymentMethodHtml = rowHtml("Payment Method", receipt.paymentMethod || "-");
@@ -233,8 +247,9 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
       <div class="border-bottom"></div>`
     : `<div class="border-bottom"></div>`;
-  const logoHtml = receipt.organizationReceiptLogoUrl
-    ? `<div class="logo-box"><img src="${escapeHtml(receipt.organizationReceiptLogoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
+  const logoUrl = receiptLogoUrl(receipt);
+  const logoHtml = logoUrl
+    ? `<div class="logo-box${isBundledHudhaLogo(logoUrl) ? " hudha-logo" : ""}"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
     : "";
   const qrHtml = qrDataUrl
     ? `<div class="qr-wrap"><img src="${qrDataUrl}" alt="Member QR" /></div>`
@@ -273,6 +288,20 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
         max-width: 2.35in;
         max-height: 0.58in;
         object-fit: contain;
+      }
+      .logo-box.hudha-logo {
+        width: 2in;
+        height: 0.98in;
+        min-height: 0;
+        margin: 0 auto 4px;
+        overflow: hidden;
+      }
+      .logo-box.hudha-logo img {
+        width: 2in;
+        max-width: none;
+        height: auto;
+        max-height: none;
+        transform: translateY(-0.03in);
       }
       .text-box { width: 100%; }
       .textbox-info {
@@ -492,23 +521,35 @@ async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
   });
 
   const canvas = document.createElement("canvas");
-  canvas.width = RECEIPT_LOGO_WIDTH_PX;
-  canvas.height = RECEIPT_LOGO_HEIGHT_PX;
+  const hudhaLogo = isBundledHudhaLogo(url);
+  canvas.width = hudhaLogo ? HUDHA_RECEIPT_LOGO_WIDTH_PX : RECEIPT_LOGO_WIDTH_PX;
+  canvas.height = hudhaLogo ? HUDHA_RECEIPT_LOGO_HEIGHT_PX : RECEIPT_LOGO_HEIGHT_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable");
 
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const scale = Math.min(
-    canvas.width / image.naturalWidth,
-    canvas.height / image.naturalHeight
-  );
-  const drawWidth = Math.max(1, Math.round(image.naturalWidth * scale));
-  const drawHeight = Math.max(1, Math.round(image.naturalHeight * scale));
+  const sourceX = hudhaLogo ? Math.round(image.naturalWidth * 0.16) : 0;
+  const sourceY = hudhaLogo ? Math.round(image.naturalHeight * 0.02) : 0;
+  const sourceWidth = hudhaLogo ? Math.round(image.naturalWidth * 0.68) : image.naturalWidth;
+  const sourceHeight = hudhaLogo ? Math.round(image.naturalHeight * 0.72) : image.naturalHeight;
+  const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
   const x = Math.round((canvas.width - drawWidth) / 2);
   const y = Math.round((canvas.height - drawHeight) / 2);
-  ctx.drawImage(image, x, y, drawWidth, drawHeight);
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    drawWidth,
+    drawHeight
+  );
 
   return canvas;
 }
@@ -530,11 +571,12 @@ async function encodePosReceipt(
   // Flush initialization before the first centred line. Otherwise the
   // XP-P801A resets after the encoder's leading centring spaces and drops them.
   encoder.newline();
-  if (receipt.organizationReceiptLogoUrl) {
+  const logoUrl = receiptLogoUrl(receipt);
+  if (logoUrl) {
     try {
-      const logoCanvas = await loadReceiptLogoCanvas(receipt.organizationReceiptLogoUrl);
+      const logoCanvas = await loadReceiptLogoCanvas(logoUrl);
       encoder.align("center");
-      encoder.image(logoCanvas, RECEIPT_LOGO_WIDTH_PX, RECEIPT_LOGO_HEIGHT_PX, "atkinson");
+      encoder.image(logoCanvas, logoCanvas.width, logoCanvas.height, "atkinson");
       encoder.newline();
     } catch (error) {
       console.warn("Receipt logo could not be printed; falling back to text header.", error);
