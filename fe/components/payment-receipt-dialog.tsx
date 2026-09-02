@@ -128,12 +128,14 @@ type QzTrayGlobal = {
 type PosPrinterProfile = {
   language: string;
   codepageMapping: string;
+  columns: number;
 };
 
 type PrintMethod = "qz" | "rawbt" | "browser";
 
 const RECEIPT_WIDTH_INCHES = 2.8;
-const POS_COLUMNS = 44;
+// XP-P801A: 80 mm paper, 72 mm printable width, Font A (12 dots) = 48 columns.
+const XP_P801A_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 96;
 const RECEIPT_LOGO_WIDTH_PX = 384;
 const RECEIPT_LOGO_HEIGHT_PX = 96;
@@ -434,7 +436,7 @@ function wrapText(value: string, width: number): string[] {
   return lines;
 }
 
-function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS): string[] {
+function formatKeyValueLines(label: string, value: string, width = XP_P801A_COLUMNS): string[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim();
   if (!cleanValue) return [cleanLabel];
@@ -447,7 +449,7 @@ function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS):
   return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
 }
 
-function formatTwoColumnLines(label: string, value: string, width = POS_COLUMNS, valueWidth = 22): string[] {
+function formatTwoColumnLines(label: string, value: string, width = XP_P801A_COLUMNS, valueWidth = 22): string[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim() || "-";
   const normalizedValueWidth = Math.min(Math.max(valueWidth, 8), width - 4);
@@ -497,7 +499,7 @@ async function encodePosReceipt(
 ): Promise<Uint8Array> {
   const ReceiptPrinterEncoder = await loadReceiptPrinterEncoderClass();
   const encoder = new ReceiptPrinterEncoder({
-    columns: POS_COLUMNS,
+    columns: profile.columns,
     language: profile.language,
     codepageMapping: profile.codepageMapping,
     feedBeforeCut: 3,
@@ -515,19 +517,21 @@ async function encodePosReceipt(
       console.warn("Receipt logo could not be printed; falling back to text header.", error);
     }
   }
-  encoder.align("center");
-  encoder.bold(true).size(1, 2);
-  for (const line of wrapText(receipt.organizationName.toUpperCase(), POS_COLUMNS - 4)) {
+  // Apply size before alignment. Some XPrinter firmware resets the active
+  // alignment when its character-size command is received.
+  encoder.size(1, 2).align("center").bold(true);
+  for (const line of wrapText(receipt.organizationName.toUpperCase(), profile.columns - 4)) {
+    encoder.align("center");
     encoder.line(line);
   }
-  encoder.size(1, 1);
-  encoder.bold(false);
-  for (const line of wrapText(receiptTitle(receipt), POS_COLUMNS - 4)) {
+  encoder.size(1, 1).align("center").bold(false);
+  for (const line of wrapText(receiptTitle(receipt), profile.columns - 4)) {
+    encoder.align("center");
     encoder.line(line);
   }
+  encoder.align("left");
   encoder.rule();
 
-  encoder.align("left");
   for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
   for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
   for (const line of formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo)) encoder.line(line);
@@ -772,6 +776,7 @@ export function PaymentReceiptDialog({
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
         codepageMapping: "epson",
+        columns: XP_P801A_COLUMNS,
       });
 
       const config = qz.configs.create(printerName, {
@@ -815,6 +820,7 @@ export function PaymentReceiptDialog({
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
         codepageMapping: "epson",
+        columns: XP_P801A_COLUMNS,
       });
       const base64 = toBase64(data);
       const rawBtUrl =
