@@ -146,7 +146,7 @@ const RECEIPT_QR_SIZE_PX = 96;
 const RECEIPT_LOGO_WIDTH_PX = 384;
 const RECEIPT_LOGO_HEIGHT_PX = 96;
 const HUDHA_RECEIPT_LOGO_WIDTH_PX = 304;
-const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 264;
+const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 208;
 const HUDHA_RECEIPT_LOGO_URL = "/document/hudha_receipt_logo_thermal.png";
 const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
@@ -583,7 +583,6 @@ async function encodePosReceipt(
       const logoCanvas = await loadReceiptLogoCanvas(logoUrl);
       encoder.align("center");
       encoder.image(logoCanvas, logoCanvas.width, logoCanvas.height, "atkinson");
-      encoder.newline();
     } catch (error) {
       console.warn("Receipt logo could not be printed; falling back to text header.", error);
     }
