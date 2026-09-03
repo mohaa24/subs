@@ -5,6 +5,11 @@ function getToken(): string | null {
   return localStorage.getItem("token");
 }
 
+function getActiveOrganizationId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("activeOrganizationId");
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit & { params?: Record<string, string> } = {}
@@ -18,6 +23,8 @@ export async function api<T>(
     ...(init.headers as Record<string, string>),
   };
   if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  const activeOrganizationId = getActiveOrganizationId();
+  if (activeOrganizationId) (headers as Record<string, string>)["X-Organization-Id"] = activeOrganizationId;
   const res = await fetch(url.toString(), { ...init, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -42,6 +49,8 @@ export async function apiFormData<T>(path: string, formData: FormData): Promise<
   const token = getToken();
   const headers: HeadersInit = {};
   if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  const activeOrganizationId = getActiveOrganizationId();
+  if (activeOrganizationId) (headers as Record<string, string>)["X-Organization-Id"] = activeOrganizationId;
   const res = await fetch(url.toString(), { method: "POST", headers, body: formData });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

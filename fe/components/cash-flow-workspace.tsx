@@ -483,7 +483,10 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
       });
       if (accountId) await loadDetail();
       else await loadOverview();
-      if (flow === "cash-in" && selected.category === "operating_income") {
+      if (
+        (flow === "cash-in" && selected.category === "operating_income")
+        || (flow === "cash-out" && selected.category === "operating_expense")
+      ) {
         await openCashReceipt(transaction.id);
       }
     } catch (err) {
