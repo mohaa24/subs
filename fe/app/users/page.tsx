@@ -18,7 +18,7 @@ import { api, type OrganizationRole, type User } from "@/lib/api";
 
 export default function UsersPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, activeOrganization } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<OrganizationRole[]>([]);
@@ -30,11 +30,17 @@ export default function UsersPage() {
   const [roleId, setRoleId] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
+  const organizationId = user?.role === "super_user" ? activeOrganization?.id ?? null : user?.organizationId ?? null;
 
   async function load() {
+    if (!organizationId) return;
     setLoading(true);
     try {
-      const [userRows, roleRows] = await Promise.all([api<User[]>("/users"), api<OrganizationRole[]>("/roles")]);
+      const params = { organizationId };
+      const [userRows, roleRows] = await Promise.all([
+        api<User[]>("/users", { params }),
+        api<OrganizationRole[]>("/roles", { params }),
+      ]);
       setUsers(userRows);
       setRoles(roleRows);
     } catch (error) {
@@ -45,8 +51,8 @@ export default function UsersPage() {
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
     if (user && user.role !== "admin" && user.role !== "super_user") router.replace("/");
-    if (user && (user.role === "admin" || user.role === "super_user")) void load();
-  }, [user, authLoading, router]);
+    if (user && organizationId && (user.role === "admin" || user.role === "super_user")) void load();
+  }, [user, organizationId, authLoading, router]);
 
   async function createUser(event: React.FormEvent) {
     event.preventDefault();
@@ -68,6 +74,7 @@ export default function UsersPage() {
       await api("/users", { method: "POST", body: JSON.stringify({
         email: normalizedEmail, password, role: "user",
         organizationRoleId: roleId || null,
+        organizationId,
       }) });
       toast({ title: "User created", description: `${email} can now sign in.` });
       setCreateOpen(false); setEmail(""); setPassword(""); setRoleId("");
@@ -81,7 +88,11 @@ export default function UsersPage() {
     if (!editUser) return;
     setSaving(true);
     try {
-      await api(`/users/${editUser.id}`, { method: "PATCH", body: JSON.stringify({ organizationRoleId: roleId || null, isActive }) });
+      await api(`/users/${editUser.id}`, {
+        method: "PATCH",
+        params: organizationId ? { organizationId } : undefined,
+        body: JSON.stringify({ organizationRoleId: roleId || null, isActive }),
+      });
       toast({ title: "User updated", description: "Their access changes apply immediately." });
       setEditUser(null); await load();
     } catch (error) {

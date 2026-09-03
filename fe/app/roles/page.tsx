@@ -18,7 +18,7 @@ import { api, type OrganizationRole, type PermissionDefinition } from "@/lib/api
 
 export default function RolesPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, activeOrganization } = useAuth();
   const { toast } = useToast();
   const [roles, setRoles] = useState<OrganizationRole[]>([]);
   const [catalog, setCatalog] = useState<PermissionDefinition[]>([]);
@@ -29,6 +29,7 @@ export default function RolesPage() {
   const [description, setDescription] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const organizationId = user?.role === "super_user" ? activeOrganization?.id ?? null : user?.organizationId ?? null;
 
   const categories = useMemo(() => {
     const grouped = new Map<string, PermissionDefinition[]>();
@@ -37,10 +38,11 @@ export default function RolesPage() {
   }, [catalog]);
 
   async function load() {
+    if (!organizationId) return;
     setLoading(true);
     try {
       const [roleRows, definitions] = await Promise.all([
-        api<OrganizationRole[]>("/roles"),
+        api<OrganizationRole[]>("/roles", { params: { organizationId } }),
         api<PermissionDefinition[]>("/roles/catalog"),
       ]);
       setRoles(roleRows);
@@ -53,8 +55,8 @@ export default function RolesPage() {
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
     if (user && user.role !== "admin" && user.role !== "super_user") router.replace("/");
-    if (user && (user.role === "admin" || user.role === "super_user")) void load();
-  }, [user, authLoading, router]);
+    if (user && organizationId && (user.role === "admin" || user.role === "super_user")) void load();
+  }, [user, organizationId, authLoading, router]);
 
   function openEditor(role?: OrganizationRole) {
     setEditing(role ?? null);
@@ -79,7 +81,7 @@ export default function RolesPage() {
     try {
       await api(editing ? `/roles/${editing.id}` : "/roles", {
         method: editing ? "PUT" : "POST",
-        body: JSON.stringify({ name, description, permissions: selected }),
+        body: JSON.stringify({ name, description, permissions: selected, organizationId }),
       });
       toast({ title: editing ? "Role updated" : "Role created", description: `${name} is ready to assign.` });
       setEditorOpen(false);
@@ -128,10 +130,10 @@ export default function RolesPage() {
                   </div>
                   <div className="mt-4 flex gap-2">
                     <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEditor(role)}><Pencil className="h-3.5 w-3.5" />Edit</Button>
-                    <Button variant="outline" size="sm" title="Duplicate role" onClick={async () => { await api(`/roles/${role.id}/duplicate`, { method: "POST" }); await load(); }}><Copy className="h-3.5 w-3.5" /></Button>
+                    <Button variant="outline" size="sm" title="Duplicate role" onClick={async () => { await api(`/roles/${role.id}/duplicate`, { method: "POST", body: JSON.stringify({ organizationId }) }); await load(); }}><Copy className="h-3.5 w-3.5" /></Button>
                     <Button variant="outline" size="sm" disabled={role.userCount > 0} title={role.userCount ? "Reassign users before deleting" : "Delete role"} onClick={async () => {
                       if (!window.confirm(`Delete the ${role.name} role?`)) return;
-                      try { await api(`/roles/${role.id}`, { method: "DELETE" }); await load(); }
+                      try { await api(`/roles/${role.id}`, { method: "DELETE", params: organizationId ? { organizationId } : undefined }); await load(); }
                       catch (error) { toast({ variant: "destructive", title: "Unable to delete role", description: error instanceof Error ? error.message : "Please try again" }); }
                     }}><Trash2 className="h-3.5 w-3.5" /></Button>
                   </div>
