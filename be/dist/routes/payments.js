@@ -7,6 +7,7 @@ const client_1 = require("@prisma/client");
 const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 const message_queue_js_1 = require("../lib/message-queue.js");
 const membership_credit_js_1 = require("../lib/membership-credit.js");
 const due_types_js_1 = require("../lib/due-types.js");
@@ -15,6 +16,25 @@ const payment_report_allocation_js_1 = require("../lib/payment-report-allocation
 exports.paymentsRouter = (0, express_1.Router)();
 exports.paymentsRouter.use(auth_js_1.requireAuth);
 exports.paymentsRouter.use(auth_js_1.withOrgScope);
+exports.paymentsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => {
+    const path = req.path;
+    if (path.startsWith("/report/"))
+        return "VIEW_MEMBER_REPORTS";
+    if (req.method === "GET") {
+        return path.startsWith("/dues") || path.startsWith("/balance/") || path.startsWith("/statement/") || path.startsWith("/credit/")
+            ? "VIEW_MEMBER_DUES"
+            : "VIEW_MEMBER_PAYMENTS";
+    }
+    if (path === "/generate-dues")
+        return "GENERATE_MEMBER_DUES";
+    if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative"))
+        return "MANAGE_MEMBER_DUES";
+    if (path.endsWith("/reverse"))
+        return "REVERSE_MEMBER_PAYMENT";
+    if (path.includes("/sms") || path.startsWith("/reminder/"))
+        return "SEND_MEMBER_MESSAGE";
+    return "RECEIVE_MEMBER_PAYMENT";
+}));
 // Prisma interactive transactions default to 5 seconds. The payment flows below
 // can now touch several dues plus credit-ledger/allocation rows in one request,
 // so we give the optimized sweep a little headroom for real server/DB latency.

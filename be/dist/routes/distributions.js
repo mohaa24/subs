@@ -6,9 +6,11 @@ const zod_1 = require("zod");
 const client_1 = require("@prisma/client");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 exports.distributionsRouter = (0, express_1.Router)();
 exports.distributionsRouter.use(auth_js_1.requireAuth);
 exports.distributionsRouter.use(auth_js_1.withOrgScope);
+exports.distributionsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_DISTRIBUTIONS" : "MANAGE_DISTRIBUTIONS"));
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }

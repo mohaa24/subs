@@ -6,9 +6,11 @@ const zod_1 = require("zod");
 const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 exports.membershipsRouter = (0, express_1.Router)();
 exports.membershipsRouter.use(auth_js_1.requireAuth);
 exports.membershipsRouter.use(auth_js_1.withOrgScope);
+exports.membershipsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((0, route_permissions_js_1.readWritePermissions)("VIEW_MEMBERSHIPS", "CREATE_MEMBERSHIP", "EDIT_MEMBERSHIP")));
 // Membership writes touch the membership row plus several linked people, so we
 // give those interactive transactions the same headroom as payment writes.
 const MEMBERSHIP_WRITE_TRANSACTION_OPTIONS = {

@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, requireAdmin, withOrgScope } from "../middleware/auth.js";
+import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 import {
   DEFAULT_DUE_TYPE_DEFINITIONS,
   ensureDefaultDueTypes,
@@ -16,6 +17,7 @@ export const dueTypesRouter = Router();
 
 dueTypesRouter.use(requireAuth);
 dueTypesRouter.use(withOrgScope);
+dueTypesRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_DUE_TYPES"));
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
@@ -56,7 +58,7 @@ dueTypesRouter.get("/", async (req, res) => {
   return res.json(dueTypes);
 });
 
-dueTypesRouter.post("/", requireAdmin, async (req, res) => {
+dueTypesRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -93,7 +95,7 @@ dueTypesRouter.post("/", requireAdmin, async (req, res) => {
   return res.status(201).json(dueType);
 });
 
-dueTypesRouter.patch("/:id", requireAdmin, async (req, res) => {
+dueTypesRouter.patch("/:id", async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

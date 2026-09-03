@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, type AuthPayload } from "../middleware/auth.js";
+import { getUserPermissions } from "./permissions.js";
 
 export const authRouter = Router();
 
@@ -17,9 +18,9 @@ authRouter.post("/login", async (req, res) => {
   const { email, password } = parsed.data;
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
-    include: { organization: true },
+    include: { organization: true, organizationRole: { select: { id: true, name: true } } },
   });
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
     return res.status(401).json({ error: "Invalid email or password" });
   }
   if (user.role !== "super_user" && (!user.organization || !user.organization.isActive)) {
@@ -33,6 +34,7 @@ authRouter.post("/login", async (req, res) => {
   };
   const secret = process.env.JWT_SECRET || "dev-secret";
   const token = jwt.sign(payload, secret, { expiresIn: "7d" });
+  const permissions = await getUserPermissions(user.id);
   return res.json({
     token,
     user: {
@@ -40,6 +42,10 @@ authRouter.post("/login", async (req, res) => {
       email: user.email,
       role: user.role,
       organizationId: user.organizationId,
+      isActive: user.isActive,
+      permissions,
+      organizationRoleId: user.organizationRoleId,
+      organizationRole: user.organizationRole,
       organization: user.organization
         ? {
             id: user.organization.id,
@@ -56,9 +62,11 @@ authRouter.post("/login", async (req, res) => {
 authRouter.get("/me", requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.auth!.userId },
-    include: { organization: true, permissions: { select: { permission: true } } },
+    include: { organization: true, organizationRole: { select: { id: true, name: true } } },
   });
   if (!user) return res.status(404).json({ error: "User not found" });
+  if (!user.isActive) return res.status(403).json({ error: "Your user account is inactive" });
+  const permissions = await getUserPermissions(user.id);
   return res.json({
     id: user.id,
     email: user.email,
@@ -66,7 +74,10 @@ authRouter.get("/me", requireAuth, async (req, res) => {
     locale: user.locale,
     phoneNumber: user.phoneNumber,
     organizationId: user.organizationId,
-    permissions: user.permissions.map((p: any) => p.permission),
+    permissions,
+    isActive: user.isActive,
+    organizationRoleId: user.organizationRoleId,
+    organizationRole: user.organizationRole,
     organization: user.organization
       ? {
           id: user.organization.id,

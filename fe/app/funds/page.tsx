@@ -82,9 +82,9 @@ function formatFundPeriod(fund: FundPot) {
 }
 
 export default function FundsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const router = useRouter();
-  const canManageFunds = user?.role === "admin" || user?.role === "super_user";
+  const canManageFunds = hasPermission("MANAGE_SPECIAL_FUNDS");
   const [funds, setFunds] = useState<FundPot[]>([]);
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
   const [period, setPeriod] = useState<FundPeriod>("this_month");

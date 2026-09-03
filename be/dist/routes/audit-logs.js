@@ -4,9 +4,11 @@ exports.auditLogsRouter = void 0;
 const express_1 = require("express");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const permissions_js_1 = require("./permissions.js");
 exports.auditLogsRouter = (0, express_1.Router)();
 exports.auditLogsRouter.use(auth_js_1.requireAuth);
 exports.auditLogsRouter.use(auth_js_1.withOrgScope);
+exports.auditLogsRouter.use((0, permissions_js_1.requirePermission)("VIEW_AUDIT_LOG"));
 exports.auditLogsRouter.get("/", async (req, res) => {
     if (req.auth.role !== "admin" && req.auth.role !== "super_user") {
         return res.status(403).json({ error: "Only administrators can view audit logs" });

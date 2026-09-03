@@ -31,7 +31,7 @@ import { dashboardFlowHref } from "@/lib/dashboard-flows";
 const MAX_ZONE_CODE = 9;
 
 export default function ZonesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -175,7 +175,7 @@ export default function ZonesPage() {
   }
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
-  if (user.role !== "admin" && user.role !== "super_user") {
+  if (!hasPermission("VIEW_ORGANIZATION_SETTINGS", "MANAGE_ZONES")) {
     router.replace("/");
     return null;
   }
@@ -191,10 +191,10 @@ export default function ZonesPage() {
             <MapPin className="h-5 w-5 text-muted-foreground" />
             <h1 className="text-xl font-semibold text-foreground">Zone Management</h1>
           </div>
-          <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
+          {hasPermission("MANAGE_ZONES") && <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             Add Zone
-          </Button>
+          </Button>}
         </div>
 
         {isSuper && orgs.length > 0 && (
@@ -265,7 +265,7 @@ export default function ZonesPage() {
                           </span>
                         </td>
                         <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
+                          {hasPermission("MANAGE_ZONES") && <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEditDialog(zone)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
@@ -283,7 +283,7 @@ export default function ZonesPage() {
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                          </div>
+                          </div>}
                         </td>
                       </tr>
                     ))}

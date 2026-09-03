@@ -2,7 +2,8 @@ import { Router } from "express";
 import { MessageEventType } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { requireAdmin, requireAuth, requireSuperUser, withOrgScope } from "../middleware/auth.js";
+import { requireAuth, requireSuperUser, withOrgScope } from "../middleware/auth.js";
+import { requirePermission } from "./permissions.js";
 import { getTextLkBalance } from "../lib/textlk.js";
 import {
   getMessageUsage,
@@ -52,7 +53,7 @@ async function loadSettingsPayload(organizationId: string) {
   };
 }
 
-messagesRouter.get("/settings", requireAdmin, async (req, res) => {
+messagesRouter.get("/settings", requirePermission("VIEW_SMS_SETTINGS"), async (req, res) => {
   const organizationId = getOrgId(req);
   if (!organizationId) return res.status(400).json({ error: "organizationId required" });
   const payload = await loadSettingsPayload(organizationId);
@@ -72,7 +73,7 @@ const updateSettingsSchema = z.object({
   ),
 });
 
-messagesRouter.put("/settings", requireSuperUser, async (req, res) => {
+messagesRouter.put("/settings", requirePermission("MANAGE_SMS_TEMPLATES"), async (req, res) => {
   const parsed = updateSettingsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid settings", details: parsed.error.flatten() });
@@ -92,16 +93,18 @@ messagesRouter.put("/settings", requireSuperUser, async (req, res) => {
     if (validationError) return res.status(400).json({ error: validationError });
   }
 
+  const existingSettings = await prisma.messageSettings.findUnique({ where: { organizationId: parsed.data.organizationId } });
+  const monthlyQuota = req.auth!.role === "super_user" ? parsed.data.monthlyQuota : existingSettings?.monthlyQuota ?? 100;
   await prisma.$transaction(async (tx) => {
     await tx.messageSettings.upsert({
       where: { organizationId: parsed.data.organizationId },
       create: {
         organizationId: parsed.data.organizationId,
-        monthlyQuota: parsed.data.monthlyQuota,
+        monthlyQuota,
         updatedByUserId: req.auth!.userId,
       },
       update: {
-        monthlyQuota: parsed.data.monthlyQuota,
+        monthlyQuota,
         updatedByUserId: req.auth!.userId,
       },
     });
@@ -136,7 +139,7 @@ messagesRouter.put("/settings", requireSuperUser, async (req, res) => {
       entityId: parsed.data.organizationId,
       summary: `Updated SMS settings for ${organization.name}`,
       metadata: {
-        monthlyQuota: parsed.data.monthlyQuota,
+        monthlyQuota,
         enabledEvents: parsed.data.templates.filter((template) => template.enabled).map((template) => template.eventType),
       },
     });
@@ -145,7 +148,7 @@ messagesRouter.put("/settings", requireSuperUser, async (req, res) => {
   return res.json(await loadSettingsPayload(parsed.data.organizationId));
 });
 
-messagesRouter.get("/", async (req, res) => {
+messagesRouter.get("/", requirePermission("VIEW_SMS_SETTINGS"), async (req, res) => {
   const orgId = getOrgId(req);
   if (!orgId && req.auth!.role !== "super_user")
     return res.status(400).json({ error: "Organization scope required" });

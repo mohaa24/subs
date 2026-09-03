@@ -5,11 +5,13 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 const due_types_js_1 = require("../lib/due-types.js");
 const accounting_js_1 = require("../lib/accounting.js");
 exports.dueTypesRouter = (0, express_1.Router)();
 exports.dueTypesRouter.use(auth_js_1.requireAuth);
 exports.dueTypesRouter.use(auth_js_1.withOrgScope);
+exports.dueTypesRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_DUE_TYPES"));
 function getOrgId(req) {
     return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
 }
@@ -42,7 +44,7 @@ exports.dueTypesRouter.get("/", async (req, res) => {
     });
     return res.json(dueTypes);
 });
-exports.dueTypesRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
+exports.dueTypesRouter.post("/", async (req, res) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -76,7 +78,7 @@ exports.dueTypesRouter.post("/", auth_js_1.requireAdmin, async (req, res) => {
     });
     return res.status(201).json(dueType);
 });
-exports.dueTypesRouter.patch("/:id", auth_js_1.requireAdmin, async (req, res) => {
+exports.dueTypesRouter.patch("/:id", async (req, res) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

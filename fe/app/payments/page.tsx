@@ -150,7 +150,7 @@ function toReceiptData(receipt: PaymentReceipt): PaymentReceiptData {
 
 export default function PaymentsPage() {
   const { t } = useTranslation();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const view = pathname.endsWith("/history") ? "history" : "dues";
@@ -579,7 +579,9 @@ export default function PaymentsPage() {
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
-  const canManage = user.role === "admin" || user.role === "super_user";
+  const canManage = hasPermission("MANAGE_MEMBER_DUES");
+  const canReceive = hasPermission("RECEIVE_MEMBER_PAYMENT");
+  const canGenerate = hasPermission("GENERATE_MEMBER_DUES");
 
   return (
     <div className="min-h-screen bg-background">
@@ -602,10 +604,10 @@ export default function PaymentsPage() {
                 <AlertTriangle className="mr-2 h-4 w-4 shrink-0" />
                 {t("payments.markOverdue")}
               </Button>
-              <Button size="sm" variant="generate" className="h-10 sm:h-9" onClick={handleGenerateDues} disabled={generating}>
+              {canGenerate && <Button size="sm" variant="generate" className="h-10 sm:h-9" onClick={handleGenerateDues} disabled={generating}>
                 <WandSparkles className="mr-2 h-4 w-4 shrink-0" />
                 {generating ? t("payments.generating") : t("payments.generateDues")}
-              </Button>
+              </Button>}
             </div>
           )}
         </div>
@@ -804,7 +806,7 @@ export default function PaymentsPage() {
                               <span className="text-right font-medium">{dueMemberFullName(d)}</span>
                             </div>
                             <div className="mt-3 space-y-2">
-                              {d.status !== "paid" && remaining > 0 ? (
+                              {canReceive && d.status !== "paid" && remaining > 0 ? (
                                 <Button size="sm" variant="cashIn" className="w-full" onClick={() => openPayDialog(d)}>
                                   <ArrowDownToLine className="mr-2 h-4 w-4" />Receive Payment
                                 </Button>
@@ -884,7 +886,7 @@ export default function PaymentsPage() {
                           </div>
 
                           <div className="flex items-center justify-end gap-2">
-                            {d.status !== "paid" && remaining > 0 ? (
+                            {canReceive && d.status !== "paid" && remaining > 0 ? (
                               <Button size="sm" variant="cashIn" className="h-8 px-3 text-xs" onClick={() => openPayDialog(d)}>
                                 <Banknote className="mr-1.5 h-3.5 w-3.5" />Receive
                               </Button>

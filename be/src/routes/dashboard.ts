@@ -3,11 +3,13 @@ import { Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { requirePermission } from "./permissions.js";
 
 export const dashboardRouter = Router();
 
 dashboardRouter.use(requireAuth);
 dashboardRouter.use(withOrgScope);
+dashboardRouter.use(requirePermission("VIEW_DASHBOARD"));
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.query?.organizationId;

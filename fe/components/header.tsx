@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   PieChart,
   QrCode,
   ReceiptText,
@@ -53,6 +54,7 @@ type NavChild = {
   badge?: string;
   disabled?: boolean;
   roles?: UserRole[];
+  permissions?: string[];
 };
 
 type NavItem = {
@@ -64,6 +66,7 @@ type NavItem = {
   badge?: string;
   disabled?: boolean;
   children?: NavChild[];
+  permissions?: string[];
 };
 
 type SearchItem = {
@@ -74,15 +77,15 @@ type SearchItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/", actionKey: "nav-dashboard" },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/", actionKey: "nav-dashboard", permissions: ["VIEW_DASHBOARD"] },
   {
     key: "members",
     label: "Members",
     icon: Users,
     children: [
-      { label: "Manage Members", href: "/members", actionKey: "nav-manage-members" },
-      { label: "People Profile", href: "/persons", actionKey: "nav-people-profile" },
-      { label: "Member Transactions", href: "/payments/history", actionKey: "nav-member-transactions" },
+      { label: "Manage Members", href: "/members", actionKey: "nav-manage-members", permissions: ["VIEW_MEMBERSHIPS"] },
+      { label: "People Profile", href: "/persons", actionKey: "nav-people-profile", permissions: ["VIEW_PERSONS"] },
+      { label: "Member Transactions", href: "/payments/history", actionKey: "nav-member-transactions", permissions: ["VIEW_MEMBER_PAYMENTS"] },
     ],
   },
   {
@@ -90,8 +93,8 @@ const NAV_ITEMS: NavItem[] = [
     label: "Cash In",
     icon: ArrowDownToLine,
     children: [
-      { label: "Member Payments", href: "/payments", actionKey: "nav-member-payments" },
-      { label: "Income Accounts", href: "/cash-in", actionKey: "nav-income-accounts" },
+      { label: "Member Payments", href: "/payments", actionKey: "nav-member-payments", permissions: ["VIEW_MEMBER_DUES", "VIEW_MEMBER_PAYMENTS"] },
+      { label: "Income Accounts", href: "/cash-in", actionKey: "nav-income-accounts", permissions: ["VIEW_CASH_IN"] },
     ],
   },
   {
@@ -99,20 +102,20 @@ const NAV_ITEMS: NavItem[] = [
     label: "Cash Out",
     icon: ArrowUpFromLine,
     children: [
-      { label: "Expense Accounts", href: "/cash-out", actionKey: "nav-expense-accounts" },
+      { label: "Expense Accounts", href: "/cash-out", actionKey: "nav-expense-accounts", permissions: ["VIEW_CASH_OUT"] },
     ],
   },
-  { key: "banking", label: "Banking", icon: Landmark, href: "/banking", actionKey: "nav-banking" },
-  { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds", actionKey: "nav-special-funds" },
-  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables", actionKey: "nav-receivable" },
-  { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables", actionKey: "nav-payable" },
+  { key: "banking", label: "Banking", icon: Landmark, href: "/banking", actionKey: "nav-banking", permissions: ["VIEW_BANKING"] },
+  { key: "funds", label: "Special Funds", icon: Landmark, href: "/funds", actionKey: "nav-special-funds", permissions: ["VIEW_SPECIAL_FUNDS"] },
+  { key: "receivable", label: "Receivable", icon: ReceiptText, href: "/receivables", actionKey: "nav-receivable", permissions: ["VIEW_RECEIVABLES"] },
+  { key: "payable", label: "Payable", icon: ClipboardList, href: "/payables", actionKey: "nav-payable", permissions: ["VIEW_PAYABLES"] },
   {
     key: "accounts",
     label: "Chart of Accounts",
     icon: WalletCards,
     children: [
-      { label: "Chart of Accounts", href: "/accounting", actionKey: "nav-chart-of-accounts" },
-      { label: "Journals", href: "/journals", actionKey: "nav-account-journals" },
+      { label: "Chart of Accounts", href: "/accounting", actionKey: "nav-chart-of-accounts", permissions: ["VIEW_CHART_OF_ACCOUNTS"] },
+      { label: "Journals", href: "/journals", actionKey: "nav-account-journals", permissions: ["VIEW_JOURNALS"] },
     ],
   },
   {
@@ -120,8 +123,18 @@ const NAV_ITEMS: NavItem[] = [
     label: "Reports",
     icon: BarChart3,
     children: [
-      { label: "Member Reports", href: "/member-reports", actionKey: "nav-member-reports" },
-      { label: "Financial Reports", href: "/finance-reports", actionKey: "nav-finance-reports" },
+      { label: "Member Reports", href: "/member-reports", actionKey: "nav-member-reports", permissions: ["VIEW_MEMBER_REPORTS"] },
+      { label: "Financial Reports", href: "/finance-reports", actionKey: "nav-finance-reports", permissions: ["VIEW_FINANCIAL_REPORTS"] },
+    ],
+  },
+  {
+    key: "announcements",
+    label: "Announcements",
+    icon: MessageSquare,
+    children: [
+      { label: "Announcements", href: "/announcements", actionKey: "nav-announcements", permissions: ["VIEW_ANNOUNCEMENTS"] },
+      { label: "Templates", href: "/announcements/templates", permissions: ["VIEW_ANNOUNCEMENTS"] },
+      { label: "Groups", href: "/announcements/groups", permissions: ["VIEW_ANNOUNCEMENTS"] },
     ],
   },
   { key: "payroll", label: "Payroll", icon: Users, badge: "Coming Soon", disabled: true },
@@ -132,20 +145,21 @@ const NAV_ITEMS: NavItem[] = [
     label: "Settings",
     icon: Settings,
     children: [
-      { label: "Administration", href: "/organizations", actionKey: "nav-administration" },
+      { label: "Administration", href: "/organizations", actionKey: "nav-administration", roles: ["admin", "super_user"] },
       { label: "Financial Setup", href: "/settings/financial-setup", roles: ["super_user"] },
-      { label: "User & Roles", href: "/users", actionKey: "nav-user-roles" },
-      { label: "Form Settings", href: "/settings/form-config", actionKey: "nav-form-settings" },
-      { label: "Zones", href: "/settings/zones", actionKey: "nav-zones" },
-      { label: "Due Types", href: "/settings/due-types", actionKey: "nav-due-types" },
-      { label: "SMS Settings", href: "/settings/messages", actionKey: "nav-sms-settings" },
-      { label: "Audit Log", href: "/audit-log" },
+      { label: "Users", href: "/users", actionKey: "nav-user-roles", roles: ["admin", "super_user"] },
+      { label: "Roles", href: "/roles", roles: ["admin", "super_user"] },
+      { label: "Form Settings", href: "/settings/form-config", actionKey: "nav-form-settings", permissions: ["MANAGE_FORM_SETTINGS"] },
+      { label: "Zones", href: "/settings/zones", actionKey: "nav-zones", permissions: ["VIEW_ORGANIZATION_SETTINGS", "MANAGE_ZONES"] },
+      { label: "Due Types", href: "/settings/due-types", actionKey: "nav-due-types", permissions: ["VIEW_ORGANIZATION_SETTINGS", "MANAGE_DUE_TYPES"] },
+      { label: "SMS Settings", href: "/settings/messages", actionKey: "nav-sms-settings", permissions: ["VIEW_SMS_SETTINGS"] },
+      { label: "Audit Log", href: "/audit-log", permissions: ["VIEW_AUDIT_LOG"] },
     ],
   },
 ];
 
-function searchItemsForRole(role?: UserRole): SearchItem[] {
-  return NAV_ITEMS.flatMap((item) => {
+function searchItemsForRole(role: UserRole | undefined, hasPermission: (...permissions: string[]) => boolean): SearchItem[] {
+  return NAV_ITEMS.filter((item) => !item.permissions?.length || hasPermission(...item.permissions)).flatMap((item) => {
   const firstChildHref = item.children?.find((child) => !child.disabled && child.href)?.href;
   const groupItem: SearchItem[] = item.href || firstChildHref || item.disabled
     ? [
@@ -157,7 +171,7 @@ function searchItemsForRole(role?: UserRole): SearchItem[] {
         },
       ]
     : [{ label: item.label, description: "Navigation group", disabled: true }];
-  const children = item.children?.filter((child) => !child.roles || (role && child.roles.includes(role))).map((child) => ({
+  const children = item.children?.filter((child) => (!child.roles || (role && child.roles.includes(role))) && (!child.permissions?.length || hasPermission(...child.permissions))).map((child) => ({
     label: child.label,
     description: `${item.label}${child.disabled ? " - Coming soon" : ""}`,
     href: child.href,
@@ -171,6 +185,7 @@ function isActivePath(pathname: string, href?: string) {
   if (!href) return false;
   const cleanHref = href.split("?")[0];
   if (cleanHref === "/") return pathname === "/";
+  if (cleanHref === "/announcements") return pathname === cleanHref;
   return pathname === cleanHref || pathname.startsWith(`${cleanHref}/`);
 }
 
@@ -183,11 +198,13 @@ function MenuPanel({
   bookmarks,
   onToggleBookmark,
   role,
+  hasPermission,
 }: {
   onNavigate?: () => void;
   bookmarks: UserBookmark[];
   onToggleBookmark: (actionKey: string) => void;
   role?: UserRole;
+  hasPermission: (...permissions: string[]) => boolean;
 }) {
   const pathname = usePathname();
   const initialOpen = useMemo(() => {
@@ -235,7 +252,13 @@ function MenuPanel({
       </div>
 
       <nav className="civica-sidebar-scroll min-h-0 flex-1 space-y-1 overflow-y-auto px-4 pb-4">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => {
+          if (item.permissions?.length && !hasPermission(...item.permissions)) return false;
+          if (item.children?.length) return item.children.some((child) =>
+            (!child.roles || (role && child.roles.includes(role))) && (!child.permissions?.length || hasPermission(...child.permissions))
+          );
+          return true;
+        }).map((item) => {
           const Icon = item.icon;
           const active = itemIsActive(pathname, item);
           const open = openGroups[item.key] ?? false;
@@ -263,7 +286,7 @@ function MenuPanel({
                   </button>
                   {open ? (
                     <div className="ml-7 mt-1 space-y-0.5 pb-1">
-                      {item.children.filter((child) => !child.roles || (role && child.roles.includes(role))).map((child) => {
+                      {item.children.filter((child) => (!child.roles || (role && child.roles.includes(role))) && (!child.permissions?.length || hasPermission(...child.permissions))).map((child) => {
                         const childActive = isActivePath(pathname, child.href);
                         const childClass = `group flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-3 py-2 text-xs transition-colors ${
                           child.disabled
@@ -323,7 +346,7 @@ function MenuPanel({
 }
 
 export function Header() {
-  const { user, logout, refetch } = useAuth();
+  const { user, logout, refetch, organizations, activeOrganization, switchOrganization, hasPermission } = useAuth();
   const { locale, t, setLocale: setI18nLocale } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -399,7 +422,7 @@ export function Header() {
   return (
     <>
       <aside className="civica-sidebar fixed inset-y-0 left-0 z-50 hidden w-[17rem] lg:block">
-        <MenuPanel bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} />
+        <MenuPanel bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} hasPermission={hasPermission} />
       </aside>
 
       <header className="civica-toolbar sticky top-0 z-40 hidden h-[4.5rem] items-center justify-between border-b border-border/60 bg-background/95 px-6 backdrop-blur-sm lg:flex">
@@ -411,9 +434,22 @@ export function Header() {
             <p className="truncate text-sm font-semibold text-foreground">{orgName || "Membership"}</p>
             <p className="text-xs text-muted-foreground">Workspace</p>
           </div>
+          {user?.role === "super_user" && (
+            <select
+              aria-label="Switch organization"
+              value={activeOrganization?.id ?? ""}
+              onChange={(event) => switchOrganization(event.target.value)}
+              className="ml-2 h-9 max-w-[260px] rounded-md border border-border/70 bg-card px-3 text-sm font-medium shadow-sm outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+            >
+              <option value="" disabled>Select organization</option>
+              {organizations.filter((organization) => organization.isActive !== false).map((organization) => (
+                <option key={organization.id} value={organization.id}>{organization.name}</option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          <NavigationSearch role={user?.role} />
+          <NavigationSearch role={user?.role} hasPermission={hasPermission} />
           <LanguageMenu
             langRef={desktopLangRef}
             langOpen={langOpen}
@@ -442,10 +478,24 @@ export function Header() {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <Link href="/" className="text-center">
-          <div className="text-sm font-bold tracking-wide text-foreground">CIVICA</div>
-          <div className="text-[11px] text-muted-foreground">Finance Suite</div>
-        </Link>
+        {user?.role === "super_user" ? (
+          <select
+            aria-label="Switch organization"
+            value={activeOrganization?.id ?? ""}
+            onChange={(event) => switchOrganization(event.target.value)}
+            className="mx-2 h-9 min-w-0 max-w-[190px] flex-1 rounded-md border border-border/70 bg-background px-2 text-xs font-medium"
+          >
+            <option value="" disabled>Select organization</option>
+            {organizations.filter((organization) => organization.isActive !== false).map((organization) => (
+              <option key={organization.id} value={organization.id}>{organization.name}</option>
+            ))}
+          </select>
+        ) : (
+          <Link href="/" className="text-center">
+            <div className="text-sm font-bold tracking-wide text-foreground">CIVICA</div>
+            <div className="text-[11px] text-muted-foreground">Finance Suite</div>
+          </Link>
+        )}
         <div className="flex items-center gap-2">
           <LanguageMenu
             langRef={mobileLangRef}
@@ -483,7 +533,7 @@ export function Header() {
             >
               <X className="h-4 w-4" />
             </button>
-            <MenuPanel onNavigate={() => setMenuOpen(false)} bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} />
+            <MenuPanel onNavigate={() => setMenuOpen(false)} bookmarks={bookmarks} onToggleBookmark={toggleBookmark} role={user?.role} hasPermission={hasPermission} />
           </div>
         </div>
       ) : null}
@@ -491,17 +541,17 @@ export function Header() {
   );
 }
 
-function NavigationSearch({ role }: { role?: UserRole }) {
+function NavigationSearch({ role, hasPermission }: { role?: UserRole; hasPermission: (...permissions: string[]) => boolean }) {
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
   const trimmedQuery = query.trim().toLowerCase();
   const results = useMemo(() => {
     if (!trimmedQuery) return [];
-    return searchItemsForRole(role).filter((item) => {
+    return searchItemsForRole(role, hasPermission).filter((item) => {
       const haystack = `${item.label} ${item.description}`.toLowerCase();
       return haystack.includes(trimmedQuery);
     }).slice(0, 5);
-  }, [role, trimmedQuery]);
+  }, [role, hasPermission, trimmedQuery]);
   const showPanel = focused && trimmedQuery.length > 0;
 
   return (

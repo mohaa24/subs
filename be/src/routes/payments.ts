@@ -8,6 +8,7 @@ import {
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 import { queuePaymentReceived, queuePaymentReminder } from "../lib/message-queue.js";
 import {
   addOverpaymentCreditEntry,
@@ -28,6 +29,20 @@ export const paymentsRouter = Router();
 
 paymentsRouter.use(requireAuth);
 paymentsRouter.use(withOrgScope);
+paymentsRouter.use(enforceRoutePermissions((req) => {
+  const path = req.path;
+  if (path.startsWith("/report/")) return "VIEW_MEMBER_REPORTS";
+  if (req.method === "GET") {
+    return path.startsWith("/dues") || path.startsWith("/balance/") || path.startsWith("/statement/") || path.startsWith("/credit/")
+      ? "VIEW_MEMBER_DUES"
+      : "VIEW_MEMBER_PAYMENTS";
+  }
+  if (path === "/generate-dues") return "GENERATE_MEMBER_DUES";
+  if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative")) return "MANAGE_MEMBER_DUES";
+  if (path.endsWith("/reverse")) return "REVERSE_MEMBER_PAYMENT";
+  if (path.includes("/sms") || path.startsWith("/reminder/")) return "SEND_MEMBER_MESSAGE";
+  return "RECEIVE_MEMBER_PAYMENT";
+}));
 
 // Prisma interactive transactions default to 5 seconds. The payment flows below
 // can now touch several dues plus credit-ledger/allocation rows in one request,

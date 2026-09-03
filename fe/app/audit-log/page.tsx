@@ -21,7 +21,7 @@ function label(value: string) {
 }
 
 export default function AuditLogPageView() {
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const [data, setData] = useState<AuditLogPage | null>(null);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -32,7 +32,7 @@ export default function AuditLogPageView() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    if (!user || (user.role !== "admin" && user.role !== "super_user")) return;
+    if (!user || !hasPermission("VIEW_AUDIT_LOG")) return;
     setIsLoading(true);
     setError("");
     try {
@@ -46,14 +46,12 @@ export default function AuditLogPageView() {
     } finally {
       setIsLoading(false);
     }
-  }, [action, entityType, page, search, user]);
+  }, [action, entityType, page, search, user, hasPermission]);
 
   useEffect(() => { void load(); }, [load]);
 
   if (loading || !user) return null;
-  if (user.role !== "admin" && user.role !== "super_user") {
-    return <div className="relative min-h-screen bg-background"><AbstractBg /><Header /><main className="relative z-10 mx-auto max-w-7xl p-6"><Card><CardContent className="p-8 text-center text-sm text-muted-foreground">Only administrators can view the audit log.</CardContent></Card></main></div>;
-  }
+  if (!hasPermission("VIEW_AUDIT_LOG")) return null;
 
   const items = data?.items ?? [];
   return (

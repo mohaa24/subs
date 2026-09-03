@@ -246,10 +246,10 @@ export function AccountingWorkspace({ journalOnly = false }: { journalOnly?: boo
 }
 
 function AccountingPageContent({ journalOnly }: { journalOnly: boolean }) {
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const canManageAccounting = user?.role === "admin" || user?.role === "super_user";
+  const canManageAccounting = hasPermission("MANAGE_CHART_OF_ACCOUNTS");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journal, setJournal] = useState<JournalEntry[]>([]);

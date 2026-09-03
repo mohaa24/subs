@@ -301,9 +301,11 @@ function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData 
 
 export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; accountId?: string }) {
   const config = flowConfig(flow);
-  const { user, loading } = useAuth();
+  const { user, loading, hasPermission } = useAuth();
   const router = useRouter();
-  const canManage = user?.role === "admin" || user?.role === "super_user";
+  const canManage = flow === "cash-in"
+    ? hasPermission("RECEIVE_OPERATING_INCOME", "MANAGE_RECEIVABLES", "MANAGE_PAYABLES")
+    : hasPermission("PAY_OPERATING_EXPENSE", "MANAGE_PAYABLES");
   const [overview, setOverview] = useState<CashFlowOverview | null>(null);
   const [detail, setDetail] = useState<CashAccountDetail | null>(null);
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);

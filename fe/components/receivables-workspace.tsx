@@ -156,8 +156,8 @@ export function ReceivablesWorkspace({ accountId }: { accountId?: string }) {
   const searchParams = useSearchParams();
   const source = searchParams.get("source");
   const hideManagementActions = source === "cash-in";
-  const { user, loading } = useAuth();
-  const canManage = user?.role === "admin" || user?.role === "super_user";
+  const { user, loading, hasPermission } = useAuth();
+  const canManage = hasPermission("MANAGE_RECEIVABLES");
   const [period, setPeriod] = useState<Period>("this_year");
   const [fromDate, setFromDate] = useState(firstOfYearString);
   const [toDate, setToDate] = useState(todayString);

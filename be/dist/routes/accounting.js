@@ -6,12 +6,53 @@ const zod_1 = require("zod");
 const library_1 = require("@prisma/client/runtime/library");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 const accounting_js_1 = require("../lib/accounting.js");
 const audit_log_js_1 = require("../lib/audit-log.js");
 const payment_report_allocation_js_1 = require("../lib/payment-report-allocation.js");
 exports.accountingRouter = (0, express_1.Router)();
 exports.accountingRouter.use(auth_js_1.requireAuth);
 exports.accountingRouter.use(auth_js_1.withOrgScope);
+exports.accountingRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => {
+    const path = req.path;
+    if (path.startsWith("/reports/"))
+        return "VIEW_FINANCIAL_REPORTS";
+    if (path === "/journal")
+        return "VIEW_JOURNALS";
+    if (path.startsWith("/accounts"))
+        return req.method === "GET" ? "VIEW_CHART_OF_ACCOUNTS" : "MANAGE_CHART_OF_ACCOUNTS";
+    if (path.startsWith("/cash-in")) {
+        if (req.method === "GET")
+            return "VIEW_CASH_IN";
+        if (path.includes("receivable"))
+            return "MANAGE_RECEIVABLES";
+        if (path.includes("payable"))
+            return "MANAGE_PAYABLES";
+        return "RECEIVE_OPERATING_INCOME";
+    }
+    if (path.startsWith("/cash-out")) {
+        if (req.method === "GET")
+            return "VIEW_CASH_OUT";
+        if (path.includes("payable"))
+            return "MANAGE_PAYABLES";
+        return "PAY_OPERATING_EXPENSE";
+    }
+    if (path.startsWith("/cash-transactions/") && path.endsWith("/reverse"))
+        return "REVERSE_CASH_TRANSACTION";
+    if (path.startsWith("/receivables"))
+        return req.method === "GET" ? "VIEW_RECEIVABLES" : "MANAGE_RECEIVABLES";
+    if (path.startsWith("/payables"))
+        return req.method === "GET" ? "VIEW_PAYABLES" : "MANAGE_PAYABLES";
+    if (path.startsWith("/funds") || path.startsWith("/fund-transactions"))
+        return req.method === "GET" ? "VIEW_SPECIAL_FUNDS" : "MANAGE_SPECIAL_FUNDS";
+    if (path.startsWith("/banking") || path === "/transfers")
+        return req.method === "GET" ? "VIEW_BANKING" : "MANAGE_BANKING";
+    if (path === "/income")
+        return "RECEIVE_OPERATING_INCOME";
+    if (path === "/expenses")
+        return "PAY_OPERATING_EXPENSE";
+    return "VIEW_CHART_OF_ACCOUNTS";
+}));
 const accountTypes = ["asset", "liability", "equity", "income", "expense"];
 const accountSubtypes = [
     "cash",
@@ -287,8 +328,6 @@ const fundTransferSchema = zod_1.z.object({
     memo: zod_1.z.string().trim().max(500).optional().nullable(),
 });
 function requireAccountingAdmin(req, res, next) {
-    if (!requireAccountingRole(req, res))
-        return;
     next();
 }
 function fundDelta(type, amount) {

@@ -43,6 +43,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const permissions_js_1 = require("./permissions.js");
 exports.authRouter = (0, express_1.Router)();
 const loginSchema = zod_1.z.object({ email: zod_1.z.string().email(), password: zod_1.z.string().min(1) });
 exports.authRouter.post("/login", async (req, res) => {
@@ -53,9 +54,9 @@ exports.authRouter.post("/login", async (req, res) => {
     const { email, password } = parsed.data;
     const user = await prisma_js_1.prisma.user.findUnique({
         where: { email: email.toLowerCase() },
-        include: { organization: true },
+        include: { organization: true, organizationRole: { select: { id: true, name: true } } },
     });
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
         return res.status(401).json({ error: "Invalid email or password" });
     }
     if (user.role !== "super_user" && (!user.organization || !user.organization.isActive)) {
@@ -69,6 +70,7 @@ exports.authRouter.post("/login", async (req, res) => {
     };
     const secret = process.env.JWT_SECRET || "dev-secret";
     const token = jsonwebtoken_1.default.sign(payload, secret, { expiresIn: "7d" });
+    const permissions = await (0, permissions_js_1.getUserPermissions)(user.id);
     return res.json({
         token,
         user: {
@@ -76,6 +78,10 @@ exports.authRouter.post("/login", async (req, res) => {
             email: user.email,
             role: user.role,
             organizationId: user.organizationId,
+            isActive: user.isActive,
+            permissions,
+            organizationRoleId: user.organizationRoleId,
+            organizationRole: user.organizationRole,
             organization: user.organization
                 ? {
                     id: user.organization.id,
@@ -91,10 +97,13 @@ exports.authRouter.post("/login", async (req, res) => {
 exports.authRouter.get("/me", auth_js_1.requireAuth, async (req, res) => {
     const user = await prisma_js_1.prisma.user.findUnique({
         where: { id: req.auth.userId },
-        include: { organization: true, permissions: { select: { permission: true } } },
+        include: { organization: true, organizationRole: { select: { id: true, name: true } } },
     });
     if (!user)
         return res.status(404).json({ error: "User not found" });
+    if (!user.isActive)
+        return res.status(403).json({ error: "Your user account is inactive" });
+    const permissions = await (0, permissions_js_1.getUserPermissions)(user.id);
     return res.json({
         id: user.id,
         email: user.email,
@@ -102,7 +111,10 @@ exports.authRouter.get("/me", auth_js_1.requireAuth, async (req, res) => {
         locale: user.locale,
         phoneNumber: user.phoneNumber,
         organizationId: user.organizationId,
-        permissions: user.permissions.map((p) => p.permission),
+        permissions,
+        isActive: user.isActive,
+        organizationRoleId: user.organizationRoleId,
+        organizationRole: user.organizationRole,
         organization: user.organization
             ? {
                 id: user.organization.id,

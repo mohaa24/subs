@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, requireAdmin, withOrgScope } from "../middleware/auth.js";
+import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 
 export const zonesRouter = Router();
 
 zonesRouter.use(requireAuth);
 zonesRouter.use(withOrgScope);
+zonesRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_ZONES"));
 
 const maxZoneCode = 9;
 
@@ -41,7 +43,7 @@ zonesRouter.get("/", async (req, res) => {
   return res.json(zones);
 });
 
-zonesRouter.post("/", requireAdmin, async (req, res) => {
+zonesRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -66,7 +68,7 @@ zonesRouter.post("/", requireAdmin, async (req, res) => {
   return res.status(201).json(zone);
 });
 
-zonesRouter.patch("/:id", requireAdmin, async (req, res) => {
+zonesRouter.patch("/:id", async (req, res) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -86,7 +88,7 @@ zonesRouter.patch("/:id", requireAdmin, async (req, res) => {
   return res.json(updated);
 });
 
-zonesRouter.delete("/:id", requireAdmin, async (req, res) => {
+zonesRouter.delete("/:id", async (req, res) => {
   const zone = await prisma.zone.findUnique({ where: { id: req.params.id } });
   if (!zone) return res.status(404).json({ error: "Zone not found" });
   if (req.auth!.role !== "super_user" && zone.organizationId !== req.auth!.organizationId)

@@ -29,7 +29,7 @@ import { toast } from "@/hooks/use-toast";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 
 export default function DueTypesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const [dueTypes, setDueTypes] = useState<DueType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,7 +157,7 @@ export default function DueTypesPage() {
   }
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
-  if (user.role !== "admin" && user.role !== "super_user") {
+  if (!hasPermission("VIEW_ORGANIZATION_SETTINGS", "MANAGE_DUE_TYPES")) {
     router.replace("/");
     return null;
   }
@@ -179,10 +179,10 @@ export default function DueTypesPage() {
             <CreditCard className="h-5 w-5 text-muted-foreground" />
             <h1 className="text-xl font-semibold text-foreground">Due Types</h1>
           </div>
-          <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
+          {hasPermission("MANAGE_DUE_TYPES") && <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
             <Plus className="h-4 w-4" />
             Add Due Type
-          </Button>
+          </Button>}
         </div>
 
         {isSuper && orgs.length > 0 && (
@@ -285,7 +285,7 @@ export default function DueTypesPage() {
                           </span>
                         </td>
                         <td className="p-3">
-                          <div className="flex justify-end gap-2">
+                          {hasPermission("MANAGE_DUE_TYPES") && <div className="flex justify-end gap-2">
                             {dueType.systemKey === "subscription" ? (
                               <span className="text-xs text-muted-foreground">
                                 Subscription is system managed
@@ -312,7 +312,7 @@ export default function DueTypesPage() {
                                 </Button>
                               </>
                             )}
-                          </div>
+                          </div>}
                         </td>
                       </tr>
                     ))}

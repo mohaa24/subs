@@ -4,11 +4,13 @@ import { MembershipType, MembershipStatus, PaymentPeriod, RelationToHOH, Depende
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions, readWritePermissions } from "../middleware/route-permissions.js";
 
 export const membershipsRouter = Router();
 
 membershipsRouter.use(requireAuth);
 membershipsRouter.use(withOrgScope);
+membershipsRouter.use(enforceRoutePermissions(readWritePermissions("VIEW_MEMBERSHIPS", "CREATE_MEMBERSHIP", "EDIT_MEMBERSHIP")));
 
 // Membership writes touch the membership row plus several linked people, so we
 // give those interactive transactions the same headroom as payment writes.

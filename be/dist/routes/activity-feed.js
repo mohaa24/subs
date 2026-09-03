@@ -5,10 +5,12 @@ const express_1 = require("express");
 const zod_1 = require("zod");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const route_permissions_js_1 = require("../middleware/route-permissions.js");
 const activity_feed_js_1 = require("../lib/activity-feed.js");
 exports.activityFeedRouter = (0, express_1.Router)();
 exports.activityFeedRouter.use(auth_js_1.requireAuth);
 exports.activityFeedRouter.use(auth_js_1.withOrgScope);
+exports.activityFeedRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((req) => req.method === "GET" ? "VIEW_PERSONS" : "ADD_ACTIVITY_NOTE"));
 const createRemarkSchema = zod_1.z.object({
     entryType: zod_1.z.literal("remark").optional(),
     body: zod_1.z.string().trim().min(1),

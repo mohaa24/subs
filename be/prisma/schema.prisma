@@ -31,6 +31,7 @@ model Organization {
   updatedAt            DateTime  @updatedAt
 
   users                        User[]
+  organizationRoles            OrganizationRole[]
   persons                      Person[]
   memberships                  Membership[]
   paymentDues                  PaymentDue[]
@@ -87,17 +88,19 @@ model User {
   passwordHash   String
   role           UserRole
   organizationId String?
+  organizationRoleId String?
+  isActive       Boolean  @default(true)
   phoneNumber    String?
   locale         String   @default("en")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationRole OrganizationRole? @relation(fields: [organizationRoleId], references: [id], onDelete: SetNull)
 
   createdMemberships               Membership[]                 @relation("CreatedByUser")
   collectedPayments                Payment[]                    @relation("CollectedByUser")
   reversedPayments                 Payment[]                    @relation("ReversedByUser")
-  permissions                      UserPermission[]
   bookmarks                        UserBookmark[]
   billingMarks                     OrganizationBilling[]        @relation("BillingMarkedBy")
   distributionRecords              DistributionRecord[]         @relation("DistributedByUser")
@@ -121,34 +124,37 @@ model User {
   auditLogs                        AuditLog[]                   @relation("AuditLogActor")
 }
 
+model OrganizationRole {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  OrganizationRolePermission[]
+  users        User[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model OrganizationRolePermission {
+  id         String @id @default(cuid())
+  roleId     String
+  permission String
+
+  role OrganizationRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@index([permission])
+}
+
 enum UserRole {
   super_user
   admin
   user
-}
-
-// ─── User Permissions ────────────────────────────────────────────
-
-enum Permission {
-  MANAGE_PERSONS
-  VIEW_PERSONS
-  MANAGE_MEMBERSHIPS
-  VIEW_MEMBERSHIPS
-  COLLECT_PAYMENTS
-  VIEW_PAYMENTS
-  MANAGE_ANNOUNCEMENTS
-  MANAGE_DISTRIBUTIONS
-  VIEW_REPORTS
-}
-
-model UserPermission {
-  id         String     @id @default(cuid())
-  userId     String
-  permission Permission
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, permission])
 }
 
 // ─── User Bookmarks ──────────────────────────────────────────────

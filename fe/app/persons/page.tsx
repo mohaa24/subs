@@ -89,7 +89,7 @@ function formatResidentType(value: string | null | undefined): string {
 }
 
 function PersonsPageContent() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState<Person[]>([]);
@@ -691,7 +691,7 @@ function PersonsPageContent() {
                 </SelectContent>
               </Select>
             )}
-            <Button
+            {hasPermission("CREATE_PERSON") && <Button
               variant="addNew"
               size="sm"
               className="gap-1.5"
@@ -700,7 +700,7 @@ function PersonsPageContent() {
             >
               <UserRoundPlus className="h-4 w-4" />
               New Person
-            </Button>
+            </Button>}
           </div>
         </div>
 

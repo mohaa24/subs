@@ -1,68 +1,55 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.permissionsRouter = void 0;
+exports.getUserPermissions = getUserPermissions;
 exports.requirePermission = requirePermission;
+exports.requireAnyPermission = requireAnyPermission;
 const express_1 = require("express");
-const zod_1 = require("zod");
 const client_1 = require("@prisma/client");
 const prisma_js_1 = require("../lib/prisma.js");
 const auth_js_1 = require("../middleware/auth.js");
+const permission_catalog_js_1 = require("../lib/permission-catalog.js");
 exports.permissionsRouter = (0, express_1.Router)();
 exports.permissionsRouter.use(auth_js_1.requireAuth);
-const putPermissionsSchema = zod_1.z.object({
-    permissions: zod_1.z.array(zod_1.z.string()),
-});
+async function getUserPermissions(userId) {
+    const user = await prisma_js_1.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+            role: true,
+            isActive: true,
+            organizationRole: { select: { permissions: { select: { permission: true } } } },
+        },
+    });
+    if (!user || !user.isActive)
+        return [];
+    if (user.role === client_1.UserRole.super_user || user.role === client_1.UserRole.admin)
+        return permission_catalog_js_1.PERMISSION_CATALOG.map((item) => item.key);
+    const assigned = user.organizationRole?.permissions.map((item) => item.permission) ?? [];
+    return (0, permission_catalog_js_1.expandPermissions)(assigned);
+}
 function requirePermission(permission) {
     return async (req, res, next) => {
         if (!req.auth)
             return res.status(401).json({ error: "Unauthorized" });
-        if (req.auth.role === client_1.UserRole.super_user || req.auth.role === client_1.UserRole.admin) {
+        if (req.auth.role === client_1.UserRole.super_user || req.auth.role === client_1.UserRole.admin)
             return next();
-        }
-        const hasPermission = await prisma_js_1.prisma.userPermission.findFirst({
-            where: {
-                userId: req.auth.userId,
-                permission,
-            },
-        });
-        if (!hasPermission) {
-            return res.status(403).json({ error: "Forbidden" });
+        const permissions = await getUserPermissions(req.auth.userId);
+        if (!permissions.includes(permission)) {
+            return res.status(403).json({ error: "You do not have permission to perform this action. Contact your organisation administrator." });
         }
         next();
     };
 }
-const validPermissions = Object.values(client_1.Permission);
-exports.permissionsRouter.get("/:id/permissions", auth_js_1.requireAdmin, async (req, res) => {
-    const { id } = req.params;
-    const user = await prisma_js_1.prisma.user.findUnique({ where: { id } });
-    if (!user)
-        return res.status(404).json({ error: "User not found" });
-    const perms = await prisma_js_1.prisma.userPermission.findMany({
-        where: { userId: id },
-        select: { permission: true },
-    });
-    return res.json({ permissions: perms.map((p) => p.permission) });
-});
-exports.permissionsRouter.put("/:id/permissions", auth_js_1.requireAdmin, async (req, res) => {
-    const parsed = putPermissionsSchema.safeParse(req.body);
-    if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-    }
-    const { id } = req.params;
-    const user = await prisma_js_1.prisma.user.findUnique({ where: { id } });
-    if (!user)
-        return res.status(404).json({ error: "User not found" });
-    const invalid = parsed.data.permissions.filter((p) => !validPermissions.includes(p));
-    if (invalid.length > 0) {
-        return res.status(400).json({ error: "Invalid permissions", invalid });
-    }
-    await prisma_js_1.prisma.$transaction([
-        prisma_js_1.prisma.userPermission.deleteMany({ where: { userId: id } }),
-        ...parsed.data.permissions.map((permission) => prisma_js_1.prisma.userPermission.create({ data: { userId: id, permission: permission } })),
-    ]);
-    const perms = await prisma_js_1.prisma.userPermission.findMany({
-        where: { userId: id },
-        select: { permission: true },
-    });
-    return res.json({ permissions: perms.map((p) => p.permission) });
-});
+function requireAnyPermission(...required) {
+    return async (req, res, next) => {
+        if (!req.auth)
+            return res.status(401).json({ error: "Unauthorized" });
+        if (req.auth.role === client_1.UserRole.super_user || req.auth.role === client_1.UserRole.admin)
+            return next();
+        const permissions = await getUserPermissions(req.auth.userId);
+        if (!required.some((permission) => permissions.includes(permission))) {
+            return res.status(403).json({ error: "You do not have permission to perform this action. Contact your organisation administrator." });
+        }
+        next();
+    };
+}

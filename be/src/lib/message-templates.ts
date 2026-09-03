@@ -125,11 +125,42 @@ export function renderMessageTemplate(body: string, variables: Record<string, st
   });
 }
 
-function normalizeRecipientPhone(phone: string) {
+export function normalizeRecipientPhone(phone: string) {
   const compact = phone.trim().replace(/[\s()-]/g, "");
   if (/^0\d{9}$/.test(compact)) return `+94${compact.slice(1)}`;
   if (/^94\d{9}$/.test(compact)) return `+${compact}`;
   return compact;
+}
+
+export const MAX_SMS_SEGMENTS = 4;
+
+export function smsEncoding(message: string): "plain" | "unicode" {
+  return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
+}
+
+export function smsSegmentInfo(message: string) {
+  const encoding = smsEncoding(message);
+  const characters = message.length;
+  const singleLimit = encoding === "unicode" ? 70 : 155;
+  const multipartLimit = encoding === "unicode" ? 67 : 155;
+  const segments = characters === 0
+    ? 0
+    : characters <= singleLimit
+      ? 1
+      : Math.ceil(characters / multipartLimit);
+  const currentCapacity = segments <= 1 ? singleLimit : segments * multipartLimit;
+  return {
+    encoding,
+    characters,
+    segments,
+    perSegmentLimit: segments <= 1 ? singleLimit : multipartLimit,
+    remainingInSegment: Math.max(0, currentCapacity - characters),
+    maximumCharacters: MAX_SMS_SEGMENTS * multipartLimit,
+  };
+}
+
+export function estimateSmsSegments(message: string) {
+  return Math.max(1, smsSegmentInfo(message).segments);
 }
 
 export async function queueTemplatedMessage(
@@ -175,6 +206,7 @@ export async function queueTemplatedMessage(
       recipientPhone: normalizeRecipientPhone(input.recipientPhone),
       eventType: input.eventType,
       messageBody: body,
+      estimatedSmsCount: estimateSmsSegments(body),
       deliveryEnabled: true,
       nextAttemptAt: input.nextAttemptAt,
     },
@@ -189,7 +221,7 @@ export function currentQuotaPeriod(now = new Date()) {
 
 export async function getMessageUsage(organizationId: string, now = new Date()) {
   const period = currentQuotaPeriod(now);
-  const [settings, accepted, queued] = await Promise.all([
+  const [settings, accepted, queued, queuedSegments] = await Promise.all([
     prisma.messageSettings.findUnique({ where: { organizationId } }),
     prisma.messageQueue.aggregate({
       where: {
@@ -210,14 +242,25 @@ export async function getMessageUsage(organizationId: string, now = new Date()) 
         deliveryEnabled: true,
       },
     }),
+    prisma.messageQueue.aggregate({
+      where: {
+        organizationId,
+        createdAt: { gte: period.start, lt: period.end },
+        status: MessageStatus.pending,
+        deliveryEnabled: true,
+      },
+      _sum: { estimatedSmsCount: true },
+    }),
   ]);
   const monthlyQuota = settings?.monthlyQuota ?? 100;
   const used = accepted._sum.smsCount ?? 0;
+  const reserved = queuedSegments._sum.estimatedSmsCount ?? 0;
   return {
     period: period.label,
     monthlyQuota,
     used,
-    remaining: Math.max(0, monthlyQuota - used),
+    reserved,
+    remaining: Math.max(0, monthlyQuota - used - reserved),
     queued,
   };
 }

@@ -1,9 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MESSAGE_TEMPLATE_DEFINITIONS = void 0;
+exports.MAX_SMS_SEGMENTS = exports.MESSAGE_TEMPLATE_DEFINITIONS = void 0;
 exports.getTemplateDefinition = getTemplateDefinition;
 exports.validateTemplateBody = validateTemplateBody;
 exports.renderMessageTemplate = renderMessageTemplate;
+exports.normalizeRecipientPhone = normalizeRecipientPhone;
+exports.smsEncoding = smsEncoding;
+exports.smsSegmentInfo = smsSegmentInfo;
+exports.estimateSmsSegments = estimateSmsSegments;
 exports.queueTemplatedMessage = queueTemplatedMessage;
 exports.currentQuotaPeriod = currentQuotaPeriod;
 exports.getMessageUsage = getMessageUsage;
@@ -121,6 +125,33 @@ function normalizeRecipientPhone(phone) {
         return `+${compact}`;
     return compact;
 }
+exports.MAX_SMS_SEGMENTS = 4;
+function smsEncoding(message) {
+    return /^[\x00-\x7F]*$/.test(message) ? "plain" : "unicode";
+}
+function smsSegmentInfo(message) {
+    const encoding = smsEncoding(message);
+    const characters = message.length;
+    const singleLimit = encoding === "unicode" ? 70 : 155;
+    const multipartLimit = encoding === "unicode" ? 67 : 155;
+    const segments = characters === 0
+        ? 0
+        : characters <= singleLimit
+            ? 1
+            : Math.ceil(characters / multipartLimit);
+    const currentCapacity = segments <= 1 ? singleLimit : segments * multipartLimit;
+    return {
+        encoding,
+        characters,
+        segments,
+        perSegmentLimit: segments <= 1 ? singleLimit : multipartLimit,
+        remainingInSegment: Math.max(0, currentCapacity - characters),
+        maximumCharacters: exports.MAX_SMS_SEGMENTS * multipartLimit,
+    };
+}
+function estimateSmsSegments(message) {
+    return Math.max(1, smsSegmentInfo(message).segments);
+}
 async function queueTemplatedMessage(tx, input) {
     if (!input.recipientPhone.trim())
         return null;
@@ -156,6 +187,7 @@ async function queueTemplatedMessage(tx, input) {
             recipientPhone: normalizeRecipientPhone(input.recipientPhone),
             eventType: input.eventType,
             messageBody: body,
+            estimatedSmsCount: estimateSmsSegments(body),
             deliveryEnabled: true,
             nextAttemptAt: input.nextAttemptAt,
         },
@@ -168,7 +200,7 @@ function currentQuotaPeriod(now = new Date()) {
 }
 async function getMessageUsage(organizationId, now = new Date()) {
     const period = currentQuotaPeriod(now);
-    const [settings, accepted, queued] = await Promise.all([
+    const [settings, accepted, queued, queuedSegments] = await Promise.all([
         prisma_js_1.prisma.messageSettings.findUnique({ where: { organizationId } }),
         prisma_js_1.prisma.messageQueue.aggregate({
             where: {
@@ -189,14 +221,25 @@ async function getMessageUsage(organizationId, now = new Date()) {
                 deliveryEnabled: true,
             },
         }),
+        prisma_js_1.prisma.messageQueue.aggregate({
+            where: {
+                organizationId,
+                createdAt: { gte: period.start, lt: period.end },
+                status: client_1.MessageStatus.pending,
+                deliveryEnabled: true,
+            },
+            _sum: { estimatedSmsCount: true },
+        }),
     ]);
     const monthlyQuota = settings?.monthlyQuota ?? 100;
     const used = accepted._sum.smsCount ?? 0;
+    const reserved = queuedSegments._sum.estimatedSmsCount ?? 0;
     return {
         period: period.label,
         monthlyQuota,
         used,
-        remaining: Math.max(0, monthlyQuota - used),
+        reserved,
+        remaining: Math.max(0, monthlyQuota - used - reserved),
         queued,
     };
 }

@@ -2,12 +2,14 @@ import { Router } from "express";
 import { z } from "zod";
 import { FormType, FieldVisibility } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { requireAuth, requireAdmin, withOrgScope } from "../middleware/auth.js";
+import { requireAuth, withOrgScope } from "../middleware/auth.js";
+import { enforceRoutePermissions } from "../middleware/route-permissions.js";
 
 export const formConfigRouter = Router();
 
 formConfigRouter.use(requireAuth);
 formConfigRouter.use(withOrgScope);
+formConfigRouter.use(enforceRoutePermissions((req) => req.method === "GET" ? "VIEW_ORGANIZATION_SETTINGS" : "MANAGE_FORM_SETTINGS"));
 
 function getOrgId(req: any): string | undefined {
   return req.organizationId ?? req.body?.organizationId ?? req.query?.organizationId;
@@ -42,7 +44,7 @@ formConfigRouter.get("/", async (req, res) => {
   return res.json(configs);
 });
 
-formConfigRouter.put("/", requireAdmin, async (req, res) => {
+formConfigRouter.put("/", async (req, res) => {
   const parsed = putFormConfigSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

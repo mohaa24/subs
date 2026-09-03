@@ -79,6 +79,7 @@ type ReceiptPrinterEncoderClass = {
     codepageMapping?: string;
     feedBeforeCut?: number;
     newline?: string;
+    imageMode?: "column" | "raster";
     errors?: "strict" | "relaxed";
   }): ReceiptEncoderInstance;
 };
@@ -128,15 +129,25 @@ type QzTrayGlobal = {
 type PosPrinterProfile = {
   language: string;
   codepageMapping: string;
+  columns: number;
+};
+
+type PosTextLine = {
+  text: string;
+  align: "left" | "right";
 };
 
 type PrintMethod = "qz" | "rawbt" | "browser";
 
 const RECEIPT_WIDTH_INCHES = 2.8;
-const POS_COLUMNS = 44;
+// XP-P801A: 80 mm paper, 72 mm printable width, Font A (12 dots) = 48 columns.
+const XP_P801A_COLUMNS = 48;
 const RECEIPT_QR_SIZE_PX = 96;
 const RECEIPT_LOGO_WIDTH_PX = 384;
 const RECEIPT_LOGO_HEIGHT_PX = 96;
+const HUDHA_RECEIPT_LOGO_WIDTH_PX = 304;
+const HUDHA_RECEIPT_LOGO_HEIGHT_PX = 208;
+const HUDHA_RECEIPT_LOGO_URL = "/document/hudha_receipt_logo_thermal.png";
 const RECEIPT_PRINT_METHOD_STORAGE_KEY = "subs.receipt-print-method";
 const POS_SCRIPT_BASE = "/vendor";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -211,6 +222,17 @@ function shouldShowBalanceAfterPayment(receipt: PaymentReceiptData): boolean {
   return receipt.showBalanceAfterPayment !== false;
 }
 
+function receiptLogoUrl(receipt: PaymentReceiptData): string | null {
+  if (receipt.organizationReceiptLogoUrl) return receipt.organizationReceiptLogoUrl;
+
+  const normalizedName = receipt.organizationName.trim().toLowerCase();
+  return normalizedName.includes("masjidul hudha") ? HUDHA_RECEIPT_LOGO_URL : null;
+}
+
+function isBundledHudhaLogo(url: string): boolean {
+  return url.includes(HUDHA_RECEIPT_LOGO_URL);
+}
+
 function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): string {
   const noteHtml = receipt.note ? rowHtml("Note", receipt.note) : "";
   const paymentMethodHtml = rowHtml("Payment Method", receipt.paymentMethod || "-");
@@ -226,8 +248,9 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
       ${rowHtml("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)}
       <div class="border-bottom"></div>`
     : `<div class="border-bottom"></div>`;
-  const logoHtml = receipt.organizationReceiptLogoUrl
-    ? `<div class="logo-box"><img src="${escapeHtml(receipt.organizationReceiptLogoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
+  const logoUrl = receiptLogoUrl(receipt);
+  const logoHtml = logoUrl
+    ? `<div class="logo-box${isBundledHudhaLogo(logoUrl) ? " hudha-logo" : ""}"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(receipt.organizationName)} logo" /></div>`
     : "";
   const qrHtml = qrDataUrl
     ? `<div class="qr-wrap"><img src="${qrDataUrl}" alt="Member QR" /></div>`
@@ -266,6 +289,19 @@ function buildReceiptHtml(receipt: PaymentReceiptData, qrDataUrl: string): strin
         max-width: 2.35in;
         max-height: 0.58in;
         object-fit: contain;
+      }
+      .logo-box.hudha-logo {
+        width: 1.55in;
+        height: auto;
+        min-height: 0;
+        margin: 0 auto 4px;
+      }
+      .logo-box.hudha-logo img {
+        display: block;
+        width: 1.55in;
+        max-width: none;
+        height: auto;
+        max-height: none;
       }
       .text-box { width: 100%; }
       .textbox-info {
@@ -434,30 +470,45 @@ function wrapText(value: string, width: number): string[] {
   return lines;
 }
 
-function formatKeyValueLines(label: string, value: string, width = POS_COLUMNS): string[] {
+function formatKeyValueLines(label: string, value: string, width = XP_P801A_COLUMNS): PosTextLine[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim();
-  if (!cleanValue) return [cleanLabel];
+  if (!cleanValue) return [{ text: cleanLabel, align: "left" }];
 
   if (cleanLabel.length + cleanValue.length + 1 <= width) {
-    return [`${cleanLabel}${" ".repeat(width - cleanLabel.length - cleanValue.length)}${cleanValue}`];
+    return [{
+      text: `${cleanLabel}${" ".repeat(width - cleanLabel.length - cleanValue.length)}${cleanValue}`,
+      align: "left",
+    }];
   }
 
   const wrappedValue = wrapText(cleanValue, width);
-  return [cleanLabel, ...wrappedValue.map((line) => line.padStart(width))];
+  return [
+    { text: cleanLabel, align: "left" },
+    ...wrappedValue.map((line) => ({ text: line, align: "right" as const })),
+  ];
 }
 
-function formatTwoColumnLines(label: string, value: string, width = POS_COLUMNS, valueWidth = 22): string[] {
+function formatTwoColumnLines(label: string, value: string, width = XP_P801A_COLUMNS, valueWidth = 22): PosTextLine[] {
   const cleanLabel = label.trim();
   const cleanValue = value.trim() || "-";
   const normalizedValueWidth = Math.min(Math.max(valueWidth, 8), width - 4);
   const labelWidth = width - normalizedValueWidth - 1;
   const wrappedValue = wrapText(cleanValue, normalizedValueWidth);
 
-  return wrappedValue.map((line, index) => {
-    const left = index === 0 ? cleanLabel : "";
-    return `${left.padEnd(labelWidth)} ${line.padStart(normalizedValueWidth)}`;
-  });
+  return wrappedValue.map((line, index) => index === 0
+    ? {
+        text: `${cleanLabel.padEnd(labelWidth)} ${line.padStart(normalizedValueWidth)}`,
+        align: "left" as const,
+      }
+    : { text: line, align: "right" as const });
+}
+
+function printPosLines(encoder: ReceiptEncoderInstance, lines: PosTextLine[]) {
+  for (const line of lines) {
+    encoder.align(line.align).line(line.text);
+  }
+  encoder.align("left");
 }
 
 async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
@@ -470,23 +521,37 @@ async function loadReceiptLogoCanvas(url: string): Promise<HTMLCanvasElement> {
   });
 
   const canvas = document.createElement("canvas");
-  canvas.width = RECEIPT_LOGO_WIDTH_PX;
-  canvas.height = RECEIPT_LOGO_HEIGHT_PX;
+  const hudhaLogo = isBundledHudhaLogo(url);
+  canvas.width = hudhaLogo ? HUDHA_RECEIPT_LOGO_WIDTH_PX : RECEIPT_LOGO_WIDTH_PX;
+  canvas.height = hudhaLogo ? HUDHA_RECEIPT_LOGO_HEIGHT_PX : RECEIPT_LOGO_HEIGHT_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable");
 
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const scale = Math.min(
-    canvas.width / image.naturalWidth,
-    canvas.height / image.naturalHeight
-  );
-  const drawWidth = Math.max(1, Math.round(image.naturalWidth * scale));
-  const drawHeight = Math.max(1, Math.round(image.naturalHeight * scale));
+  // The bundled Hudha asset is already tightly laid out and includes its
+  // registration line, so retain the complete source when rasterising it.
+  const sourceX = 0;
+  const sourceY = 0;
+  const sourceWidth = image.naturalWidth;
+  const sourceHeight = image.naturalHeight;
+  const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
   const x = Math.round((canvas.width - drawWidth) / 2);
   const y = Math.round((canvas.height - drawHeight) / 2);
-  ctx.drawImage(image, x, y, drawWidth, drawHeight);
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    x,
+    y,
+    drawWidth,
+    drawHeight
+  );
 
   return canvas;
 }
@@ -497,73 +562,72 @@ async function encodePosReceipt(
 ): Promise<Uint8Array> {
   const ReceiptPrinterEncoder = await loadReceiptPrinterEncoderClass();
   const encoder = new ReceiptPrinterEncoder({
-    columns: POS_COLUMNS,
+    columns: profile.columns,
     language: profile.language,
     codepageMapping: profile.codepageMapping,
     feedBeforeCut: 3,
+    // Column mode splits images into 24-dot bands. Some XP-P801A firmware
+    // advances the paper between those bands, leaving white horizontal gaps.
+    // Raster mode emits the logo as one continuous GS v 0 bitmap instead.
+    imageMode: "raster",
     errors: "relaxed",
   });
 
   encoder.initialize();
-  if (receipt.organizationReceiptLogoUrl) {
+  // Flush initialization before the first centred line. Otherwise the
+  // XP-P801A resets after the encoder's leading centring spaces and drops them.
+  encoder.newline();
+  const logoUrl = receiptLogoUrl(receipt);
+  if (logoUrl) {
     try {
-      const logoCanvas = await loadReceiptLogoCanvas(receipt.organizationReceiptLogoUrl);
+      const logoCanvas = await loadReceiptLogoCanvas(logoUrl);
       encoder.align("center");
-      encoder.image(logoCanvas, RECEIPT_LOGO_WIDTH_PX, RECEIPT_LOGO_HEIGHT_PX, "atkinson");
-      encoder.newline();
+      encoder.image(logoCanvas, logoCanvas.width, logoCanvas.height, "atkinson");
     } catch (error) {
       console.warn("Receipt logo could not be printed; falling back to text header.", error);
     }
   }
-  encoder.align("center");
-  encoder.bold(true).size(1, 2);
-  for (const line of wrapText(receipt.organizationName.toUpperCase(), POS_COLUMNS - 4)) {
+  // Apply size before alignment. Some XPrinter firmware resets the active
+  // alignment when its character-size command is received.
+  encoder.size(1, 2).align("center").bold(true);
+  for (const line of wrapText(receipt.organizationName.toUpperCase(), profile.columns - 4)) {
+    encoder.align("center");
     encoder.line(line);
   }
-  encoder.size(1, 1);
-  encoder.bold(false);
-  for (const line of wrapText(receiptTitle(receipt), POS_COLUMNS - 4)) {
+  encoder.size(1, 1).align("center").bold(false);
+  for (const line of wrapText(receiptTitle(receipt), profile.columns - 4)) {
+    encoder.align("center");
     encoder.line(line);
   }
+  encoder.align("left");
   encoder.rule();
 
-  encoder.align("left");
-  for (const line of formatKeyValueLines("Receipt #", receipt.receiptNumber)) encoder.line(line);
-  for (const line of formatKeyValueLines("Date", posDateTime(receipt.paymentDate))) encoder.line(line);
-  for (const line of formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo)) encoder.line(line);
-  for (const line of formatTwoColumnLines(nameLabel(receipt), receipt.memberName || "-")) encoder.line(line);
+  printPosLines(encoder, formatKeyValueLines("Receipt #", receipt.receiptNumber));
+  printPosLines(encoder, formatKeyValueLines("Date", posDateTime(receipt.paymentDate)));
+  printPosLines(encoder, formatKeyValueLines(primaryLabel(receipt), receipt.membershipNo));
+  printPosLines(encoder, formatTwoColumnLines(nameLabel(receipt), receipt.memberName || "-"));
 
-  for (const line of formatKeyValueLines("Payment Method", receipt.paymentMethod || "-")) {
-    encoder.line(line);
-  }
+  printPosLines(encoder, formatKeyValueLines("Payment Method", receipt.paymentMethod || "-"));
   for (const row of receipt.extraRows ?? []) {
     if (!row.value) continue;
-    for (const line of formatTwoColumnLines(row.label, row.value)) encoder.line(line);
+    printPosLines(encoder, formatTwoColumnLines(row.label, row.value));
   }
 
   encoder.rule();
   encoder.bold(true);
-  for (const line of formatKeyValueLines(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`)) encoder.line(line);
+  printPosLines(encoder, formatKeyValueLines(amountLabel(receipt), `Rs ${money(receipt.paidAmount)}`));
   encoder.bold(false);
   if (shouldShowBalanceAfterPayment(receipt)) {
     encoder.newline();
     encoder.line("Balance After Payment");
-    for (const line of formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`)) {
-      encoder.line(line);
-    }
-    for (const line of formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`)) {
-      encoder.line(line);
-    }
+    printPosLines(encoder, formatKeyValueLines("Total Outstanding", `Rs ${money(receipt.outstandingAfterPayment)}`));
+    printPosLines(encoder, formatKeyValueLines("Total Credit Balance", `Rs ${money(receipt.creditBalanceAfterPayment)}`));
   }
 
   encoder.rule();
-  for (const line of formatTwoColumnLines("Collected By", receipt.collectedBy || "-")) {
-    encoder.line(line);
-  }
+  printPosLines(encoder, formatTwoColumnLines("Collected By", receipt.collectedBy || "-"));
   if (receipt.note) {
-    for (const line of formatTwoColumnLines("Note", receipt.note)) {
-      encoder.line(line);
-    }
+    printPosLines(encoder, formatTwoColumnLines("Note", receipt.note));
   }
   encoder.rule();
 
@@ -772,6 +836,7 @@ export function PaymentReceiptDialog({
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
         codepageMapping: "epson",
+        columns: XP_P801A_COLUMNS,
       });
 
       const config = qz.configs.create(printerName, {
@@ -815,6 +880,7 @@ export function PaymentReceiptDialog({
       const data = await encodePosReceipt(receipt, {
         language: "esc-pos",
         codepageMapping: "epson",
+        columns: XP_P801A_COLUMNS,
       });
       const base64 = toBase64(data);
       const rawBtUrl =
@@ -858,6 +924,10 @@ export function PaymentReceiptDialog({
   }
 
   const isPrinting = qzPrinting || rawBtPrinting;
+  const previewLogoUrl = receipt ? receiptLogoUrl(receipt) : null;
+  const previewUsesBundledHudhaLogo = previewLogoUrl
+    ? isBundledHudhaLogo(previewLogoUrl)
+    : false;
   const currentPrintLabel =
     selectedPrintMethod === "qz"
       ? qzPrinting
@@ -882,12 +952,18 @@ export function PaymentReceiptDialog({
               style={{ width: `${RECEIPT_WIDTH_INCHES}in` }}
             >
               <div className="text-center">
-                {receipt.organizationReceiptLogoUrl ? (
-                  <div className="mb-1 flex min-h-[0.68in] items-center justify-center">
+                {previewLogoUrl ? (
+                  <div
+                    className={previewUsesBundledHudhaLogo
+                      ? "mx-auto mb-1 w-[1.55in]"
+                      : "mb-1 flex min-h-[0.68in] items-center justify-center"}
+                  >
                     <img
-                      src={receipt.organizationReceiptLogoUrl}
+                      src={previewLogoUrl}
                       alt={`${receipt.organizationName} logo`}
-                      className="max-h-[0.58in] max-w-[2.35in] object-contain"
+                      className={previewUsesBundledHudhaLogo
+                        ? "block h-auto w-[1.55in] max-w-none"
+                        : "max-h-[0.58in] max-w-[2.35in] object-contain"}
                     />
                   </div>
                 ) : null}

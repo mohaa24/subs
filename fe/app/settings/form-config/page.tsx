@@ -55,7 +55,7 @@ function formatFieldName(name: string): string {
 }
 
 export default function FormConfigPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, hasPermission } = useAuth();
   const router = useRouter();
   const [personConfigs, setPersonConfigs] = useState<FormFieldConfig[]>([]);
   const [membershipConfigs, setMembershipConfigs] = useState<FormFieldConfig[]>([]);
@@ -156,7 +156,7 @@ export default function FormConfigPage() {
   }
 
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">Loading…</div>;
-  if (user.role !== "admin" && user.role !== "super_user") {
+  if (!hasPermission("MANAGE_FORM_SETTINGS")) {
     router.replace("/");
     return null;
   }
