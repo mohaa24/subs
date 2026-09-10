@@ -279,7 +279,7 @@ export default function FundDetailPage() {
     if (!fund) return;
     setSubmitting(true);
     try {
-      await api(`/accounting/funds/${fund.id}/expenses`, {
+      const transaction = await api<FundTransaction>(`/accounting/funds/${fund.id}/expenses`, {
         method: "POST",
         body: JSON.stringify({
           amount: Number(expense.amount),
@@ -292,6 +292,7 @@ export default function FundDetailPage() {
       setExpenseOpen(false);
       setExpense({ amount: "", transactionDate: todayString(), assetAccountId: defaultCashBankAccountId(), description: "", paidToPhone: "", paidToMembershipId: "", reference: "", memo: "" });
       await loadFundDetails();
+      await openCollectionReceipt(transaction.id);
       toast({ title: "Expense added", description: "Restricted fund expense has been recorded." });
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to add expense", description: err instanceof Error ? err.message : "Unable to add expense" });
@@ -732,6 +733,7 @@ function SummaryCard({
 }
 
 function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
+  const isExpense = receipt.transactionType === "expense";
   return {
     paymentKind: "fund",
     organizationName: receipt.organizationName,
@@ -752,10 +754,10 @@ function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
     note: receipt.note || null,
     collectedBy: receipt.collectedBy || undefined,
     memberQrValue: "",
-    receiptTitle: "SPECIAL FUND RECEIPT",
+    receiptTitle: receipt.receiptTitle || (isExpense ? "SPECIAL FUND EXPENSE VOUCHER" : "SPECIAL FUND RECEIPT"),
     primaryLabel: "Fund",
-    nameLabel: "Paid By",
-    amountLabel: "Collected",
+    nameLabel: receipt.counterpartyLabel || (isExpense ? "Paid To" : "Paid By"),
+    amountLabel: receipt.amountLabel || (isExpense ? "Paid" : "Collected"),
     showBalanceAfterPayment: false,
     extraRows: receipt.paidByPhone ? [{ label: "Phone", value: receipt.paidByPhone }] : [],
   };

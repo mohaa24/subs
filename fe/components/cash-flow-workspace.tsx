@@ -62,6 +62,7 @@ import {
   type CashTransaction,
   type CashTransactionCategory,
   type CashTransactionReceipt,
+  type FundCollectionReceipt,
 } from "@/lib/api";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { toast } from "@/hooks/use-toast";
@@ -299,6 +300,37 @@ function toCashReceiptData(receipt: CashTransactionReceipt): PaymentReceiptData 
   };
 }
 
+function toFundReceiptData(receipt: FundCollectionReceipt): PaymentReceiptData {
+  const isExpense = receipt.transactionType === "expense";
+  return {
+    paymentKind: "fund",
+    organizationName: receipt.organizationName,
+    organizationReceiptLogoUrl: apiAssetUrl(receipt.organizationReceiptLogoUrl),
+    membershipNo: receipt.fundName,
+    membershipId: "",
+    memberName: receipt.paidByName,
+    paymentId: receipt.transactionId,
+    receiptNumber: receipt.receiptNumber,
+    paymentDate: receipt.transactionDate,
+    paymentMethod: receipt.receivedInto || "Cash/Bank",
+    paidAmount: receipt.amount,
+    appliedToDue: 0,
+    overpaymentToCredit: 0,
+    remainingAfter: 0,
+    outstandingAfterPayment: 0,
+    creditBalanceAfterPayment: 0,
+    note: receipt.note || null,
+    collectedBy: receipt.collectedBy || undefined,
+    memberQrValue: "",
+    receiptTitle: receipt.receiptTitle || (isExpense ? "SPECIAL FUND EXPENSE VOUCHER" : "SPECIAL FUND RECEIPT"),
+    primaryLabel: "Fund",
+    nameLabel: receipt.counterpartyLabel || (isExpense ? "Paid To" : "Paid By"),
+    amountLabel: receipt.amountLabel || (isExpense ? "Paid" : "Collected"),
+    showBalanceAfterPayment: false,
+    extraRows: receipt.paidByPhone ? [{ label: "Phone", value: receipt.paidByPhone }] : [],
+  };
+}
+
 export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; accountId?: string }) {
   const config = flowConfig(flow);
   const { user, loading, hasPermission } = useAuth();
@@ -488,6 +520,8 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
         || (flow === "cash-out" && selected.category === "operating_expense")
       ) {
         await openCashReceipt(transaction.id);
+      } else if (!selected.category) {
+        await openFundReceipt(transaction.id);
       }
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to record transaction", description: err instanceof Error ? err.message : "Unable to save" });
@@ -535,6 +569,20 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
           err instanceof Error
             ? err.message
             : "The transaction was saved, but the receipt could not be opened.",
+      });
+    }
+  }
+
+  async function openFundReceipt(transactionId: string) {
+    try {
+      const receipt = await api<FundCollectionReceipt>(`/accounting/fund-transactions/${transactionId}/receipt`);
+      setReceiptData(toFundReceiptData(receipt));
+      setReceiptOpen(true);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Receipt could not be loaded",
+        description: err instanceof Error ? err.message : "The transaction was saved, but the receipt could not be opened.",
       });
     }
   }

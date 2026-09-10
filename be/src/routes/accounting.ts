@@ -478,18 +478,19 @@ function fundReportRange(query: Request["query"]) {
   return { from: null, toEnd: null, period: "from_start" };
 }
 
-function fundReceiptNumberPrefix(date: Date) {
+function fundReceiptNumberPrefix(date: Date, transactionType: "collection" | "expense" = "collection") {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `F${year}${month}`;
+  return `${transactionType === "expense" ? "SFV" : "F"}${year}${month}`;
 }
 
 async function generateFundReceiptNumber(
   tx: Prisma.TransactionClient,
   organizationId: string,
-  transactionDate: Date
+  transactionDate: Date,
+  transactionType: "collection" | "expense" = "collection"
 ) {
-  const prefix = fundReceiptNumberPrefix(transactionDate);
+  const prefix = fundReceiptNumberPrefix(transactionDate, transactionType);
   const latest = await tx.fundTransaction.findFirst({
     where: { organizationId, receiptNumber: { startsWith: prefix } },
     orderBy: { receiptNumber: "desc" },
@@ -567,6 +568,7 @@ function serializeFundTransaction(txRow: any) {
 }
 
 function buildFundReceipt(transaction: any, collectedByEmail?: string | null) {
+  const isExpense = transaction.transactionType === "expense";
   return {
     receiptNumber: transaction.receiptNumber,
     transactionId: transaction.id,
@@ -574,12 +576,16 @@ function buildFundReceipt(transaction: any, collectedByEmail?: string | null) {
     organizationName: transaction.organization.name,
     organizationReceiptLogoUrl: transaction.organization.receiptLogoUrl,
     fundName: transaction.fundPot.name,
-    paidByName: transaction.paidByName,
-    paidByPhone: transaction.paidByPhone,
+    transactionType: transaction.transactionType,
+    paidByName: isExpense ? transaction.description : transaction.paidByName,
+    paidByPhone: isExpense ? null : transaction.paidByPhone,
     amount: Number(transaction.amount),
     receivedInto: transaction.assetAccount?.name ?? null,
     note: transaction.memo,
     collectedBy: collectedByEmail ?? null,
+    receiptTitle: isExpense ? "SPECIAL FUND EXPENSE VOUCHER" : "SPECIAL FUND RECEIPT",
+    counterpartyLabel: isExpense ? "Paid To" : "Paid By",
+    amountLabel: isExpense ? "Paid" : "Collected",
   };
 }
 
@@ -2589,7 +2595,7 @@ accountingRouter.get("/fund-transactions/:id/receipt", asyncRoute(async (req, re
     where: {
       id: req.params.id,
       organizationId: orgId,
-      transactionType: "collection",
+      transactionType: { in: ["collection", "expense"] },
     },
     include: {
       organization: { select: { name: true, receiptLogoUrl: true } },
@@ -2598,7 +2604,7 @@ accountingRouter.get("/fund-transactions/:id/receipt", asyncRoute(async (req, re
     },
   });
   if (!transaction || !transaction.receiptNumber) {
-    return res.status(404).json({ error: "Fund collection receipt not found" });
+    return res.status(404).json({ error: "Fund transaction receipt not found" });
   }
 
   const collectedBy = transaction.createdByUserId
@@ -2632,6 +2638,7 @@ accountingRouter.post("/funds/:id/expenses", requireAccountingAdmin, asyncRoute(
     if (fund.status === "closed") throw new Error("Closed funds cannot record expenses");
 
     const assetAccount = await requireCashBankAccount(tx, orgId, parsed.data.assetAccountId);
+    const receiptNumber = await generateFundReceiptNumber(tx, orgId, transactionDate, "expense");
     const journalEntry = await createJournalEntry(tx, {
       organizationId: orgId,
       entryDate: transactionDate,
@@ -2657,6 +2664,7 @@ accountingRouter.post("/funds/:id/expenses", requireAccountingAdmin, asyncRoute(
         assetAccountId: assetAccount.id,
         description: parsed.data.description,
         memo: parsed.data.memo ?? null,
+        receiptNumber,
         journalEntryId: journalEntry.id,
         createdByUserId: req.auth!.userId,
       },

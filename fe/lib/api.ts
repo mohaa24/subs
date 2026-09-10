@@ -605,12 +605,16 @@ export interface FundCollectionReceipt {
   organizationName: string;
   organizationReceiptLogoUrl?: string | null;
   fundName: string;
+  transactionType?: "collection" | "expense";
   paidByName: string;
   paidByPhone?: string | null;
   amount: number;
   receivedInto?: string | null;
   note?: string | null;
   collectedBy?: string | null;
+  receiptTitle?: string;
+  counterpartyLabel?: string;
+  amountLabel?: string;
 }
 
 export interface CashTransactionReceipt {
