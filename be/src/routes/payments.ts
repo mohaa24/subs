@@ -38,6 +38,7 @@ paymentsRouter.use(enforceRoutePermissions((req) => {
       : "VIEW_MEMBER_PAYMENTS";
   }
   if (path === "/generate-dues") return "GENERATE_MEMBER_DUES";
+  if (req.method === "POST" && path === "/dues") return "CREATE_MANUAL_DUE";
   if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative")) return "MANAGE_MEMBER_DUES";
   if (path.endsWith("/reverse")) return "REVERSE_MEMBER_PAYMENT";
   if (path.includes("/sms") || path.startsWith("/reminder/")) return "SEND_MEMBER_MESSAGE";
@@ -548,10 +549,6 @@ const createManualDueSchema = z.object({
 });
 
 paymentsRouter.post("/dues", async (req, res) => {
-  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
-    return res.status(403).json({ error: "Only admins can create manual dues" });
-  }
-
   const parsed = createManualDueSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

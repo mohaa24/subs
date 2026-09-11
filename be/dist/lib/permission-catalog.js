@@ -13,6 +13,7 @@ exports.PERMISSION_CATALOG = [
     { category: "People & memberships", key: "EDIT_MEMBERSHIP", label: "Edit memberships", description: "Edit or archive memberships.", implies: ["VIEW_MEMBERSHIPS"] },
     { category: "Member dues & payments", key: "VIEW_MEMBER_DUES", label: "View member dues", description: "View balances, dues and statements." },
     { category: "Member dues & payments", key: "GENERATE_MEMBER_DUES", label: "Generate dues", description: "Run organisation due generation.", implies: ["VIEW_MEMBER_DUES"] },
+    { category: "Member dues & payments", key: "CREATE_MANUAL_DUE", label: "Create Manual Due", description: "Create an individual due manually for a member.", implies: ["VIEW_MEMBER_DUES"] },
     { category: "Member dues & payments", key: "MANAGE_MEMBER_DUES", label: "Manage dues", description: "Add, edit, mark overdue and apply credit.", implies: ["VIEW_MEMBER_DUES"] },
     { category: "Member dues & payments", key: "VIEW_MEMBER_PAYMENTS", label: "View payments", description: "View payment history and receipts." },
     { category: "Member dues & payments", key: "RECEIVE_MEMBER_PAYMENT", label: "Receive payments", description: "Record member payments.", implies: ["VIEW_MEMBER_PAYMENTS", "VIEW_MEMBER_DUES"] },

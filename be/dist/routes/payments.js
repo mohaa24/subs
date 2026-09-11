@@ -27,6 +27,8 @@ exports.paymentsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((
     }
     if (path === "/generate-dues")
         return "GENERATE_MEMBER_DUES";
+    if (req.method === "POST" && path === "/dues")
+        return "CREATE_MANUAL_DUE";
     if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative"))
         return "MANAGE_MEMBER_DUES";
     if (path.endsWith("/reverse"))
@@ -462,9 +464,6 @@ const createManualDueSchema = zod_1.z.object({
     periodTo: zod_1.z.string().optional().nullable(),
 });
 exports.paymentsRouter.post("/dues", async (req, res) => {
-    if (req.auth.role !== "admin" && req.auth.role !== "super_user") {
-        return res.status(403).json({ error: "Only admins can create manual dues" });
-    }
     const parsed = createManualDueSchema.safeParse(req.body);
     if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
