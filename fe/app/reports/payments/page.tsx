@@ -154,9 +154,11 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
         @page { size:A4 landscape;margin:9mm 10mm; }
         html,body { background:#fff !important; }
         .civica-sidebar,.civica-toolbar { display:none !important; }
-        .payment-print-sheet { position:relative;display:flex;flex-direction:column;height:192mm;overflow:hidden;padding-bottom:13pt;font-size:8pt;line-height:1.22; }
+        .payment-print-sheet { position:relative;display:flex;box-sizing:border-box;flex-direction:column;height:192mm;overflow:hidden;font-size:8pt;line-height:1.22; }
         .payment-print-sheet + .payment-print-sheet { break-before:page; }
-        .payment-report-header { margin-bottom:7.5pt; }.payment-report-logo { width:28.5pt;height:28.5pt;border-radius:6pt; }
+        .payment-report-header { display:grid !important;grid-template-columns:minmax(0,1fr) max-content;align-items:start;width:100%;gap:20pt;margin-bottom:7.5pt; }
+        .payment-report-header .payment-generated { min-width:155pt;text-align:right !important; }
+        .payment-report-logo { width:28.5pt;height:28.5pt;border-radius:6pt; }
         .payment-report-logo svg { width:13px !important;height:13px !important;stroke-width:1.5; }
         .payment-report-header h2 { font-size:17pt !important;line-height:1.1; }.payment-org-name { font-size:10pt !important;font-weight:600;letter-spacing:.2pt; }
         .payment-subtitle,.payment-period { font-size:10pt !important;font-weight:600; }.payment-category-badge { font-size:7.25pt !important; }
@@ -172,7 +174,7 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
         .member-payment-table td .font-semibold { font-size:8.25pt;font-weight:600; }.member-payment-table td .text-\\[10px\\] { font-size:7.25pt !important;font-weight:400; }
         .payment-status-badge { border:0 !important;border-radius:3pt;padding:2pt 5pt !important;font-size:7pt !important;font-weight:600 !important;line-height:1.1;letter-spacing:.15pt;box-shadow:none !important; }
         .payment-reconciliation { margin-top:7pt;padding:5.5pt 7.5pt;font-size:8pt; }.payment-reconciliation h3 { font-size:8pt !important;font-weight:600; }
-        .payment-report-footer { position:absolute;right:0;bottom:0;left:0;margin-top:0;padding-top:3pt;font-size:7.5pt !important; }
+        .payment-report-footer { position:static;flex:none;width:100%;margin-top:5pt;padding-top:3pt;font-size:7.5pt !important; }
       }
     `}</style>
   </>;
