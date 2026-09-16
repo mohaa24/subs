@@ -33,7 +33,9 @@ exports.paymentsRouter.use((0, route_permissions_js_1.enforceRoutePermissions)((
         return "MANAGE_MEMBER_DUES";
     if (path.endsWith("/reverse"))
         return "REVERSE_MEMBER_PAYMENT";
-    if (path.includes("/sms") || path.startsWith("/reminder/"))
+    if (path.startsWith("/reminder/"))
+        return "SEND_SMS_REMINDER";
+    if (path.includes("/sms"))
         return "SEND_MEMBER_MESSAGE";
     return "RECEIVE_MEMBER_PAYMENT";
 }));

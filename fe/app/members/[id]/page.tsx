@@ -516,6 +516,7 @@ export default function MembershipDetailPage() {
 
   const canManage = hasPermission("EDIT_MEMBERSHIP", "MANAGE_MEMBER_DUES", "REVERSE_MEMBER_PAYMENT");
   const canCreateManualDue = hasPermission("CREATE_MANUAL_DUE");
+  const canSendSmsReminder = hasPermission("SEND_SMS_REMINDER");
   const canRecordCreditPayment = !!membership;
 
   async function sendPaymentReminder() {
@@ -1504,7 +1505,7 @@ export default function MembershipDetailPage() {
                         Receive
                       </Button>
                     )}
-                    {canManage && (
+                    {canSendSmsReminder && (
                       <Button size="sm" variant="neutralOutline" className="gap-1.5" onClick={sendPaymentReminder} disabled={sendingReminder}>
                         <MessageSquareText className="h-4 w-4" />
                         SMS Reminder

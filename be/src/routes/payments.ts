@@ -41,7 +41,8 @@ paymentsRouter.use(enforceRoutePermissions((req) => {
   if (req.method === "POST" && path === "/dues") return "CREATE_MANUAL_DUE";
   if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative")) return "MANAGE_MEMBER_DUES";
   if (path.endsWith("/reverse")) return "REVERSE_MEMBER_PAYMENT";
-  if (path.includes("/sms") || path.startsWith("/reminder/")) return "SEND_MEMBER_MESSAGE";
+  if (path.startsWith("/reminder/")) return "SEND_SMS_REMINDER";
+  if (path.includes("/sms")) return "SEND_MEMBER_MESSAGE";
   return "RECEIVE_MEMBER_PAYMENT";
 }));
 
