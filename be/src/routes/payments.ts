@@ -1507,10 +1507,6 @@ paymentsRouter.post("/receipt/:paymentId/sms", async (req, res) => {
 });
 
 paymentsRouter.post("/reminder/:membershipId", async (req, res) => {
-  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
-    return res.status(403).json({ error: "Administrator access required" });
-  }
-
   const membership = await prisma.membership.findUnique({
     where: { id: req.params.membershipId },
     select: {
