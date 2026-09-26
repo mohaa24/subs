@@ -2668,11 +2668,19 @@ accountingRouter.post("/funds/:id/expenses", requireAccountingAdmin, asyncRoute(
         journalEntryId: journalEntry.id,
         createdByUserId: req.auth!.userId,
       },
-      include: { assetAccount: true, journalEntry: true },
+      include: {
+        assetAccount: true,
+        journalEntry: true,
+        organization: { select: { name: true, receiptLogoUrl: true } },
+        fundPot: { select: { name: true } },
+      },
     });
   });
 
-  return res.status(201).json(serializeFundTransaction(transaction));
+  return res.status(201).json({
+    ...serializeFundTransaction(transaction),
+    receipt: buildFundReceipt(transaction, req.auth!.email),
+  });
 }));
 
 accountingRouter.post("/fund-transactions/:id/reverse", requireAccountingAdmin, asyncRoute(async (req, res) => {

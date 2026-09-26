@@ -580,6 +580,7 @@ export default function PaymentsPage() {
   if (authLoading || !user) return <div className="p-8 text-muted-foreground">{t("common.loading")}</div>;
 
   const canManage = hasPermission("MANAGE_MEMBER_DUES");
+  const canEditDue = hasPermission("EDIT_DUE");
   const canReceive = hasPermission("RECEIVE_MEMBER_PAYMENT");
   const canGenerate = hasPermission("GENERATE_MEMBER_DUES");
 
@@ -811,8 +812,8 @@ export default function PaymentsPage() {
                                   <ArrowDownToLine className="mr-2 h-4 w-4" />Receive Payment
                                 </Button>
                               ) : null}
-                              <div className={`grid gap-2 ${canManage && d.status !== "paid" ? "grid-cols-2" : "grid-cols-1"}`}>
-                                {canManage && d.status !== "paid" ? (
+                              <div className={`grid gap-2 ${canEditDue && d.status !== "paid" && !d.isSystemAdjustment ? "grid-cols-2" : "grid-cols-1"}`}>
+                                {canEditDue && d.status !== "paid" && !d.isSystemAdjustment ? (
                                   <Button size="sm" variant="neutralOutline" onClick={() => openEditDue(d)}>
                                     <Pencil className="mr-2 h-3.5 w-3.5" />Edit
                                   </Button>
@@ -891,7 +892,7 @@ export default function PaymentsPage() {
                                 <Banknote className="mr-1.5 h-3.5 w-3.5" />Receive
                               </Button>
                             ) : null}
-                            {canManage && d.status !== "paid" ? (
+                            {canEditDue && d.status !== "paid" && !d.isSystemAdjustment ? (
                               <Button size="sm" variant="neutralOutline" className="h-8 px-2.5 text-xs" onClick={() => openEditDue(d)} title="Edit Due">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />Edit
                               </Button>

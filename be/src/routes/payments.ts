@@ -39,6 +39,7 @@ paymentsRouter.use(enforceRoutePermissions((req) => {
   }
   if (path === "/generate-dues") return "GENERATE_MEMBER_DUES";
   if (req.method === "POST" && path === "/dues") return "CREATE_MANUAL_DUE";
+  if (req.method === "PATCH" && /^\/dues\/[^/]+$/.test(path)) return "EDIT_DUE";
   if (path === "/dues" || path.startsWith("/dues/") || path === "/mark-overdue" || path.includes("rebalance-negative")) return "MANAGE_MEMBER_DUES";
   if (path.endsWith("/reverse")) return "REVERSE_MEMBER_PAYMENT";
   if (path.startsWith("/reminder/")) return "SEND_SMS_REMINDER";
@@ -1699,17 +1700,13 @@ paymentsRouter.post("/:id/reverse", async (req, res) => {
   return res.json({ success: true, message: "Payment reversed" });
 });
 
-// Edit due amount (admin only)
+// Edit due amount (EDIT_DUE permission enforced by route middleware).
 const editDueSchema = z.object({
   amountDue: z.number().min(0, "Amount must be zero or greater"),
   reason: z.string().min(1, "Reason is required"),
 });
 
 paymentsRouter.patch("/dues/:id", async (req, res) => {
-  if (req.auth!.role !== "admin" && req.auth!.role !== "super_user") {
-    return res.status(403).json({ error: "Only admins can edit dues" });
-  }
-
   const parsed = editDueSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });

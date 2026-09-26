@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowDownLeft, ArrowLeftRight, Download, FileText, Printer, RefreshCw, Undo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { api, apiUrl } from "@/lib/api";
+import { useReportPrintTitle } from "@/lib/report-print-title";
 import { dashboardFlowHref } from "@/lib/dashboard-flows";
 import { Header } from "@/components/header";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -57,6 +58,7 @@ export default function MemberPaymentReportPage() {
   const [fromDate, setFromDate] = useState(localDate(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [toDate, setToDate] = useState(localDate(today));
   const [report, setReport] = useState<MemberPaymentReport | null>(null);
+  useReportPrintTitle(report ? "Member Payment Report" : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

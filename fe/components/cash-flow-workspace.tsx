@@ -473,7 +473,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
     if (!selected) return;
     setSubmitting(true);
     try {
-      const transaction: { id: string; documentNumber?: string | null; receiptNumber?: string | null } = selected.category
+      const transaction: { id: string; documentNumber?: string | null; receiptNumber?: string | null; receipt?: FundCollectionReceipt } = selected.category
         ? await api<CashTransaction>(endpointFor(flow, selected.category), {
         method: "POST",
         body: JSON.stringify({
@@ -488,7 +488,7 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
           description: form.description || null,
         }),
         })
-        : await api<{ id: string; receiptNumber?: string | null }>(`/accounting/funds/${selected.row.id}/${flow === "cash-in" ? "collections" : "expenses"}`, {
+        : await api<{ id: string; receiptNumber?: string | null; receipt?: FundCollectionReceipt }>(`/accounting/funds/${selected.row.id}/${flow === "cash-in" ? "collections" : "expenses"}`, {
           method: "POST",
           body: JSON.stringify(flow === "cash-in"
             ? {
@@ -513,16 +513,21 @@ export function CashFlowWorkspace({ flow, accountId }: { flow: CashFlowSlug; acc
         title: flow === "cash-in" ? "Cash in recorded" : "Cash out recorded",
         description: `${actionDocumentLabel(flow, selected.category)}: ${transaction.documentNumber ?? transaction.receiptNumber ?? transaction.id}`,
       });
-      if (accountId) await loadDetail();
-      else await loadOverview();
       if (
         (flow === "cash-in" && selected.category === "operating_income")
         || (flow === "cash-out" && selected.category === "operating_expense")
       ) {
         await openCashReceipt(transaction.id);
       } else if (!selected.category) {
-        await openFundReceipt(transaction.id);
+        if (transaction.receipt) {
+          setReceiptData(toFundReceiptData(transaction.receipt));
+          setReceiptOpen(true);
+        } else {
+          await openFundReceipt(transaction.id);
+        }
       }
+      if (accountId) void loadDetail();
+      else void loadOverview();
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to record transaction", description: err instanceof Error ? err.message : "Unable to save" });
     } finally {

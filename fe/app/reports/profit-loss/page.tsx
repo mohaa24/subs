@@ -1,4 +1,5 @@
 "use client";
+import { useReportPrintTitle } from "@/lib/report-print-title";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -92,6 +93,7 @@ export default function ProfitLossReportPage() {
   const [fromDate, setFromDate] = useState(localDate(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [toDate, setToDate] = useState(localDate(today));
   const [report, setReport] = useState<ProfitLossReport | null>(null);
+  useReportPrintTitle(report ? "Profit & Loss Report" : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

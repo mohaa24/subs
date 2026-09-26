@@ -2382,10 +2382,18 @@ exports.accountingRouter.post("/funds/:id/expenses", requireAccountingAdmin, asy
                 journalEntryId: journalEntry.id,
                 createdByUserId: req.auth.userId,
             },
-            include: { assetAccount: true, journalEntry: true },
+            include: {
+                assetAccount: true,
+                journalEntry: true,
+                organization: { select: { name: true, receiptLogoUrl: true } },
+                fundPot: { select: { name: true } },
+            },
         });
     });
-    return res.status(201).json(serializeFundTransaction(transaction));
+    return res.status(201).json({
+        ...serializeFundTransaction(transaction),
+        receipt: buildFundReceipt(transaction, req.auth.email),
+    });
 }));
 exports.accountingRouter.post("/fund-transactions/:id/reverse", requireAccountingAdmin, asyncRoute(async (req, res) => {
     const orgId = getOrgId(req);

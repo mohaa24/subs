@@ -1,4 +1,5 @@
 "use client";
+import { useReportPrintTitle } from "@/lib/report-print-title";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -99,6 +100,7 @@ export default function CashMovementReportPage() {
   const [fromDate, setFromDate] = useState(localDate(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [toDate, setToDate] = useState(localDate(today));
   const [report, setReport] = useState<CashMovementReport | null>(null);
+  useReportPrintTitle(report ? "Cash Movement Report" : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => { if (!authLoading && !user) router.replace("/login"); }, [authLoading, router, user]);

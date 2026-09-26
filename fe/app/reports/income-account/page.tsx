@@ -1,4 +1,5 @@
 "use client";
+import { useReportPrintTitle } from "@/lib/report-print-title";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -130,6 +131,7 @@ export default function AccountReportPage() {
   const [fromDate, setFromDate] = useState(localDate(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [toDate, setToDate] = useState(localDate(today));
   const [report, setReport] = useState<IncomeAccountReport | null>(null);
+  useReportPrintTitle(report ? `${report.account.name} Report` : null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 

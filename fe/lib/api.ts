@@ -267,6 +267,7 @@ export interface PaymentDue {
   dueDate: string;
   period: string;
   isManual?: boolean;
+  isSystemAdjustment?: boolean;
   reason?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;

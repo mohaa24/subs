@@ -516,6 +516,7 @@ export default function MembershipDetailPage() {
 
   const canManage = hasPermission("EDIT_MEMBERSHIP", "MANAGE_MEMBER_DUES", "REVERSE_MEMBER_PAYMENT");
   const canCreateManualDue = hasPermission("CREATE_MANUAL_DUE");
+  const canEditDue = hasPermission("EDIT_DUE");
   const canSendSmsReminder = hasPermission("SEND_SMS_REMINDER");
   const canRecordCreditPayment = !!membership;
 
@@ -1581,7 +1582,7 @@ export default function MembershipDetailPage() {
                                       {applyCreditDueId === d.id ? "Applying…" : "Apply Credit"}
                                     </Button>
                                   )}
-                                {canManage && d.status !== "paid" && (
+                                {canEditDue && d.status !== "paid" && !d.isSystemAdjustment && (
                                   <Button size="sm" variant="neutralOutline" className="h-7 text-xs gap-1" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }}>
                                     <Pencil className="h-3 w-3" />
                                     Edit
@@ -1653,7 +1654,7 @@ export default function MembershipDetailPage() {
                                             {applyCreditDueId === d.id ? "Applying…" : "Apply Credit"}
                                           </Button>
                                         )}
-                                      {canManage && d.status !== "paid" && (
+                                      {canEditDue && d.status !== "paid" && !d.isSystemAdjustment && (
                                         <Button size="sm" variant="neutralOutline" className="h-7 w-7 p-0" onClick={() => { setEditDueTarget(d); setEditDueAmount(String(Number(d.amountDue))); setEditDueReason(""); }} title="Edit Due">
                                           <Pencil className="h-3 w-3" />
                                         </Button>

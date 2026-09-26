@@ -279,7 +279,7 @@ export default function FundDetailPage() {
     if (!fund) return;
     setSubmitting(true);
     try {
-      const transaction = await api<FundTransaction>(`/accounting/funds/${fund.id}/expenses`, {
+      const transaction = await api<FundTransaction & { receipt?: FundCollectionReceipt }>(`/accounting/funds/${fund.id}/expenses`, {
         method: "POST",
         body: JSON.stringify({
           amount: Number(expense.amount),
@@ -291,8 +291,13 @@ export default function FundDetailPage() {
       });
       setExpenseOpen(false);
       setExpense({ amount: "", transactionDate: todayString(), assetAccountId: defaultCashBankAccountId(), description: "", paidToPhone: "", paidToMembershipId: "", reference: "", memo: "" });
-      await loadFundDetails();
-      await openCollectionReceipt(transaction.id);
+      if (transaction.receipt) {
+        setCollectionReceipt(toFundReceiptData(transaction.receipt));
+        setReceiptOpen(true);
+      } else {
+        await openCollectionReceipt(transaction.id);
+      }
+      void loadFundDetails();
       toast({ title: "Expense added", description: "Restricted fund expense has been recorded." });
     } catch (err) {
       toast({ variant: "destructive", title: "Failed to add expense", description: err instanceof Error ? err.message : "Unable to add expense" });
@@ -494,7 +499,7 @@ export default function FundDetailPage() {
           </CardHeader>
           <CardContent className="grid gap-4 p-0 md:p-6 md:pt-0 lg:grid-cols-3">
             <FundActivityTable title="Collections" rows={collections} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? openReverseFundTransaction : undefined} />
-            <FundActivityTable title="Expenses" rows={expenses} onReverse={canManageFunds ? openReverseFundTransaction : undefined} />
+            <FundActivityTable title="Expenses" rows={expenses} onReceiptClick={openCollectionReceipt} onReverse={canManageFunds ? openReverseFundTransaction : undefined} />
             {transfers.length > 0 ? <FundActivityTable title="Transfers" rows={transfers} /> : null}
           </CardContent>
         </Card>
@@ -877,9 +882,9 @@ function FundActivityTable({
                           {row.reversedAt ? <FundActivityDetail label="Reversal Reason" value={row.reversalReason || "—"} /> : null}
                         </div>
                         <div className="flex flex-wrap gap-2 border-t px-3 py-3">
-                          {row.transactionType === "collection" && row.receiptNumber && onReceiptClick ? (
+                          {(row.transactionType === "collection" || row.transactionType === "expense") && row.receiptNumber && onReceiptClick ? (
                             <Button type="button" size="sm" variant="neutralOutline" onClick={() => onReceiptClick(row.id)}>
-                              <ReceiptText className="mr-2 h-4 w-4" />Receipt
+                              <ReceiptText className="mr-2 h-4 w-4" />{row.transactionType === "expense" ? "Expense Voucher" : "Receipt"}
                             </Button>
                           ) : null}
                           {!row.reversedAt && (row.transactionType === "collection" || row.transactionType === "expense") && onReverse ? (
@@ -928,7 +933,7 @@ function FundActivityTable({
                 </td>
                 {showReceiptColumn ? (
                   <td className="p-2 text-right">
-                    {row.transactionType === "collection" && row.receiptNumber ? (
+                    {(row.transactionType === "collection" || row.transactionType === "expense") && row.receiptNumber ? (
                       <Button
                         type="button"
                         variant="ghost"
