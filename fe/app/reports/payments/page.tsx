@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowDownLeft, ArrowLeftRight, Download, FileText, Printer, RefreshCw, Undo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -116,30 +116,17 @@ export default function MemberPaymentReportPage() {
 }
 
 function PaymentReport({ report }: { report: MemberPaymentReport }) {
-  const pages = useMemo(() => {
-    if (report.movements.length <= 8) return [report.movements];
-    const result = [report.movements.slice(0, 8)];
-    const remaining = report.movements.slice(8);
-    const continuationPages = Math.ceil(remaining.length / 14);
-    const rowsPerPage = Math.ceil(remaining.length / continuationPages);
-    for (let index = 0; index < remaining.length; index += rowsPerPage) result.push(remaining.slice(index, index + rowsPerPage));
-    return result;
-  }, [report.movements]);
-
   return <>
     <section className="member-payment-report overflow-hidden rounded-xl border border-slate-200 bg-white p-3 text-slate-900 shadow-sm sm:p-5 md:rounded-2xl md:p-8 print:hidden">
       <ReportHeader report={report} /><SummaryTiles report={report} /><Breakdowns report={report} />
       <MovementTable movements={report.movements} /><Reconciliation report={report} /><ReportFooter page={1} totalPages={1} />
     </section>
     <div className="hidden print:block">
-      {pages.map((movements, pageIndex) => {
-        const first = pageIndex === 0; const final = pageIndex === pages.length - 1;
-        return <section key={pageIndex} className="member-payment-report payment-print-sheet text-slate-900">
-          {first ? <><ReportHeader report={report} /><SummaryTiles report={report} /><Breakdowns report={report} /></> : <ContinuationHeader report={report} />}
-          <MovementTable movements={movements} />{final && <Reconciliation report={report} />}
-          <ReportFooter page={pageIndex + 1} totalPages={pages.length} />
-        </section>;
-      })}
+      <section className="member-payment-report payment-print-sheet text-slate-900">
+        <ReportHeader report={report} /><SummaryTiles report={report} /><Breakdowns report={report} />
+        <MovementTable movements={report.movements} printReport={report} />
+        <Reconciliation report={report} />
+      </section>
     </div>
     <style jsx global>{`
       .member-payment-report { font-family:Inter,Arial,sans-serif; }
@@ -154,8 +141,8 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
         @page { size:A4 landscape;margin:9mm 10mm; }
         html,body { background:#fff !important; }
         .civica-sidebar,.civica-toolbar { display:none !important; }
-        .payment-print-sheet { position:relative;display:flex;box-sizing:border-box;flex-direction:column;height:192mm;overflow:hidden;font-size:8pt;line-height:1.22; }
-        .payment-print-sheet + .payment-print-sheet { break-before:page; }
+        .payment-print-sheet { display:block;height:auto;overflow:visible;font-size:8pt;line-height:1.22; }
+        .payment-report-header,.payment-summary-grid,.payment-breakdown,.payment-reconciliation { break-inside:avoid; }
         .payment-report-header { display:grid !important;grid-template-columns:minmax(0,1fr) max-content;align-items:start;width:100%;gap:20pt;margin-bottom:7.5pt; }
         .payment-report-header .payment-generated { min-width:155pt;text-align:right !important; }
         .payment-report-logo { width:28.5pt;height:28.5pt;border-radius:6pt; }
@@ -169,7 +156,15 @@ function PaymentReport({ report }: { report: MemberPaymentReport }) {
         .payment-summary-tile p:last-child:not(.summary-value) { font-size:7.25pt !important; }
         .payment-breakdown { margin-bottom:6pt;padding:5.5pt 7.5pt; }.payment-breakdown h3 { font-size:8pt !important;font-weight:600; }.payment-breakdown h3 + p { font-size:7.25pt !important; }
         .payment-breakdown .text-\\[10px\\] { font-size:8pt !important;font-weight:600; }.payment-breakdown .text-sm { font-size:9pt !important;font-weight:600; }
-        .payment-table-wrap { display:flex !important;flex:1;min-height:0; }.member-payment-table { height:100%;font-size:8pt;line-height:1.22; }.member-payment-table th { padding:4.5pt 5pt;font-size:7.5pt;font-weight:600;letter-spacing:.2pt; }
+        .payment-table-wrap { display:block !important;overflow:visible !important;border:0;border-radius:0; }.member-payment-table { height:auto;table-layout:fixed;font-size:8pt;line-height:1.22; }
+        .member-payment-table thead { display:table-header-group; }
+        .member-payment-table tfoot { display:table-footer-group; }
+        .member-payment-table tr { break-inside:avoid;page-break-inside:avoid; }
+        .member-payment-table th { padding:4.5pt 5pt;font-size:7.5pt;font-weight:600;letter-spacing:.2pt; }
+        .member-payment-table td { overflow-wrap:anywhere; }
+        .member-payment-table .payment-print-heading { background:#fff;color:#0f172a;padding:0 0 5pt;text-transform:none;letter-spacing:normal; }
+        .member-payment-table .payment-print-footer { height:auto;padding:5pt 0 0;background:#fff;border-bottom:0; }
+        .payment-print-footer > div { display:flex;justify-content:space-between;border-top:1px solid #d7e1ed;padding-top:4pt;font-size:7.5pt;color:#64748b; }
         .member-payment-table td { height:31pt;padding:4.5pt 5pt;font-size:8pt;font-weight:400; }.member-payment-table td p { line-height:1.22; }
         .member-payment-table td .font-semibold { font-size:8.25pt;font-weight:600; }.member-payment-table td .text-\\[10px\\] { font-size:7.25pt !important;font-weight:400; }
         .payment-status-badge { border:0 !important;border-radius:3pt;padding:2pt 5pt !important;font-size:7pt !important;font-weight:600 !important;line-height:1.1;letter-spacing:.15pt;box-shadow:none !important; }
@@ -216,12 +211,13 @@ function Breakdown({ title, description, items }: { title:string; description:st
   </div>;
 }
 
-function MovementTable({ movements }: { movements:PaymentMovement[] }) {
+function MovementTable({ movements, printReport }: { movements:PaymentMovement[]; printReport?:MemberPaymentReport }) {
   return <>
     <MovementCards movements={movements} />
     <div className="payment-table-wrap mt-4 hidden overflow-x-auto rounded-xl border border-slate-200 md:block print:mt-0 print:overflow-visible"><table className="member-payment-table w-full min-w-[1380px] border-collapse text-sm print:min-w-0">
     <colgroup><col className="col-date" /><col className="col-member" /><col className="col-receipt" /><col className="col-method" /><col className="col-entered" /><col className="col-amount" /><col className="col-status" /><col className="col-reversal" /><col className="col-total" /></colgroup>
-    <thead><tr><th>Date</th><th>Member Details</th><th>Receipt / Link</th><th>Payment Method</th><th>Entered By</th><th className="text-right">Amount</th><th>Status</th><th>Reversal Details</th><th className="text-right">Running Total</th></tr></thead>
+    <thead>{printReport && <tr><th colSpan={9} className="payment-print-heading"><ContinuationHeader report={printReport} /></th></tr>}<tr><th>Date</th><th>Member Details</th><th>Receipt / Link</th><th>Payment Method</th><th>Entered By</th><th className="text-right">Amount</th><th>Status</th><th>Reversal Details</th><th className="text-right">Running Total</th></tr></thead>
+    {printReport && <tfoot><tr><td colSpan={9} className="payment-print-footer"><div><span>Member Payment Report</span><span>Powered by Civica</span><span>{reportDate(printReport.fromDate)} - {reportDate(printReport.toDate)}</span></div></td></tr></tfoot>}
     <tbody>{movements.map((movement) => <tr key={movement.key} className={movement.status === "posted" ? "" : "payment-reversal-row"}>
       <td><p className="font-semibold text-slate-900">{reportDate(movement.movementDate)}</p><p className="mt-0.5 text-[10px] text-slate-500">Entered {reportDate(movement.enteredAt)}</p></td>
       <td><p className="font-semibold text-slate-900">{movement.memberName}</p><p className="mt-0.5 text-[10px] text-slate-500">ID {movement.membershipId} - {movement.zone}</p></td>
